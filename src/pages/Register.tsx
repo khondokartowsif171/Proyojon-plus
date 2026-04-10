@@ -27,7 +27,7 @@ export default function Register() {
   const packages = [
     { value: 'customer', label: 'কাস্টমার প্যাকেজ', points: '১,০০০ PV', price: '৳১,০০০', amount: 1000, icon: <Package size={20} />, color: 'from-blue-500 to-cyan-600' },
     { value: 'shareholder', label: 'শেয়ারহোল্ডার প্যাকেজ', points: '৫,০০০ PS', price: '৳৫,০০০', amount: 5000, icon: <Crown size={20} />, color: 'from-purple-500 to-pink-600' },
-    { value: 'gold', label: 'গোল্ড প্যাকেজ', points: '৩৬,০০০ GP', price: '৳৩৬,০০০', amount: 36000, icon: <Award size={20} />, color: 'from-yellow-500 to-orange-600' },
+    { value: 'gold', label: 'গোল্ড প্যাকেজ', points: '১,০০,০০০ GP', price: '৳১,০০,০০০' amount: 100000, icon: <Award size={20} />, color: 'from-yellow-500 to-orange-600' },
   ];
 
   const selectedPkg = packages.find(p => p.value === form.package_type);
