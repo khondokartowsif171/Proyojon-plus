@@ -431,7 +431,8 @@ export default function AdminDashboard() {
                       <th className="text-center py-3 px-4 text-xs font-semibold">লেভেল</th>
                       <th className="text-center py-3 px-4 text-xs font-semibold">টিম</th>
                       <th className="text-right py-3 px-4 text-xs font-semibold">আয়</th>
-                      <th className="text-right py-3 px-4 text-xs font-semibold rounded-tr-lg">ব্যালেন্স</th>
+                      <th className="text-right py-3 px-4 text-xs font-semibold">ব্যালেন্স</th>
+                      <th className="text-center py-3 px-4 text-xs font-semibold rounded-tr-lg">ক্লাব</th>
                     </tr></thead>
                     <tbody>
                       {networkMembers.map((m, i) => (
@@ -451,6 +452,28 @@ export default function AdminDashboard() {
                           <td className="py-2.5 px-4 text-center font-medium">{m.team_count}</td>
                           <td className="py-2.5 px-4 text-right font-bold text-green-600">৳{(m.total_income || 0).toLocaleString()}</td>
                           <td className="py-2.5 px-4 text-right font-bold text-indigo-600">৳{(m.current_balance || 0).toLocaleString()}</td>
+                          <td className="py-2.5 px-4 text-center">
+                            <div className="flex flex-wrap gap-1 justify-center">
+                              {m.is_daily_club && (
+                                <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full">ডেইলি</span>
+                              )}
+                              {m.is_weekly_club && (
+                                <span className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full">উইকলি</span>
+                              )}
+                              {m.is_insurance_club && (
+                                <span className="text-[9px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">ইনসুরেন্স</span>
+                              )}
+                              {m.is_pension_club && (
+                                <span className="text-[9px] px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded-full">পেনশন</span>
+                              )}
+                              {m.is_shareholder_club && (
+                                <span className="text-[9px] px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">শেয়ারহোল্ডার</span>
+                              )}
+                              {!m.is_daily_club && !m.is_weekly_club && !m.is_insurance_club && !m.is_pension_club && !m.is_shareholder_club && (
+                                <span className="text-[9px] text-gray-400">কোনো ক্লাব নেই</span>
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
