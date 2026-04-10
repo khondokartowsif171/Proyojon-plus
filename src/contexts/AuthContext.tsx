@@ -139,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         psPoints = 5000;
         pvPoints = 1000;
       } else if (regData.package_type === 'gold') {
-        gpPoints = 36000;
+        gpPoints = 100000;
         pvPoints = 1000;
       }
 
@@ -194,28 +194,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else if (packageType === 'shareholder') {
       commission = Math.floor(psPoints * 0.025);
     } else if (packageType === 'gold') {
+      // 100000 * 5% = 5000 total commission
       const totalGoldCommission = Math.floor(gpPoints * 0.05);
+      // Daily = 5000 / 365 = 13.69
+      const dailyAmount = Math.floor(totalGoldCommission / 365);
+
       await supabase.from('mlm_users').update({
         gold_referral_income: (referrer.gold_referral_income || 0) + totalGoldCommission,
         gold_referral_pending: (referrer.gold_referral_pending || 0) + totalGoldCommission,
-      }).eq('id', referrerId);
-
-      await supabase.from('mlm_transactions').insert({
-        user_id: referrerId, type: 'referral_income', amount: totalGoldCommission,
-        description: `গোল্ড রেফার ইনকাম (৩৬৫ দিনে বন্টিত হবে)`, related_user_id: newUserId,
-      });
-
-      // Update direct referrals count
-      await supabase.from('mlm_users').update({
         direct_referrals_count: (referrer.direct_referrals_count || 0) + 1,
       }).eq('id', referrerId);
 
-      // Check weekly club eligibility
-      const updatedCount = (referrer.direct_referrals_count || 0) + 1;
-      if (updatedCount >= 15 && !referrer.is_weekly_club) {
-        await supabase.from('mlm_users').update({ is_weekly_club: true }).eq('id', referrerId);
-      }
-
+      await supabase.from('mlm_transactions').insert({
+        user_id: referrerId,
+        type: 'referral_income',
+        amount: totalGoldCommission,
+        description: `গোল্ড রেফার ইনকাম (৩৬৫ দিনে বন্টিত) - প্রতিদিন ৳${dailyAmount}`,
+        related_user_id: newUserId,
+      });
       return;
     }
 
