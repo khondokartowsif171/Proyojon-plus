@@ -38,10 +38,6 @@ export default function AppLayout() {
         <div className="max-w-7xl mx-auto px-4 py-20 lg:py-32 relative">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
-              <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full text-yellow-300 text-sm font-medium mb-6">
-                <Zap size={16} />
-                বাংলাদেশের সেরা MLM প্ল্যাটফর্ম
-              </div>
               <h1 className="text-4xl lg:text-6xl font-extrabold text-white leading-tight mb-6">
                 <span className="bg-gradient-to-r from-yellow-300 to-orange-400 bg-clip-text text-transparent">
                   Proyojon Plus
