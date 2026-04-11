@@ -54,6 +54,21 @@ interface RegisterData {
   referrer_id?: string;
 }
 
+interface InsertUserData {
+  email: string;
+  password_hash: string;
+  name: string;
+  phone: string;
+  package_type: string;
+  pv_points: number;
+  ps_points: number;
+  gp_points: number;
+  monthly_pv_purchased: number;
+  is_active: boolean;
+  gold_package_start: string | null;
+  referrer_id?: string;
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -82,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         localStorage.removeItem('mlm_user_id');
       }
-    } catch (e) {
+    } catch (e: unknown) {
       localStorage.removeItem('mlm_user_id');
     }
     setLoading(false);
@@ -143,19 +158,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pvPoints = 1000;
       }
 
-      const insertData: any = {
-        email: regData.email,
-        password_hash: regData.password,
-        name: regData.name,
-        phone: regData.phone,
-        package_type: regData.package_type,
-        pv_points: pvPoints,
-        ps_points: psPoints,
-        gp_points: gpPoints,
-        monthly_pv_purchased: pvPoints,
-        is_active: true,
-        gold_package_start: regData.package_type === 'gold' ? new Date().toISOString() : null,
-      };
+     const insertData: InsertUserData = {
+  email: regData.email,
+  password_hash: regData.password,
+  name: regData.name,
+  phone: regData.phone,
+  package_type: regData.package_type,
+  pv_points: 0,          // Admin approve এর আগে 0
+  ps_points: 0,
+  gp_points: 0,
+  monthly_pv_purchased: 0,
+  is_active: false,      // Admin approve এর আগে inactive
+  gold_package_start: null,  
+ };
 
       if (regData.referrer_id) {
         insertData.referrer_id = regData.referrer_id;
@@ -172,96 +187,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (regData.referrer_id && data) {
-        await processReferralCommission(regData.referrer_id, regData.package_type, pvPoints, psPoints, gpPoints, data.id);
+        await processReferralCommission(regData.referrer_id, data.id);
       }
 
       return { success: true, userId: data.id };
-    } catch (e: any) {
-      return { success: false, error: 'রেজিস্ট্রেশন করতে সমস্যা হয়েছে: ' + e.message };
+    } catch (e: unknown) {
+      return { success: false, error: 'রেজিস্ট্রেশন করতে সমস্যা হয়েছে: ' + (e instanceof Error ? e.message : String(e)) };
     }
   };
 
-  const processReferralCommission = async (
-    referrerId: string, packageType: string, pvPoints: number, psPoints: number, gpPoints: number, newUserId: string
-  ) => {
-    const { data: referrer } = await supabase.from('mlm_users').select('*').eq('id', referrerId).single();
-    if (!referrer || !referrer.is_active) return;
+  async function processReferralCommission(referrerId: string, newUserId: string) {
+  const { data: referrer } = await supabase
+    .from('mlm_users')
+    .select('direct_referrals_count')
+    .eq('id', referrerId)
+    .single();
 
-    let commission = 0;
+  if (!referrer) return;
 
-    if (packageType === 'customer') {
-      commission = Math.floor(pvPoints * 0.05);
-    } else if (packageType === 'shareholder') {
-      commission = Math.floor(psPoints * 0.025);
-    } else if (packageType === 'gold') {
-      // 100000 * 5% = 5000 total commission
-      const totalGoldCommission = Math.floor(gpPoints * 0.05);
-      // Daily = 5000 / 365 = 13.69
-      const dailyAmount = Math.floor(totalGoldCommission / 365);
+  await supabase.from('mlm_users').update({
+    direct_referrals_count: (referrer.direct_referrals_count || 0) + 1,
+  }).eq('id', referrerId);
+};
 
-      await supabase.from('mlm_users').update({
-        gold_referral_income: (referrer.gold_referral_income || 0) + totalGoldCommission,
-        gold_referral_pending: (referrer.gold_referral_pending || 0) + totalGoldCommission,
-        direct_referrals_count: (referrer.direct_referrals_count || 0) + 1,
-      }).eq('id', referrerId);
-
-      await supabase.from('mlm_transactions').insert({
-        user_id: referrerId,
-        type: 'referral_income',
-        amount: totalGoldCommission,
-        description: `গোল্ড রেফার ইনকাম (৩৬৫ দিনে বন্টিত) - প্রতিদিন ৳${dailyAmount}`,
-        related_user_id: newUserId,
-      });
-      return;
-    }
-
-    if (commission > 0) {
-      await supabase.from('mlm_users').update({
-        current_balance: (referrer.current_balance || 0) + commission,
-        total_income: (referrer.total_income || 0) + commission,
-        direct_referrals_count: (referrer.direct_referrals_count || 0) + 1,
-      }).eq('id', referrerId);
-
-      await supabase.from('mlm_transactions').insert({
-        user_id: referrerId, type: 'referral_income', amount: commission,
-        description: `রেফার কমিশন - ${packageType === 'customer' ? 'কাস্টমার' : 'শেয়ারহোল্ডার'} প্যাকেজ`, related_user_id: newUserId,
-      });
-    } else {
-      await supabase.from('mlm_users').update({
-        direct_referrals_count: (referrer.direct_referrals_count || 0) + 1,
-      }).eq('id', referrerId);
-    }
-
-    // Generation bonus (1% PV for 5 generations)
-    if (pvPoints > 0) {
-      await processGenerationBonus(referrerId, pvPoints, newUserId, 1);
-    }
-
-    // Distribute PV to club pools
-    if (pvPoints >= 100) {
-      await distributeToClubPools(pvPoints);
-    }
-
-    // Check weekly club eligibility
-    const updatedReferrals = (referrer.direct_referrals_count || 0) + 1;
-    if (updatedReferrals >= 15 && !referrer.is_weekly_club) {
-      await supabase.from('mlm_users').update({ is_weekly_club: true }).eq('id', referrerId);
-
-      // Check insurance & pension club eligibility
-      const { data: weeklyMembers } = await supabase.from('mlm_users')
-        .select('is_weekly_club')
-        .eq('referrer_id', referrerId)
-        .eq('is_weekly_club', true);
-
-      if (weeklyMembers && weeklyMembers.length >= 15) {
-        await supabase.from('mlm_users').update({
-          is_insurance_club: true, is_pension_club: true,
-        }).eq('id', referrerId);
-      }
-    }
-  };
-
-  const processGenerationBonus = async (userId: string, pvPoints: number, sourceUserId: string, generation: number) => {
+  async function processGenerationBonus(userId: string, pvPoints: number, sourceUserId: string, generation: number) {
     if (generation > 5) return;
     const { data: u } = await supabase.from('mlm_users')
       .select('id, referrer_id, is_active, current_balance, total_income')
@@ -285,7 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (u.referrer_id) {
       await processGenerationBonus(u.referrer_id, pvPoints, sourceUserId, generation + 1);
     }
-  };
+  }
 
   const distributeToClubPools = async (pvAmount: number) => {
     const pools = [

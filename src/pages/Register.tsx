@@ -27,7 +27,7 @@ export default function Register() {
   const packages = [
     { value: 'customer', label: 'কাস্টমার প্যাকেজ', points: '১,০০০ PV', price: '৳১,০০০', amount: 1000, icon: <Package size={20} />, color: 'from-blue-500 to-cyan-600' },
     { value: 'shareholder', label: 'শেয়ারহোল্ডার প্যাকেজ', points: '৫,০০০ PS', price: '৳৫,०००', amount: 5000, icon: <Crown size={20} />, color: 'from-purple-500 to-pink-600' },
-    { value: 'gold', label: 'গোল্ড প্যাকেজ', points: '१,००,००० GP', price: '৳१,००,०००', amount: 100000, icon: <Award size={20} />, color: 'from-yellow-500 to-orange-600' },
+    { value: 'gold', label: 'গোল্ড প্যাকেজ', points: '১,০০,০০০ GP', price: '৳১,০০,০০০', amount: 100000, icon: <Award size={20} />, color: 'from-yellow-500 to-orange-600' },
   ];
 
   const selectedPkg = packages.find(p => p.value === form.package_type);
@@ -40,14 +40,27 @@ export default function Register() {
 
     setLoading(true);
     const result = await register({
-      name: form.name, email: form.email, phone: form.phone,
-      password: form.password, package_type: form.package_type,
+      name: form.name,
+      email: form.email,
+      phone: form.phone,
+      password: form.password,
+      package_type: form.package_type,
       referrer_id: form.referrer_id || undefined,
     });
 
     if (result.success) {
-      setRegisteredUserId(result.userId || '');
-      setStep(2); // Go to payment step
+      const selectedPkg = packages.find(p => p.value === form.package_type);
+      await supabase.from('mlm_payment_verifications').insert({
+        user_id: result.userId,
+        amount: selectedPkg?.amount || 0,
+        method: paymentMethod,
+        trx_id: trxId,
+        sender_number: senderNumber,
+        purpose: `${form.package_type}_package`,
+        status: 'pending',
+      });
+
+      setStep(3); // Success page
     } else {
       setError(result.error || 'রেজিস্ট্রেশন করতে সমস্যা হয়েছে');
     }

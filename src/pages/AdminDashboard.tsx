@@ -116,29 +116,74 @@ export default function AdminDashboard() {
 
   const handleDistributeClub = async (clubType: string) => {
     setLoading(true);
+
     const pool = clubPools.find(p => p.club_type === clubType);
-    if (!pool || pool.total_amount <= 0) { toast.error('বন্টনযোগ্য পরিমাণ নেই'); setLoading(false); return; }
-
-    let query = supabase.from('mlm_users').select('id, current_balance, total_income').eq('is_active', true);
-    if (clubType === 'weekly_club') query = query.eq('is_weekly_club', true);
-    else if (clubType === 'insurance_club') query = query.eq('is_insurance_club', true);
-    else if (clubType === 'pension_club') query = query.eq('is_pension_club', true);
-    else if (clubType === 'shareholder_club') query = query.eq('is_shareholder_club', true);
-
-    const { data: members } = await query;
-    if (!members || members.length === 0) { toast.error('কোন যোগ্য সদস্য নেই'); setLoading(false); return; }
-
-    const perMember = Math.floor(pool.total_amount / members.length);
-    if (perMember <= 0) { toast.error('পরিমাণ যথেষ্ট নয়'); setLoading(false); return; }
-
-    for (const member of members) {
-      await supabase.from('mlm_users').update({ current_balance: (member.current_balance || 0) + perMember, total_income: (member.total_income || 0) + perMember }).eq('id', member.id);
-      await supabase.from('mlm_transactions').insert({ user_id: member.id, type: clubType, amount: perMember, description: `${clubType.replace(/_/g, ' ')} বোনাস বন্টন` });
+    if (!pool || pool.total_amount <= 0) {
+      toast.error('বন্টনযোগ্য পরিমাণ নেই');
+      setLoading(false);
+      return;
     }
 
-    await supabase.from('mlm_club_pools').update({ total_amount: 0, last_distributed_at: new Date().toISOString() }).eq('club_type', clubType);
-    toast.success(`${members.length} জনকে প্রতি জনে ৳${perMember} বন্টন করা হয়েছে`);
-    fetchAll(); setLoading(false);
+    // শুধু সেই club এর active members
+    let query = supabase
+      .from('mlm_users')
+      .select('id, current_balance, total_income')
+      .eq('is_active', true)
+      .neq('role', 'admin');
+
+    if (clubType === 'daily_club') {
+      query = query.eq('is_daily_club', true);
+    } else if (clubType === 'weekly_club') {
+      query = query.eq('is_weekly_club', true);
+    } else if (clubType === 'insurance_club') {
+      query = query.eq('is_insurance_club', true);
+    } else if (clubType === 'pension_club') {
+      query = query.eq('is_pension_club', true);
+    } else if (clubType === 'shareholder_club') {
+      query = query.eq('is_shareholder_club', true);
+    }
+
+    const { data: members } = await query;
+
+    if (!members || members.length === 0) {
+      toast.error('এই ক্লাবে কোনো সক্রিয় সদস্য নেই');
+      setLoading(false);
+      return;
+    }
+
+    const perMember = Math.floor(pool.total_amount / members.length);
+    if (perMember <= 0) {
+      toast.error('প্রতি সদস্যের জন্য পরিমাণ যথেষ্ট নয়');
+      setLoading(false);
+      return;
+    }
+
+    // প্রতি member এ distribute করো
+    for (const member of members) {
+      await supabase.from('mlm_users').update({
+        current_balance: (member.current_balance || 0) + perMember,
+        total_income: (member.total_income || 0) + perMember,
+      }).eq('id', member.id);
+
+      await supabase.from('mlm_transactions').insert({
+        user_id: member.id,
+        type: clubType,
+        amount: perMember,
+        description: `${clubLabels[clubType]} বোনাস বন্টন`,
+      });
+    }
+
+    // Club pool amount কমাও (শূন্য করো)
+    await supabase.from('mlm_club_pools')
+      .update({
+        total_amount: 0,
+        last_distributed_at: new Date().toISOString()
+      })
+      .eq('club_type', clubType);
+
+    toast.success(`✅ ${members.length} জনকে প্রতিজনে ৳${perMember} বন্টন হয়েছে!`);
+    fetchAll();
+    setLoading(false);
   };
 
   const handleApproveWithdrawal = async (id: string, approve: boolean) => {
@@ -175,18 +220,206 @@ export default function AdminDashboard() {
     if (!pv) return;
     setLoading(true);
 
-    await supabase.from('mlm_payment_verifications').update({ status: approve ? 'approved' : 'rejected', processed_at: new Date().toISOString() }).eq('id', id);
+    if (approve) {
+      // 1. Payment approve করো
+      await supabase.from('mlm_payment_verifications')
+        .update({ status: 'approved', processed_at: new Date().toISOString() })
+        .eq('id', id);
 
-    if (approve && pv.purpose === 'package_purchase') {
-      // Activate user's package
-      const newExpiry = new Date();
-      newExpiry.setDate(newExpiry.getDate() + 30);
-      await supabase.from('mlm_users').update({ is_active: true, expires_at: newExpiry.toISOString() }).eq('id', pv.user_id);
-      toast.success('পেমেন্ট অনুমোদিত ও আইডি সক্রিয় করা হয়েছে');
+      // 2. User activate করো + points দাও
+      let pvPoints = 0, psPoints = 0, gpPoints = 0;
+      let goldStart = null;
+      const expiry = new Date();
+
+      if (pv.purpose === 'customer_package') {
+        pvPoints = 1000;
+        expiry.setDate(expiry.getDate() + 30);
+      } else if (pv.purpose === 'shareholder_package') {
+        psPoints = 5000;
+        pvPoints = 1000;
+        expiry.setDate(expiry.getDate() + 30);
+      } else if (pv.purpose === 'gold_package') {
+        gpPoints = 100000;
+        pvPoints = 1000;
+        goldStart = new Date().toISOString();
+        expiry.setDate(expiry.getDate() + 365);
+      }
+
+      await supabase.from('mlm_users').update({
+        is_active: true,
+        pv_points: pvPoints,
+        ps_points: psPoints,
+        gp_points: gpPoints,
+        monthly_pv_purchased: pvPoints,
+        gold_package_start: goldStart,
+        expires_at: expiry.toISOString(),
+        activated_at: new Date().toISOString(),
+        // Club membership
+        is_daily_club: true,
+        is_shareholder_club: pv.purpose === 'shareholder_package' || pv.purpose === 'gold_package',
+        is_weekly_club: pv.purpose === 'gold_package',
+        is_insurance_club: pv.purpose === 'gold_package',
+        is_pension_club: pv.purpose === 'gold_package',
+      }).eq('id', pv.user_id);
+
+      // 3. Referral Commission distribute করো
+      await distributeCommissionOnApprove(pv.user_id, pv.purpose, pvPoints, psPoints, gpPoints);
+
+      // 4. Club pools এ PV distribute করো
+      if (pvPoints > 0) {
+        await distributeToClubPools(pvPoints);
+      }
+
+      toast.success('✅ অনুমোদিত! কমিশন বিতরণ হয়েছে।');
     } else {
-      toast.success(approve ? 'পেমেন্ট অনুমোদিত' : 'পেমেন্ট প্রত্যাখ্যাত');
+      await supabase.from('mlm_payment_verifications')
+        .update({ status: 'rejected', processed_at: new Date().toISOString() })
+        .eq('id', id);
+      toast.error('❌ প্রত্যাখ্যাত!');
     }
-    fetchAll(); setLoading(false);
+
+    fetchAll();
+    setLoading(false);
+  };
+
+  // Commission distribute function
+  const distributeCommissionOnApprove = async (
+    userId: string,
+    packageType: string,
+    pvPoints: number,
+    psPoints: number,
+    gpPoints: number
+  ) => {
+    // Referrer খুঁজো
+    const { data: newUser } = await supabase
+      .from('mlm_users')
+      .select('referrer_id')
+      .eq('id', userId)
+      .single();
+
+    if (!newUser?.referrer_id) return;
+
+    const { data: referrer } = await supabase
+      .from('mlm_users')
+      .select('*')
+      .eq('id', newUser.referrer_id)
+      .single();
+
+    if (!referrer || !referrer.is_active) return;
+
+    let commission = 0;
+    let description = '';
+
+    if (packageType === 'customer_package') {
+      commission = Math.floor(pvPoints * 0.05); // 5% of 1000 = 50
+      description = `কাস্টমার রেফার কমিশন (৫%)`;
+    } else if (packageType === 'shareholder_package') {
+      commission = Math.floor(psPoints * 0.025); // 2.5% of 5000 = 125
+      description = `শেয়ারহোল্ডার রেফার কমিশন (২.৫%)`;
+    } else if (packageType === 'gold_package') {
+      // Gold: ১৮০০ টাকা / ৩৬৫ দিন
+      const totalGoldCommission = 1800;
+      description = `গোল্ড রেফার ইনকাম (৳১৮০০, ৩৬৫ দিনে বন্টন)`;
+
+      await supabase.from('mlm_users').update({
+        gold_referral_income: (referrer.gold_referral_income || 0) + totalGoldCommission,
+        gold_referral_pending: (referrer.gold_referral_pending || 0) + totalGoldCommission,
+      }).eq('id', referrer.id);
+
+      await supabase.from('mlm_transactions').insert({
+        user_id: referrer.id,
+        type: 'referral_income',
+        amount: totalGoldCommission,
+        description,
+        related_user_id: userId,
+      });
+
+      // Gold buyer bakeya
+      const dailyBakeya = Math.round((100000 * 0.36) / 365);
+      await supabase.from('mlm_users')
+        .update({ bakeya_amount: dailyBakeya })
+        .eq('id', userId);
+
+      // Generation bonus for PV
+      await processGenerationBonus(referrer.id, pvPoints, userId, 1);
+      return;
+    }
+
+    if (commission > 0) {
+      await supabase.from('mlm_users').update({
+        current_balance: (referrer.current_balance || 0) + commission,
+        total_income: (referrer.total_income || 0) + commission,
+      }).eq('id', referrer.id);
+
+      await supabase.from('mlm_transactions').insert({
+        user_id: referrer.id,
+        type: 'referral_income',
+        amount: commission,
+        description,
+        related_user_id: userId,
+      });
+    }
+
+    // Generation bonus (PV এর 1% × 5 level)
+    if (pvPoints > 0) {
+      await processGenerationBonus(referrer.id, pvPoints, userId, 1);
+    }
+  };
+
+  // Generation bonus
+  const processGenerationBonus = async (
+    userId: string,
+    pvPoints: number,
+    sourceUserId: string,
+    generation: number
+  ) => {
+    if (generation > 5) return;
+
+    const { data: u } = await supabase
+      .from('mlm_users')
+      .select('id, referrer_id, is_active, current_balance, total_income')
+      .eq('id', userId)
+      .single();
+
+    if (!u || !u.is_active) return;
+
+    const bonus = Math.floor(pvPoints * 0.01); // 1%
+    if (bonus > 0) {
+      await supabase.from('mlm_users').update({
+        current_balance: (u.current_balance || 0) + bonus,
+        total_income: (u.total_income || 0) + bonus,
+      }).eq('id', userId);
+
+      await supabase.from('mlm_transactions').insert({
+        user_id: userId,
+        type: 'generation_bonus',
+        amount: bonus,
+        description: `জেনারেশন ${generation} বোনাস (PV: ${pvPoints})`,
+        related_user_id: sourceUserId,
+      });
+    }
+
+    if (u.referrer_id) {
+      await processGenerationBonus(u.referrer_id, pvPoints, sourceUserId, generation + 1);
+    }
+  };
+
+  // Club pools distribution
+  const distributeToClubPools = async (pvAmount: number) => {
+    const pools = [
+      { type: 'daily_club', amount: Math.floor(pvAmount * 0.30) },
+      { type: 'weekly_club', amount: Math.floor(pvAmount * 0.025) },
+      { type: 'insurance_club', amount: Math.floor(pvAmount * 0.025) },
+      { type: 'pension_club', amount: Math.floor(pvAmount * 0.025) },
+      { type: 'shareholder_club', amount: Math.floor(pvAmount * 0.10) },
+    ];
+
+    for (const pool of pools) {
+      const { data: existing } = await supabase.from('mlm_club_pools').select('total_amount').eq('club_type', pool.type).single();
+      if (existing) {
+        await supabase.from('mlm_club_pools').update({ total_amount: (existing.total_amount || 0) + pool.amount }).eq('club_type', pool.type);
+      }
+    }
   };
 
   const filteredUsers = users.filter(u =>
