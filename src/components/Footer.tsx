@@ -36,9 +36,9 @@ export default function Footer() {
           <div>
             <h3 className="text-white font-semibold mb-4 text-lg">প্যাকেজ সমূহ</h3>
             <ul className="space-y-2">
-              <li><Link to="/packages" className="text-sm hover:text-yellow-400 transition-colors">কাস্টমার প্যাকেজ - ১০০০ PV</Link></li>
-              <li><Link to="/packages" className="text-sm hover:text-yellow-400 transition-colors">শেয়ারহোল্ডার প্যাকেজ - ৫০০০ PS</Link></li>
-              <li><Link to="/packages" className="text-sm hover:text-yellow-400 transition-colors">গোল্ড প্যাকেজ - ৩৬০০০ GP</Link></li>
+              <li><Link to="/packages" className="text-sm hover:text-yellow-400 transition-colors">কাস্টমার প্যাকেজ - १,००० PV</Link></li>
+              <li><Link to="/packages" className="text-sm hover:text-yellow-400 transition-colors">শেয়ারহোল্ডার প্যাকেজ - ५,००० PS</Link></li>
+              <li><Link to="/packages" className="text-sm hover:text-yellow-400 transition-colors">গোল্ড প্যাকেজ - १,००,००० GP</Link></li>
             </ul>
           </div>
 

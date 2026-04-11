@@ -89,7 +89,7 @@ export default function AppLayout() {
                     {[
                       { icon: <Package size={24} />, label: 'কাস্টমার প্যাকেজ', value: '১,০০০ PV', color: 'from-blue-500 to-cyan-500' },
                       { icon: <Crown size={24} />, label: 'শেয়ারহোল্ডার প্যাকেজ', value: '৫,০০০ PS', color: 'from-purple-500 to-pink-500' },
-                      { icon: <Award size={24} />, label: 'গোল্ড প্যাকেজ', value: '৩৬,০০০ GP', color: 'from-yellow-500 to-orange-500' },
+                      { icon: <Award size={24} />, label: 'গোল্ড প্যাকেজ', value: '१,००,००० GP', color: 'from-yellow-500 to-orange-500' },
                     ].map((pkg, i) => (
                       <div key={i} className="flex items-center gap-4 bg-white/10 rounded-xl p-4 backdrop-blur-sm border border-white/10 hover:bg-white/20 transition-colors">
                         <div className={`w-12 h-12 bg-gradient-to-br ${pkg.color} rounded-xl flex items-center justify-center text-white`}>
