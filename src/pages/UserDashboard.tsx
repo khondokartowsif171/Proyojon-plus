@@ -50,6 +50,28 @@ export default function UserDashboard() {
     });
   }, [user]);
 
+  // Real-time balance update
+  useEffect(() => {
+    if (!user) return;
+
+    const subscription = supabase
+      .channel('user_balance')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'mlm_users',
+        filter: `id=eq.${user.id}`,
+      }, () => {
+        // Auto refresh when balance changes
+        refreshUser();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [user]);
+
   useEffect(() => {
     if (user?.package_type === 'gold' && user.gold_package_start) {
       const interval = setInterval(() => {

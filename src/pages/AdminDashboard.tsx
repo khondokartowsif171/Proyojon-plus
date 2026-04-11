@@ -86,14 +86,102 @@ export default function AdminDashboard() {
   };
 
   const handleRunDailyCron = async () => {
-    setCronRunning(true); setCronResult(null);
-    try {
-      const { data, error } = await supabase.functions.invoke('daily-cron-tasks', { body: {} });
-      if (error) { toast.error('দৈনিক কাজ চালাতে সমস্যা: ' + error.message); setCronResult({ success: false, error: error.message }); }
-      else if (data) { setCronResult(data); if (data.success) { toast.success('দৈনিক কাজ সম্পন্ন!'); fetchAll(); } }
-    } catch (e: any) { toast.error('সমস্যা: ' + e.message); }
-    setCronRunning(false);
-  };
+  setCronRunning(true);
+  setCronResult(null);
+  
+  try {
+    // 1. Gold daily distribution
+    let goldCount = 0;
+    const { data: goldUsers } = await supabase
+      .from('mlm_users')
+      .select('id, gold_referral_pending, current_balance, total_income')
+      .gt('gold_referral_pending', 0)
+      .eq('is_active', true)
+      .neq('role', 'admin');
+
+    const dailyGold = parseFloat((1800 / 365).toFixed(2));
+
+    for (const u of (goldUsers || [])) {
+      if (u.gold_referral_pending >= dailyGold) {
+        await supabase.from('mlm_users').update({
+          current_balance: (u.current_balance || 0) + dailyGold,
+          total_income: (u.total_income || 0) + dailyGold,
+          gold_referral_pending: u.gold_referral_pending - dailyGold,
+        }).eq('id', u.id);
+
+        await supabase.from('mlm_transactions').insert({
+          user_id: u.id,
+          type: 'gold_daily',
+          amount: dailyGold,
+          description: `গোল্ড রেফার দৈনিক ইনকাম ৳${dailyGold}`,
+        });
+        goldCount++;
+      }
+    }
+
+    // 2. Bakeya accumulation for gold buyers
+    const dailyBakeya = Math.round((100000 * 0.36) / 365);
+    await supabase.rpc('sql', {
+      query: `UPDATE mlm_users SET bakeya_amount = bakeya_amount + ${dailyBakeya} 
+              WHERE package_type = 'gold' AND is_active = true AND role != 'admin'`
+    });
+
+    // 3. Expire inactive IDs
+    let deactivatedCount = 0;
+    const { data: expiredUsers } = await supabase
+      .from('mlm_users')
+      .select('id')
+      .lt('expires_at', new Date().toISOString())
+      .eq('is_active', true)
+      .neq('role', 'admin')
+      .neq('package_type', 'gold')
+      .neq('package_type', 'shareholder');
+
+    for (const u of (expiredUsers || [])) {
+      // Check monthly PV
+      const { data: profile } = await supabase
+        .from('mlm_users')
+        .select('monthly_pv_purchased')
+        .eq('id', u.id)
+        .single();
+
+      if (!profile || profile.monthly_pv_purchased < 100) {
+        await supabase
+          .from('mlm_users')
+          .update({ is_active: false })
+          .eq('id', u.id);
+        deactivatedCount++;
+      }
+    }
+
+    // 4. Monthly PV reset (1st of month)
+    const today = new Date();
+    let pvReset = -1;
+    if (today.getDate() === 1) {
+      await supabase
+        .from('mlm_users')
+        .update({ monthly_pv_purchased: 0 })
+        .neq('role', 'admin');
+      pvReset = 1;
+    }
+
+    setCronResult({
+      success: true,
+      results: {
+        goldReferralDistributed: goldCount,
+        bakeyaAccumulated: (goldUsers || []).length,
+        deactivatedUsers: deactivatedCount,
+        monthlyPvReset: pvReset,
+      }
+    });
+    toast.success('দৈনিক কাজ সম্পন্ন!');
+    fetchAll();
+  } catch (e: any) {
+    toast.error('সমস্যা: ' + e.message);
+    setCronResult({ success: false, error: e.message });
+  }
+  setCronRunning(false);
+};
 
   const handleLockUser = async (userId: string, lock: boolean) => {
     await supabase.from('mlm_users').update({ is_locked: lock }).eq('id', userId);
