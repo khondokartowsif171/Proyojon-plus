@@ -142,13 +142,13 @@ export default function AppLayout() {
               },
               {
                 name: 'গোল্ড প্যাকেজ',
-                points: '৩৬,০০০',
+                points: '১,০০,০০০',
                 unit: 'GP',
-                price: '৩৬,০০০',
+                price: '১,০০,০০০',
                 color: 'from-yellow-500 to-orange-600',
                 shadow: 'shadow-yellow-500/20',
                 icon: <Award size={32} />,
-                features: ['৫% গোল্ড রেফার ইনকাম', '৩৬৫ দিনে দৈনিক বন্টন', '১% জেনারেশন বোনাস', 'সকল ক্ল্যাব সুবিধা', '৩৬৫ দিনের কাউন্টডাউন'],
+                features: ['৫% গোল্ড রেফার ইনকাম', '৩৬৫ দিনে দৈনিক বন্টন', '১% জেনারেশন বোনাস', 'সকল ক্ল্যাব সুবিধা', '৩৬৫দিনের কাউন্টডাউন'],
                 popular: false,
               },
             ].map((pkg, i) => (
