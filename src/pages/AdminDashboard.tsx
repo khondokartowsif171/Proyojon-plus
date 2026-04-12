@@ -300,13 +300,10 @@ export default function AdminDashboard() {
       });
     }
 
-    // ✅ pool.id দিয়ে update — club_type filter এ RLS সমস্যা এড়ানো যায়
+    // ✅ pool.id দিয়ে update, শুধু total_amount শূন্য করো
     const { error: poolError } = await supabase
       .from('mlm_club_pools')
-      .update({
-        total_amount: 0,
-        last_distributed_at: new Date().toISOString()
-      })
+      .update({ total_amount: 0 })
       .eq('id', pool.id);
 
     if (poolError) {
