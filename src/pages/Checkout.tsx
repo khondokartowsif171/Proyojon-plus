@@ -7,7 +7,7 @@ import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import { CreditCard, Truck, ShieldCheck, Smartphone, CheckCircle } from 'lucide-react';
+import { CreditCard, Truck, ShieldCheck, Smartphone, CheckCircle, Star } from 'lucide-react';
 import { toast } from 'sonner';
 
 const STRIPE_ACCOUNT_ID = 'acct_1TKKm8HLRkSRtFTN';
@@ -48,17 +48,25 @@ export default function Checkout() {
   const { user, refreshUser } = useAuth();
   const [clientSecret, setClientSecret] = useState('');
   const [paymentError, setPaymentError] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'mobile'>('mobile');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'mobile' | 'pv'>('mobile');
   const [mobileMethod, setMobileMethod] = useState('bkash');
   const [trxId, setTrxId] = useState('');
   const [senderNumber, setSenderNumber] = useState('');
   const [mobileLoading, setMobileLoading] = useState(false);
   const [mobileSuccess, setMobileSuccess] = useState(false);
+  const [pvLoading, setPvLoading] = useState(false);
   const [shippingAddress, setShippingAddress] = useState({
     name: user?.name || '', email: user?.email || '', phone: user?.phone || '',
     address: '', city: '', state: '', zip: '',
     referrer_name: '', referrer_phone: '',
   });
+
+  // ✅ User এর available PV points (টাকার সমান — 1 PV = 1 টাকা হিসেবে)
+  const userPvPoints = user?.pv_points || 0;
+  // Cart এর মোট PV requirement (product গুলোর pv_points দিয়ে কেনার জন্য)
+  const cartTotalPvRequired = cart.reduce((sum, item) => sum + ((item.pv_points || 0) * item.quantity), 0);
+  // PV দিয়ে কেনা যাবে কিনা
+  const canPayWithPv = userPvPoints >= cartTotalPvRequired && cartTotalPvRequired > 0;
 
   useEffect(() => {
     if (cart.length === 0) { navigate('/cart'); return; }
@@ -83,7 +91,6 @@ export default function Checkout() {
       pv_points: (user.pv_points || 0) + totalPvPoints,
     }).eq('id', user.id);
 
-    // Log PV
     for (const item of cart) {
       if (item.pv_points && item.pv_points > 0) {
         await supabase.from('mlm_pv_log').insert({
@@ -92,18 +99,15 @@ export default function Checkout() {
       }
     }
 
-    // Auto-reactivation check
     if (newPV >= 100) {
       const newExpiry = new Date();
       newExpiry.setDate(newExpiry.getDate() + 30);
       await supabase.from('mlm_users').update({ is_active: true, expires_at: newExpiry.toISOString() }).eq('id', user.id);
 
-      // Process generation bonus for PV
       if (user.referrer_id) {
         await processGenerationBonusChain(user.referrer_id, totalPvPoints, user.id, 1);
       }
 
-      // Distribute to club pools
       if (totalPvPoints >= 100) {
         await distributeToClubPools(totalPvPoints);
       }
@@ -133,9 +137,9 @@ export default function Checkout() {
       { type: 'shareholder_club', amount: Math.floor(pvAmount * 0.10) },
     ];
     for (const pool of pools) {
-      const { data } = await supabase.from('mlm_club_pools').select('total_amount').eq('club_type', pool.type).single();
+      const { data } = await supabase.from('mlm_club_pools').select('id, total_amount').eq('club_type', pool.type).single();
       if (data) {
-        await supabase.from('mlm_club_pools').update({ total_amount: (data.total_amount || 0) + pool.amount }).eq('club_type', pool.type);
+        await supabase.from('mlm_club_pools').update({ total_amount: (data.total_amount || 0) + pool.amount }).eq('id', data.id);
       }
     }
   };
@@ -174,7 +178,6 @@ export default function Checkout() {
     if (!trxId) { toast.error('TRX ID দিন'); return; }
     setMobileLoading(true);
 
-    // Submit for admin verification
     if (user) {
       await supabase.from('mlm_payment_verifications').insert({
         user_id: user.id, amount: Math.round(cartTotal / 100), method: mobileMethod,
@@ -182,10 +185,52 @@ export default function Checkout() {
       });
     }
 
-    // Create order as pending (will be confirmed by admin)
     await createOrder(`mobile_${mobileMethod}_${trxId}`);
     setMobileSuccess(true);
     setMobileLoading(false);
+  };
+
+  // ✅ PV দিয়ে Payment Handler
+  const handlePvPayment = async () => {
+    if (!user) { toast.error('লগইন করুন'); return; }
+    if (!canPayWithPv) {
+      toast.error(`আপনার PV যথেষ্ট নয়। দরকার: ${cartTotalPvRequired} PV, আপনার আছে: ${userPvPoints} PV`);
+      return;
+    }
+    if (!shippingAddress.name || !shippingAddress.phone || !shippingAddress.address) {
+      toast.error('শিপিং তথ্য পূরণ করুন');
+      return;
+    }
+
+    setPvLoading(true);
+    try {
+      // ✅ User এর PV কাটো
+      const newPvPoints = userPvPoints - cartTotalPvRequired;
+      const { error: pvError } = await supabase.from('mlm_users')
+        .update({ pv_points: newPvPoints })
+        .eq('id', user.id);
+
+      if (pvError) {
+        toast.error('PV কাটতে সমস্যা: ' + pvError.message);
+        setPvLoading(false);
+        return;
+      }
+
+      // ✅ PV transaction log
+      await supabase.from('mlm_transactions').insert({
+        user_id: user.id,
+        type: 'pv_payment',
+        amount: -cartTotalPvRequired,
+        description: `PV দিয়ে পণ্য ক্রয় (${cartTotalPvRequired} PV)`,
+      });
+
+      // ✅ Order তৈরি করো
+      await createOrder(`pv_payment_${user.id}_${Date.now()}`);
+      toast.success(`✅ ${cartTotalPvRequired} PV দিয়ে অর্ডার সম্পন্ন!`);
+    } catch (err: any) {
+      toast.error('সমস্যা হয়েছে: ' + err.message);
+    }
+    setPvLoading(false);
   };
 
   const total = cartTotal;
@@ -271,18 +316,38 @@ export default function Checkout() {
                 <CreditCard size={20} className="text-indigo-600" /> পেমেন্ট মাধ্যম
               </h2>
 
-              <div className="grid grid-cols-2 gap-3 mb-6">
+              {/* ✅ ৩টি option: Mobile, Card, PV */}
+              <div className="grid grid-cols-3 gap-3 mb-6">
                 <button onClick={() => setPaymentMethod('mobile')}
                   className={`p-4 rounded-xl border-2 text-center transition-all ${paymentMethod === 'mobile' ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-gray-200 hover:border-gray-300'}`}>
-                  <Smartphone size={24} className="mx-auto mb-2 text-indigo-600" />
-                  <p className="font-semibold text-sm">মোবাইল পেমেন্ট</p>
-                  <p className="text-xs text-gray-500">বিকাশ / নগদ / রকেট</p>
+                  <Smartphone size={22} className="mx-auto mb-2 text-indigo-600" />
+                  <p className="font-semibold text-xs">মোবাইল</p>
+                  <p className="text-[10px] text-gray-500">বিকাশ/নগদ</p>
                 </button>
                 <button onClick={() => setPaymentMethod('card')}
                   className={`p-4 rounded-xl border-2 text-center transition-all ${paymentMethod === 'card' ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-gray-200 hover:border-gray-300'}`}>
-                  <CreditCard size={24} className="mx-auto mb-2 text-indigo-600" />
-                  <p className="font-semibold text-sm">কার্ড পেমেন্ট</p>
-                  <p className="text-xs text-gray-500">Visa / Mastercard</p>
+                  <CreditCard size={22} className="mx-auto mb-2 text-indigo-600" />
+                  <p className="font-semibold text-xs">কার্ড</p>
+                  <p className="text-[10px] text-gray-500">Visa/Master</p>
+                </button>
+
+                {/* ✅ PV Payment Button — PV না থাকলে disabled */}
+                <button
+                  onClick={() => setPaymentMethod('pv')}
+                  disabled={cartTotalPvRequired === 0}
+                  className={`p-4 rounded-xl border-2 text-center transition-all relative ${
+                    paymentMethod === 'pv'
+                      ? 'border-green-500 bg-green-50 shadow-md'
+                      : cartTotalPvRequired === 0
+                      ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
+                      : 'border-gray-200 hover:border-green-300'
+                  }`}>
+                  <Star size={22} className={`mx-auto mb-2 ${paymentMethod === 'pv' ? 'text-green-600' : 'text-green-500'}`} />
+                  <p className="font-semibold text-xs">PV পয়েন্ট</p>
+                  <p className="text-[10px] text-gray-500">{userPvPoints} PV আছে</p>
+                  {canPayWithPv && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-green-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">✓</span>
+                  )}
                 </button>
               </div>
 
@@ -352,6 +417,61 @@ export default function Checkout() {
                   )}
                 </div>
               )}
+
+              {/* ✅ PV Payment Section */}
+              {paymentMethod === 'pv' && (
+                <div className="space-y-4">
+                  {/* PV Balance Card */}
+                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-sm font-semibold text-green-800">আপনার PV ব্যালেন্স</span>
+                      <span className="text-xl font-bold text-green-700">{userPvPoints} PV</span>
+                    </div>
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-sm text-green-700">এই অর্ডারে লাগবে</span>
+                      <span className="text-lg font-bold text-orange-600">{cartTotalPvRequired} PV</span>
+                    </div>
+                    <div className="w-full bg-green-200 rounded-full h-2">
+                      <div
+                        className="bg-green-600 h-2 rounded-full transition-all"
+                        style={{ width: `${Math.min((userPvPoints / Math.max(cartTotalPvRequired, 1)) * 100, 100)}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center mt-3 pt-3 border-t border-green-200">
+                      <span className="text-sm text-green-700">কাটার পর বাকি থাকবে</span>
+                      <span className={`font-bold ${canPayWithPv ? 'text-green-700' : 'text-red-600'}`}>
+                        {userPvPoints - cartTotalPvRequired} PV
+                      </span>
+                    </div>
+                  </div>
+
+                  {canPayWithPv ? (
+                    <>
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                        <p className="text-xs text-green-700 font-medium">
+                          ✅ আপনার কাছে যথেষ্ট PV আছে। অর্ডার করলে {cartTotalPvRequired} PV কেটে নেওয়া হবে।
+                        </p>
+                      </div>
+                      <button
+                        onClick={handlePvPayment}
+                        disabled={pvLoading}
+                        className="w-full py-3.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold rounded-xl hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 transition-all shadow-lg flex items-center justify-center gap-2">
+                        <Star size={18} />
+                        {pvLoading ? 'প্রসেসিং...' : `${cartTotalPvRequired} PV দিয়ে অর্ডার করুন`}
+                      </button>
+                    </>
+                  ) : (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                      <p className="text-red-700 font-semibold text-sm mb-1">❌ PV যথেষ্ট নয়</p>
+                      <p className="text-red-600 text-xs">
+                        দরকার {cartTotalPvRequired} PV, আপনার আছে {userPvPoints} PV।
+                        আরও {cartTotalPvRequired - userPvPoints} PV দরকার।
+                      </p>
+                      <p className="text-gray-500 text-xs mt-2">পণ্য কিনে বা প্যাকেজ নিয়ে PV অর্জন করুন।</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -367,7 +487,9 @@ export default function Checkout() {
                   <div className="flex-1">
                     <p className="text-sm font-medium text-gray-700 line-clamp-1">{item.name}</p>
                     <p className="text-xs text-gray-400">x{item.quantity}</p>
-                    {item.pv_points && item.pv_points > 0 && <p className="text-xs text-green-600 font-medium">{item.pv_points * item.quantity} PV</p>}
+                    {item.pv_points && item.pv_points > 0 && (
+                      <p className="text-xs text-green-600 font-medium">{item.pv_points * item.quantity} PV</p>
+                    )}
                   </div>
                   <span className="text-sm font-bold text-gray-700">৳{((item.price * item.quantity) / 100).toLocaleString()}</span>
                 </div>
@@ -379,14 +501,26 @@ export default function Checkout() {
               {totalPvPoints > 0 && (
                 <div className="flex justify-between text-sm"><span className="text-gray-500">PV পয়েন্ট</span><span className="text-green-600 font-bold">{totalPvPoints} PV</span></div>
               )}
-              <div className="border-t border-gray-100 pt-3 flex justify-between">
-                <span className="font-bold text-gray-900">মোট</span>
-                <span className="font-bold text-xl text-indigo-700">৳{(total / 100).toLocaleString()}</span>
-              </div>
+
+              {/* ✅ PV payment selected হলে আলাদা total দেখাও */}
+              {paymentMethod === 'pv' ? (
+                <div className="border-t border-gray-100 pt-3">
+                  <div className="flex justify-between">
+                    <span className="font-bold text-gray-900">মোট (PV)</span>
+                    <span className="font-bold text-xl text-green-700">{cartTotalPvRequired} PV</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1 text-right">টাকায়: ৳{(total / 100).toLocaleString()}</p>
+                </div>
+              ) : (
+                <div className="border-t border-gray-100 pt-3 flex justify-between">
+                  <span className="font-bold text-gray-900">মোট</span>
+                  <span className="font-bold text-xl text-indigo-700">৳{(total / 100).toLocaleString()}</span>
+                </div>
+              )}
             </div>
 
-            {/* PV Info */}
-            {user && totalPvPoints > 0 && (
+            {/* PV Info box */}
+            {user && totalPvPoints > 0 && paymentMethod !== 'pv' && (
               <div className="mt-4 bg-green-50 rounded-xl p-3 border border-green-100">
                 <p className="text-xs text-green-700 font-medium">
                   এই ক্রয়ে {totalPvPoints} PV পয়েন্ট যোগ হবে। বর্তমান: {user.monthly_pv_purchased || 0}/100 PV
@@ -394,6 +528,14 @@ export default function Checkout() {
                 {(user.monthly_pv_purchased || 0) + totalPvPoints >= 100 && (
                   <p className="text-xs text-green-600 font-bold mt-1">আপনার আইডি স্বয়ংক্রিয়ভাবে রিএকটিভ হবে!</p>
                 )}
+              </div>
+            )}
+
+            {/* ✅ User এর PV balance সবসময় দেখাও */}
+            {user && (
+              <div className="mt-3 bg-gray-50 rounded-xl p-3 border border-gray-100 flex justify-between items-center">
+                <span className="text-xs text-gray-500 flex items-center gap-1"><Star size={12} className="text-green-500" /> আপনার PV ব্যালেন্স</span>
+                <span className="text-sm font-bold text-green-700">{userPvPoints} PV</span>
               </div>
             )}
           </div>
