@@ -278,10 +278,7 @@ export default function AdminDashboard() {
       });
     }
 
-    const { error: poolError } = await supabase
-      .from('mlm_club_pools').update({ total_amount: 0 }).eq('id', pool.id);
-    if (poolError) { toast.error('Pool update সমস্যা: ' + poolError.message); setLoading(false); return; }
-
+    await supabase.from('mlm_club_pools').update({ total_amount: 0 }).eq('id', pool.id);
     toast.success(`✅ ${members.length} জনকে প্রতিজনে ৳${perMember} বন্টন হয়েছে!`);
     fetchAll(); setLoading(false);
   };
@@ -322,7 +319,7 @@ export default function AdminDashboard() {
     fetchAll(); setLoading(false);
   };
 
-  // ── Generation bonus ─────────────────────────────────────────────────────────
+  // ── Generation bonus — শুধু product purchase এর জন্য ────────────────────────
   const distributeGenerationBonus = async (
     userId: string, pvPoints: number, sourceId: string, gen: number,
   ) => {
@@ -361,8 +358,7 @@ export default function AdminDashboard() {
         .eq('id', id);
 
       // ══════════════════════════════════════════════════════════════════════
-      // ✅ CASE 1: Product purchase — PV দাও, তারপর return করো
-      //    Package logic যেন না চলে
+      // ✅ CASE 1: Product purchase — PV দাও, generation bonus দাও, return করো
       // ══════════════════════════════════════════════════════════════════════
       if (pv.purpose === 'product_purchase') {
         const { data: userData } = await supabase
@@ -378,7 +374,6 @@ export default function AdminDashboard() {
             monthly_pv_purchased: newMonthly,
           };
 
-          // ১০০ PV হলে reactivate
           if (newMonthly >= 100) {
             const expiry = new Date();
             expiry.setDate(expiry.getDate() + 30);
@@ -388,12 +383,11 @@ export default function AdminDashboard() {
 
           await supabase.from('mlm_users').update(updates).eq('id', pv.user_id);
 
-          // Generation bonus
+          // ✅ Product purchase এ generation bonus দেওয়া হয়
           if (userData.referrer_id && pvToAdd > 0) {
             await distributeGenerationBonus(userData.referrer_id, pvToAdd, pv.user_id, 1);
           }
 
-          // Club pool
           if (pvToAdd >= 100) {
             for (const [clubType, pct] of Object.entries(clubPoolPcts)) {
               const amt = Math.floor(pvToAdd * pct);
@@ -411,13 +405,13 @@ export default function AdminDashboard() {
         }
 
         toast.success('✅ পণ্য পেমেন্ট অনুমোদিত! PV যোগ হয়েছে।');
-        fetchAll();
-        setLoading(false);
-        return; // ✅ এখানে return — নিচের package logic চলবে না
+        fetchAll(); setLoading(false);
+        return; // ✅ Package logic চলবে না
       }
 
       // ══════════════════════════════════════════════════════════════════════
-      // ✅ CASE 2: Package purchase (customer / shareholder / gold)
+      // ✅ CASE 2: Package purchase — শুধু direct referral commission
+      //    generation bonus নেই (Bug 1 fix)
       // ══════════════════════════════════════════════════════════════════════
       let pvPoints  = 0;
       let psPoints  = 0;
@@ -440,10 +434,6 @@ export default function AdminDashboard() {
       const isGold        = pv.purpose === 'gold_package';
       const isShareholder = pv.purpose === 'shareholder_package';
 
-      // ✅ Club flags — package অনুযায়ী
-      // customer    → daily only
-      // shareholder → daily + shareholder
-      // gold        → সব club
       await supabase.from('mlm_users').update({
         is_active:            true,
         pv_points:            pvPoints,
@@ -460,7 +450,7 @@ export default function AdminDashboard() {
         is_pension_club:      isGold,
       }).eq('id', pv.user_id);
 
-      // ── Referrer commission ──
+      // ── Referrer commission ── (শুধু direct commission, generation bonus নেই)
       const { data: newUser } = await supabase
         .from('mlm_users').select('referrer_id').eq('id', pv.user_id).single();
 
@@ -473,12 +463,13 @@ export default function AdminDashboard() {
           let desc       = '';
 
           if (pv.purpose === 'customer_package') {
-            commission = Math.floor(pvPoints * 0.05);
+            commission = Math.floor(pvPoints * 0.05);   // ৫%
             desc       = 'কাস্টমার রেফার কমিশন (৫%)';
           } else if (pv.purpose === 'shareholder_package') {
-            commission = Math.floor(psPoints * 0.025);
+            commission = Math.floor(psPoints * 0.025);  // ২.৫%
             desc       = 'শেয়ারহোল্ডার রেফার কমিশন (২.৫%)';
           } else if (pv.purpose === 'gold_package') {
+            // ৳১৮০০ — ৩৬৫ দিনে ভাগ করে দৈনিক দেওয়া হবে
             const totalGold = 1800;
             await supabase.from('mlm_users').update({
               gold_referral_income:  (referrer.gold_referral_income || 0) + totalGold,
@@ -494,6 +485,7 @@ export default function AdminDashboard() {
               .update({ bakeya_amount: dailyBakeya }).eq('id', pv.user_id);
           }
 
+          // ✅ Customer ও Shareholder এর direct commission
           if (commission > 0) {
             await supabase.from('mlm_users').update({
               current_balance: (referrer.current_balance || 0) + commission,
@@ -505,9 +497,9 @@ export default function AdminDashboard() {
             });
           }
 
-          if (pvPoints > 0) {
-            await distributeGenerationBonus(referrer.id, pvPoints, pv.user_id, 1);
-          }
+          // ✅ Bug 1 Fix: Package purchase এ generation bonus নেই
+          // শুধু product purchase এ generation bonus যায়
+          // (distributeGenerationBonus call করা হচ্ছে না)
 
           // ✅ Direct count + club upgrade
           const newCount    = (referrer.direct_referrals_count || 0) + 1;
@@ -525,7 +517,7 @@ export default function AdminDashboard() {
         }
       }
 
-      // ── Club pool distribution ──
+      // ── Club pool distribution — PV এর উপর ──
       if (pvPoints >= 100) {
         for (const [clubType, pct] of Object.entries(clubPoolPcts)) {
           const amt = Math.floor(pvPoints * pct);
@@ -582,8 +574,6 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-gray-100">
       <Header />
       <div className="flex">
-
-        {/* Sidebar */}
         <aside className={`${sidebarOpen ? 'w-64' : 'w-16'} bg-gradient-to-b from-gray-900 to-gray-800 min-h-[calc(100vh-64px)] transition-all duration-300 hidden lg:block`}>
           <div className="p-3">
             <button onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -605,9 +595,7 @@ export default function AdminDashboard() {
           </div>
         </aside>
 
-        {/* Main */}
         <main className="flex-1 p-4 lg:p-6 max-w-full overflow-x-hidden">
-
           <div className="flex flex-wrap gap-1.5 mb-4 lg:hidden overflow-x-auto">
             {sidebarItems.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -956,10 +944,10 @@ export default function AdminDashboard() {
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {clubPools.map(pool => {
                     const memberCount =
-                      pool.club_type==='daily_club'       ? users.filter(u=>u.is_daily_club&&u.role!=='admin').length
-                      : pool.club_type==='weekly_club'    ? users.filter(u=>u.is_weekly_club).length
-                      : pool.club_type==='insurance_club' ? users.filter(u=>u.is_insurance_club).length
-                      : pool.club_type==='pension_club'   ? users.filter(u=>u.is_pension_club).length
+                      pool.club_type==='daily_club'         ? users.filter(u=>u.is_daily_club&&u.role!=='admin').length
+                      : pool.club_type==='weekly_club'      ? users.filter(u=>u.is_weekly_club).length
+                      : pool.club_type==='insurance_club'   ? users.filter(u=>u.is_insurance_club).length
+                      : pool.club_type==='pension_club'     ? users.filter(u=>u.is_pension_club).length
                       : pool.club_type==='shareholder_club' ? users.filter(u=>u.is_shareholder_club).length : 0;
                     const perMember = memberCount>0&&pool.total_amount>0 ? Math.floor(pool.total_amount/memberCount) : 0;
                     return (
@@ -1137,7 +1125,7 @@ export default function AdminDashboard() {
                 <div key={f.key}>
                   <label className="text-xs font-medium text-gray-500">{f.label}</label>
                   <input type={f.type} value={editUser[f.key]||''}
-                    onChange={e => setEditUser({...editUser, [f.key]: f.type==='number'?parseInt(e.target.value)||0:e.target.value})}
+                    onChange={e => setEditUser({...editUser,[f.key]:f.type==='number'?parseInt(e.target.value)||0:e.target.value})}
                     className="w-full px-3 py-2 rounded-lg border text-sm" />
                 </div>
               ))}
