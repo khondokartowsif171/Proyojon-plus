@@ -46,7 +46,6 @@ export default function UserDashboard() {
     });
   }, [user]);
 
-  // Real-time balance update
   useEffect(() => {
     if (!user) return;
     const subscription = supabase
@@ -64,8 +63,7 @@ export default function UserDashboard() {
       const interval = setInterval(() => {
         const start = new Date(user.gold_package_start!).getTime();
         const end = start + 365 * 24 * 60 * 60 * 1000;
-        const now = Date.now();
-        const remaining = Math.max(0, end - now);
+        const remaining = Math.max(0, end - Date.now());
         setGoldCountdown({
           days:    Math.floor(remaining / (1000 * 60 * 60 * 24)),
           hours:   Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
@@ -143,8 +141,7 @@ export default function UserDashboard() {
     });
 
     if (!error) {
-      await supabase.from('mlm_users')
-        .update({ current_balance: user.current_balance - amount }).eq('id', user.id);
+      await supabase.from('mlm_users').update({ current_balance: user.current_balance - amount }).eq('id', user.id);
       await supabase.from('mlm_transactions').insert({
         user_id: user.id, type: 'withdrawal', amount: -amount,
         description: `উইথড্রো অনুরোধ - ${withdrawForm.method} (${withdrawForm.account}) - চার্জ: ৳${charge}`,
@@ -172,21 +169,18 @@ export default function UserDashboard() {
     await supabase.from('mlm_users').update({ current_balance: (toUser.current_balance || 0) + amount }).eq('id', toUser.id);
     await supabase.from('mlm_transfers').insert({ from_user_id: user.id, to_user_id: toUser.id, amount });
     await supabase.from('mlm_transactions').insert([
-      { user_id: user.id, type: 'transfer_out', amount: -amount, description: `ট্রান্সফার - ${toUser.name}`, related_user_id: toUser.id },
-      { user_id: toUser.id, type: 'transfer_in', amount, description: `ট্রান্সফার প্রাপ্ত - ${user.name}`, related_user_id: user.id },
+      { user_id: user.id,   type: 'transfer_out', amount: -amount, description: `ট্রান্সফার - ${toUser.name}`,   related_user_id: toUser.id },
+      { user_id: toUser.id, type: 'transfer_in',  amount,          description: `ট্রান্সফার প্রাপ্ত - ${user.name}`, related_user_id: user.id },
     ]);
-
     toast.success(`৳${amount} সফলভাবে ${toUser.name} কে ট্রান্সফার করা হয়েছে`);
     setTransferForm({ amount: '', toEmail: '' });
     await refreshUser(); fetchData(); setLoading(false);
   };
 
-  // ✅ Bug 2: Balance দিয়ে package কেনার function
+  // ── Balance দিয়ে package কেনা ────────────────────────────────────────────────
   const handleBuyPackageWithBalance = async (packageType: string, price: number) => {
     if (!user) return;
-    if ((user.current_balance || 0) < price) {
-      toast.error('পর্যাপ্ত ব্যালেন্স নেই'); return;
-    }
+    if ((user.current_balance || 0) < price) { toast.error('পর্যাপ্ত ব্যালেন্স নেই'); return; }
 
     const pkgNames: Record<string, string> = {
       customer: 'কাস্টমার', shareholder: 'শেয়ারহোল্ডার', gold: 'গোল্ড',
@@ -201,11 +195,9 @@ export default function UserDashboard() {
     const expiry = new Date();
 
     if (packageType === 'customer') {
-      pvPoints = 1000;
-      expiry.setDate(expiry.getDate() + 30);
+      pvPoints = 1000; expiry.setDate(expiry.getDate() + 30);
     } else if (packageType === 'shareholder') {
-      psPoints = 5000; pvPoints = 1000;
-      expiry.setDate(expiry.getDate() + 30);
+      psPoints = 5000; pvPoints = 1000; expiry.setDate(expiry.getDate() + 30);
     } else if (packageType === 'gold') {
       gpPoints = 100000; pvPoints = 1000;
       goldStart = new Date().toISOString();
@@ -215,7 +207,8 @@ export default function UserDashboard() {
     const isGold        = packageType === 'gold';
     const isShareholder = packageType === 'shareholder';
 
-    // Balance কাটো + package activate করো
+    // ✅ Fix 1: Shareholder club — শুধু shareholder package
+    // Gold package এ shareholder club নেই
     await supabase.from('mlm_users').update({
       current_balance:      (user.current_balance || 0) - price,
       package_type:         packageType,
@@ -228,13 +221,12 @@ export default function UserDashboard() {
       is_active:            true,
       activated_at:         new Date().toISOString(),
       is_daily_club:        true,
-      is_shareholder_club:  isGold || isShareholder,
+      is_shareholder_club:  isShareholder,   // ✅ Fix 1
       is_weekly_club:       isGold,
       is_insurance_club:    isGold,
       is_pension_club:      isGold,
     }).eq('id', user.id);
 
-    // Transaction log
     await supabase.from('mlm_transactions').insert({
       user_id:     user.id,
       type:        'package_purchase',
@@ -242,7 +234,7 @@ export default function UserDashboard() {
       description: `ব্যালেন্স থেকে ${pkgNames[packageType]} প্যাকেজ ক্রয়`,
     });
 
-    // Referrer commission (শুধু direct, generation bonus নেই)
+    // Referrer commission — শুধু direct, generation bonus নেই
     if (user.referrer_id) {
       const { data: referrer } = await supabase
         .from('mlm_users').select('*').eq('id', user.referrer_id).single();
@@ -263,13 +255,10 @@ export default function UserDashboard() {
             gold_referral_pending: (referrer.gold_referral_pending || 0) + 1800,
           }).eq('id', referrer.id);
           await supabase.from('mlm_transactions').insert({
-            user_id:     referrer.id,
-            type:        'referral_income',
-            amount:      1800,
+            user_id: referrer.id, type: 'referral_income', amount: 1800,
             description: 'গোল্ড রেফার ইনকাম (৳১৮০০, ৩৬৫ দিনে বন্টন)',
             related_user_id: user.id,
           });
-          // Gold buyer এর bakeya শুরু
           const dailyBakeya = Math.round((100000 * 0.36) / 365);
           await supabase.from('mlm_users').update({ bakeya_amount: dailyBakeya }).eq('id', user.id);
         }
@@ -284,29 +273,36 @@ export default function UserDashboard() {
             description: desc, related_user_id: user.id,
           });
         }
+
+        // ✅ Fix 3: Direct count + weekly/insurance/pension club check
+        const newCount    = (referrer.direct_referrals_count || 0) + 1;
+        const refUpdates: any = { direct_referrals_count: newCount };
+
+        if (newCount >= 15 && !referrer.is_weekly_club) {
+          refUpdates.is_weekly_club = true;
+        }
+
+        // ✅ Fix 3: Insurance ও pension — ১৫ জন weekly club member থাকলে
+        if (!referrer.is_insurance_club) {
+          const { data: directRefs } = await supabase
+            .from('mlm_users')
+            .select('id, is_weekly_club')
+            .eq('referrer_id', referrer.id)
+            .eq('is_active', true);
+
+          const weeklyMemberCount = (directRefs || []).filter(r => r.is_weekly_club).length;
+          if (weeklyMemberCount >= 15) {
+            refUpdates.is_insurance_club = true;
+            refUpdates.is_pension_club   = true;
+          }
+        }
+
+        await supabase.from('mlm_users').update(refUpdates).eq('id', referrer.id);
       }
     }
 
-    // Club pool distribution
-    if (pvPoints >= 100) {
-      const pools = [
-        { type: 'daily_club',       pct: 0.30  },
-        { type: 'weekly_club',      pct: 0.025 },
-        { type: 'insurance_club',   pct: 0.025 },
-        { type: 'pension_club',     pct: 0.025 },
-        { type: 'shareholder_club', pct: 0.10  },
-      ];
-      for (const p of pools) {
-        const amt = Math.floor(pvPoints * p.pct);
-        const { data: pool } = await supabase
-          .from('mlm_club_pools').select('id, total_amount').eq('club_type', p.type).single();
-        if (pool) {
-          await supabase.from('mlm_club_pools')
-            .update({ total_amount: (pool.total_amount || 0) + amt })
-            .eq('id', pool.id);
-        }
-      }
-    }
+    // ✅ Fix 2: Package purchase থেকে club pool এ টাকা যাবে না
+    // শুধু PV product purchase থেকে club pool এ টাকা যাবে
 
     toast.success(`✅ ${pkgNames[packageType]} প্যাকেজ সফলভাবে কেনা হয়েছে!`);
     await refreshUser(); fetchData(); setLoading(false);
@@ -326,8 +322,7 @@ export default function UserDashboard() {
 
   const copyReferralLink = () => {
     if (!user) return;
-    const link = `${window.location.origin}/register?ref=${user.id}`;
-    navigator.clipboard.writeText(link);
+    navigator.clipboard.writeText(`${window.location.origin}/register?ref=${user.id}`);
     toast.success('রেফারাল লিংক কপি করা হয়েছে!');
   };
 
@@ -345,7 +340,6 @@ export default function UserDashboard() {
     { id: 'transactions', label: 'লেনদেন',         icon: <FileText size={18} /> },
     { id: 'withdraw',     label: 'উইথড্রো',        icon: <Wallet size={18} /> },
     { id: 'transfer',     label: 'ট্রান্সফার',     icon: <Send size={18} /> },
-    // ✅ Bug 2: নতুন tab
     { id: 'buy_package',  label: 'প্যাকেজ কিনুন', icon: <Package size={18} /> },
     { id: 'profile',      label: 'প্রোফাইল',       icon: <User size={18} /> },
   ];
@@ -356,7 +350,6 @@ export default function UserDashboard() {
     <div className="min-h-screen bg-gray-50">
       <Header />
 
-      {/* Gold countdown */}
       {user.package_type === 'gold' && user.gold_package_start && (
         <div className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white">
           <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-center gap-6">
@@ -384,18 +377,16 @@ export default function UserDashboard() {
 
       {isExpired && (
         <div className="bg-red-500 text-white text-center py-3 text-sm font-medium">
-          আপনার আইডির মেয়াদ শেষ হয়ে গেছে! ১০০ পয়েন্টের পণ্য ক্রয় করে রিএকটিভ করুন।
-          <Link to="/shop" className="underline ml-2 font-bold">শপে যান</Link>
+          আপনার আইডির মেয়াদ শেষ! <Link to="/shop" className="underline ml-2 font-bold">পণ্য কিনুন</Link> বা <button onClick={() => setActiveTab('buy_package')} className="underline ml-1 font-bold">প্যাকেজ কিনুন</button>
         </div>
       )}
       {!isExpired && daysLeft <= 7 && (
         <div className="bg-yellow-500 text-white text-center py-2 text-sm">
-          আপনার আইডির মেয়াদ {daysLeft} দিন বাকি আছে
+          আপনার আইডির মেয়াদ {daysLeft} দিন বাকি
         </div>
       )}
 
       <div className="flex">
-        {/* Sidebar */}
         <aside className={`${sidebarOpen ? 'w-64' : 'w-16'} bg-white border-r border-gray-200 min-h-[calc(100vh-64px)] transition-all duration-300 hidden lg:block`}>
           <div className="p-4">
             <button onClick={() => setSidebarOpen(!sidebarOpen)} className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-gray-100 mb-4">
@@ -415,21 +406,17 @@ export default function UserDashboard() {
           </div>
         </aside>
 
-        {/* Main */}
         <main className="flex-1 p-4 lg:p-8 max-w-full overflow-x-hidden">
-          {/* Mobile tabs */}
           <div className="flex flex-wrap gap-2 mb-6 lg:hidden bg-white rounded-xl p-1.5 shadow-sm border border-gray-100 overflow-x-auto">
             {sidebarItems.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
-                  activeTab === tab.id ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
-                }`}>
-                {tab.label}
+                className={`px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap ${
+                  activeTab === tab.id ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                }`}>{tab.label}
               </button>
             ))}
           </div>
 
-          {/* Welcome */}
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">স্বাগতম, {user.name}!</h1>
@@ -439,16 +426,16 @@ export default function UserDashboard() {
               </p>
             </div>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={copyReferralLink} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors">
+              <button onClick={copyReferralLink} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700">
                 <Share2 size={16} /> রেফার লিংক কপি
               </button>
-              <Link to="/shop" className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors">
+              <Link to="/shop" className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700">
                 <Package size={16} /> শপ
               </Link>
             </div>
           </div>
 
-          {/* PV progress */}
+          {/* PV Progress */}
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
@@ -460,24 +447,18 @@ export default function UserDashboard() {
                   <p className="text-xs text-gray-500">আইডি রিএকটিভেশনের জন্য ১০০ PV প্রয়োজন</p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-2xl font-bold text-green-600">{user.monthly_pv_purchased || 0}<span className="text-sm text-gray-400">/100 PV</span></p>
-              </div>
+              <p className="text-2xl font-bold text-green-600">{user.monthly_pv_purchased || 0}<span className="text-sm text-gray-400">/100 PV</span></p>
             </div>
             <div className="relative w-full h-5 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-1000 ${pvProgress >= 100 ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gradient-to-r from-indigo-500 to-purple-500'}`}
-                style={{ width: `${pvProgress}%` }}
-              />
+              <div className={`h-full rounded-full transition-all ${pvProgress >= 100 ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gradient-to-r from-indigo-500 to-purple-500'}`} style={{ width: `${pvProgress}%` }} />
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-xs font-bold text-white drop-shadow">{Math.round(pvProgress)}%</span>
               </div>
             </div>
-            {pvProgress >= 100 ? (
-              <p className="text-xs text-green-600 font-medium mt-2">✅ লক্ষ্যমাত্রা পূরণ! আপনার আইডি সক্রিয় আছে।</p>
-            ) : (
-              <p className="text-xs text-gray-500 mt-2">আরও {100 - (user.monthly_pv_purchased || 0)} PV প্রয়োজন। <Link to="/shop" className="text-indigo-600 font-medium hover:underline">পণ্য কিনুন</Link></p>
-            )}
+            {pvProgress >= 100
+              ? <p className="text-xs text-green-600 font-medium mt-2">✅ লক্ষ্যমাত্রা পূরণ! আপনার আইডি সক্রিয়।</p>
+              : <p className="text-xs text-gray-500 mt-2">আরও {100 - (user.monthly_pv_purchased || 0)} PV প্রয়োজন। <Link to="/shop" className="text-indigo-600 font-medium hover:underline">পণ্য কিনুন</Link></p>
+            }
           </div>
 
           {/* Stats */}
@@ -517,7 +498,6 @@ export default function UserDashboard() {
             ))}
           </div>
 
-          {/* Bakeya for gold */}
           {user.package_type === 'gold' && (
             <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 mb-6">
               <div className="flex items-center gap-3">
@@ -531,10 +511,8 @@ export default function UserDashboard() {
             </div>
           )}
 
-          {/* Tab content */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
 
-            {/* OVERVIEW */}
             {activeTab === 'overview' && (
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">একাউন্ট তথ্য</h2>
@@ -573,16 +551,15 @@ export default function UserDashboard() {
                   <div className="flex items-center gap-2">
                     <input readOnly value={`${window.location.origin}/register?ref=${user.id}`}
                       className="flex-1 px-3 py-2 bg-white rounded-lg border text-xs font-mono text-gray-600" />
-                    <button onClick={copyReferralLink} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700"><Copy size={14} /></button>
+                    <button onClick={copyReferralLink} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs hover:bg-indigo-700"><Copy size={14} /></button>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* NETWORK */}
             {activeTab === 'network' && (
               <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-2">নেটওয়ার্ক সামারি (Uni-Level)</h2>
+                <h2 className="text-lg font-bold text-gray-900 mb-2">নেটওয়ার্ক সামারি</h2>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
                   <div className="bg-indigo-50 rounded-xl p-4 text-center border border-indigo-100">
                     <p className="text-2xl font-bold text-indigo-700">{totalTeam}</p>
@@ -597,58 +574,54 @@ export default function UserDashboard() {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
-                        <th className="text-left py-3 px-4 text-xs font-semibold rounded-tl-lg">নাম</th>
-                        <th className="text-left py-3 px-4 text-xs font-semibold">আপলাইন</th>
-                        <th className="text-center py-3 px-4 text-xs font-semibold">লেভেল</th>
-                        <th className="text-right py-3 px-4 text-xs font-semibold">আয়</th>
-                        <th className="text-right py-3 px-4 text-xs font-semibold rounded-tr-lg">ব্যালেন্স</th>
-                      </tr>
-                    </thead>
+                    <thead><tr className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+                      <th className="text-left py-3 px-4 text-xs rounded-tl-lg">নাম</th>
+                      <th className="text-left py-3 px-4 text-xs">আপলাইন</th>
+                      <th className="text-center py-3 px-4 text-xs">লেভেল</th>
+                      <th className="text-right py-3 px-4 text-xs">আয়</th>
+                      <th className="text-right py-3 px-4 text-xs rounded-tr-lg">ব্যালেন্স</th>
+                    </tr></thead>
                     <tbody>
-                      {networkMembers.length === 0 ? (
-                        <tr><td colSpan={5} className="text-center py-8 text-gray-400">কোন সদস্য নেই</td></tr>
-                      ) : networkMembers.map((m, i) => (
-                        <tr key={m.id} className={`border-b border-gray-50 ${i%2===0?'bg-white':'bg-gray-50'} hover:bg-indigo-50`}>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${m.is_active?'bg-green-500':'bg-red-400'}`}>
-                                {m.name?.charAt(0)?.toUpperCase()}
+                      {networkMembers.length === 0
+                        ? <tr><td colSpan={5} className="text-center py-8 text-gray-400">কোন সদস্য নেই</td></tr>
+                        : networkMembers.map((m, i) => (
+                          <tr key={m.id} className={`border-b border-gray-50 ${i%2===0?'bg-white':'bg-gray-50'} hover:bg-indigo-50`}>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${m.is_active?'bg-green-500':'bg-red-400'}`}>
+                                  {m.name?.charAt(0)?.toUpperCase()}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-sm">{m.name}</p>
+                                  <p className="text-[10px] text-gray-400">{m.phone || m.email}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-medium text-gray-800 text-sm">{m.name}</p>
-                                <p className="text-[10px] text-gray-400">{m.phone || m.email}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-gray-600 text-xs">{m.upline}</td>
-                          <td className="py-3 px-4 text-center">
-                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                              m.level===1?'bg-blue-100 text-blue-700':m.level===2?'bg-purple-100 text-purple-700':
-                              m.level===3?'bg-green-100 text-green-700':m.level===4?'bg-orange-100 text-orange-700':'bg-red-100 text-red-700'
-                            }`}>L{m.level}</span>
-                          </td>
-                          <td className="py-3 px-4 text-right font-bold text-green-600">৳{(m.total_income||0).toLocaleString()}</td>
-                          <td className="py-3 px-4 text-right font-bold text-indigo-600">৳{(m.current_balance||0).toLocaleString()}</td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="py-3 px-4 text-xs text-gray-600">{m.upline}</td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                                m.level===1?'bg-blue-100 text-blue-700':m.level===2?'bg-purple-100 text-purple-700':
+                                m.level===3?'bg-green-100 text-green-700':m.level===4?'bg-orange-100 text-orange-700':'bg-red-100 text-red-700'
+                              }`}>L{m.level}</span>
+                            </td>
+                            <td className="py-3 px-4 text-right font-bold text-green-600">৳{(m.total_income||0).toLocaleString()}</td>
+                            <td className="py-3 px-4 text-right font-bold text-indigo-600">৳{(m.current_balance||0).toLocaleString()}</td>
+                          </tr>
+                        ))
+                      }
                     </tbody>
                   </table>
                 </div>
               </div>
             )}
 
-            {/* GENERATIONS */}
             {activeTab === 'generations' && (
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">জেনারেশন টেবিল (PV বোনাস ১%)</h2>
                 {generations.map((gen, i) => (
                   <div key={i} className="mb-6">
                     <h3 className="text-sm font-bold text-indigo-600 mb-2">জেনারেশন {i + 1} ({gen.length} জন)</h3>
-                    {gen.length === 0 ? (
-                      <p className="text-xs text-gray-400 py-2">কোন সদস্য নেই</p>
-                    ) : (
+                    {gen.length === 0 ? <p className="text-xs text-gray-400 py-2">কোন সদস্য নেই</p> : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                           <thead><tr className="bg-gray-50">
@@ -659,8 +632,8 @@ export default function UserDashboard() {
                           <tbody>
                             {gen.map((member: any) => (
                               <tr key={member.id} className="border-b border-gray-50">
-                                <td className="py-2 px-3 text-gray-700">{member.name}</td>
-                                <td className="py-2 px-3 text-gray-500 text-xs">{member.phone || member.email}</td>
+                                <td className="py-2 px-3">{member.name}</td>
+                                <td className="py-2 px-3 text-xs text-gray-500">{member.phone || member.email}</td>
                                 <td className="py-2 px-3">
                                   <span className={`text-xs px-2 py-0.5 rounded-full ${member.package_type==='gold'?'bg-yellow-100 text-yellow-700':member.package_type==='shareholder'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>
                                     {member.package_type==='customer'?'কাস্টমার':member.package_type==='shareholder'?'শেয়ারহোল্ডার':'গোল্ড'}
@@ -679,7 +652,6 @@ export default function UserDashboard() {
               </div>
             )}
 
-            {/* COMMISSION */}
             {activeTab === 'commission' && (
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">কমিশন বিবরণ</h2>
@@ -687,13 +659,14 @@ export default function UserDashboard() {
                   <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 border border-blue-100">
                     <h3 className="font-bold text-blue-800 mb-3">ডিরেক্ট কমিশন</h3>
                     <div className="space-y-2 text-sm">
-                      <div className="flex justify-between"><span className="text-gray-600">কাস্টমার রেফার (৫%)</span><span className="font-bold text-blue-700">৳{transactions.filter(t=>t.type==='referral_income').reduce((s,t)=>s+Math.max(0,t.amount),0).toLocaleString()}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-600">গোল্ড রেফার ইনকাম</span><span className="font-bold text-yellow-600">৳{(user.gold_referral_income||0).toLocaleString()}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-600">রেফার ইনকাম</span><span className="font-bold text-blue-700">৳{transactions.filter(t=>t.type==='referral_income').reduce((s,t)=>s+Math.max(0,t.amount),0).toLocaleString()}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-600">গোল্ড রেফার মোট</span><span className="font-bold text-yellow-600">৳{(user.gold_referral_income||0).toLocaleString()}</span></div>
                       <div className="flex justify-between"><span className="text-gray-600">গোল্ড রেফার পেন্ডিং</span><span className="font-bold text-orange-600">৳{(user.gold_referral_pending||0).toLocaleString()}</span></div>
                     </div>
                   </div>
                   <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border border-green-100">
-                    <h3 className="font-bold text-green-800 mb-3">লেভেল ওয়াইজ কমিশন (১% x ৫ লেভেল)</h3>
+                    <h3 className="font-bold text-green-800 mb-3">জেনারেশন বোনাস (১% × ৫ লেভেল)</h3>
+                    <p className="text-xs text-green-600 mb-3">শুধু PV product purchase এ পাবেন</p>
                     <div className="space-y-2 text-sm">
                       {[1,2,3,4,5].map(level => {
                         const genBonus = transactions.filter(t=>t.type==='generation_bonus'&&t.description?.includes(`জেনারেশন ${level}`)).reduce((s,t)=>s+Math.max(0,t.amount),0);
@@ -725,36 +698,35 @@ export default function UserDashboard() {
               </div>
             )}
 
-            {/* TRANSACTIONS */}
             {activeTab === 'transactions' && (
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">লেনদেনের ইতিহাস</h2>
-                {transactions.length === 0 ? (
-                  <p className="text-gray-400 text-center py-8">কোন লেনদেন নেই</p>
-                ) : (
-                  <div className="space-y-2">
-                    {transactions.map(txn => (
-                      <div key={txn.id} className="flex items-center justify-between py-3 px-4 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${txn.amount>=0?'bg-green-100 text-green-600':'bg-red-100 text-red-600'}`}>
-                            {txn.amount>=0?<ArrowDownRight size={16} />:<ArrowUpRight size={16} />}
+                {transactions.length === 0
+                  ? <p className="text-gray-400 text-center py-8">কোন লেনদেন নেই</p>
+                  : (
+                    <div className="space-y-2">
+                      {transactions.map(txn => (
+                        <div key={txn.id} className="flex items-center justify-between py-3 px-4 rounded-xl bg-gray-50 hover:bg-gray-100">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${txn.amount>=0?'bg-green-100 text-green-600':'bg-red-100 text-red-600'}`}>
+                              {txn.amount>=0?<ArrowDownRight size={16} />:<ArrowUpRight size={16} />}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-700">{txn.description}</p>
+                              <p className="text-xs text-gray-400">{new Date(txn.created_at).toLocaleDateString('bn-BD')}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-700">{txn.description}</p>
-                            <p className="text-xs text-gray-400">{new Date(txn.created_at).toLocaleDateString('bn-BD')}</p>
-                          </div>
+                          <span className={`font-bold text-sm ${txn.amount>=0?'text-green-600':'text-red-600'}`}>
+                            {txn.amount>=0?'+':''}৳{Math.abs(txn.amount).toLocaleString()}
+                          </span>
                         </div>
-                        <span className={`font-bold text-sm ${txn.amount>=0?'text-green-600':'text-red-600'}`}>
-                          {txn.amount>=0?'+':''}৳{Math.abs(txn.amount).toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )
+                }
               </div>
             )}
 
-            {/* WITHDRAW */}
             {activeTab === 'withdraw' && (
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">উইথড্রো (চার্জ ৫%)</h2>
@@ -763,7 +735,7 @@ export default function UserDashboard() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">পরিমাণ (৳)</label>
                       <input type="number" value={withdrawForm.amount} onChange={e => setWithdrawForm({...withdrawForm,amount:e.target.value})} required
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-sm" placeholder="পরিমাণ লিখুন" />
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="পরিমাণ লিখুন" />
                       {withdrawForm.amount && (
                         <p className="text-xs text-gray-500 mt-1">
                           চার্জ: ৳{Math.floor(parseInt(withdrawForm.amount)*0.05)} | পাবেন: ৳{parseInt(withdrawForm.amount)-Math.floor(parseInt(withdrawForm.amount)*0.05)}
@@ -780,9 +752,8 @@ export default function UserDashboard() {
                           { key: 'bank',   label: 'ব্যাংক', color: '#1a56db' },
                         ].map(m => (
                           <button key={m.key} type="button" onClick={() => setWithdrawForm({...withdrawForm,method:m.key})}
-                            className={`py-3 rounded-xl text-xs font-bold border-2 transition-all ${withdrawForm.method===m.key?'text-white shadow-lg':'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
-                            style={withdrawForm.method===m.key?{backgroundColor:m.color,borderColor:m.color}:{}}>
-                            {m.label}
+                            className={`py-3 rounded-xl text-xs font-bold border-2 transition-all ${withdrawForm.method===m.key?'text-white shadow-lg':'bg-white text-gray-600 border-gray-200'}`}
+                            style={withdrawForm.method===m.key?{backgroundColor:m.color,borderColor:m.color}:{}}>{m.label}
                           </button>
                         ))}
                       </div>
@@ -790,10 +761,10 @@ export default function UserDashboard() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">একাউন্ট নম্বর</label>
                       <input type="text" value={withdrawForm.account} onChange={e => setWithdrawForm({...withdrawForm,account:e.target.value})} required
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-sm" placeholder="একাউন্ট নম্বর" />
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="একাউন্ট নম্বর" />
                     </div>
                     <button type="submit" disabled={loading}
-                      className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all">
+                      className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50">
                       {loading?'প্রসেসিং...':'উইথড্রো অনুরোধ করুন'}
                     </button>
                   </form>
@@ -821,7 +792,6 @@ export default function UserDashboard() {
               </div>
             )}
 
-            {/* TRANSFER */}
             {activeTab === 'transfer' && (
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">আইডি টু আইডি ট্রান্সফার</h2>
@@ -829,22 +799,22 @@ export default function UserDashboard() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">প্রাপকের ইমেইল</label>
                     <input type="email" value={transferForm.toEmail} onChange={e => setTransferForm({...transferForm,toEmail:e.target.value})} required
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-sm" placeholder="প্রাপকের ইমেইল" />
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="প্রাপকের ইমেইল" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">পরিমাণ (৳)</label>
                     <input type="number" value={transferForm.amount} onChange={e => setTransferForm({...transferForm,amount:e.target.value})} required
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-sm" placeholder="পরিমাণ লিখুন" />
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="পরিমাণ লিখুন" />
                   </div>
                   <button type="submit" disabled={loading}
-                    className="w-full py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold rounded-xl hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 transition-all">
+                    className="w-full py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold rounded-xl hover:from-green-700 hover:to-emerald-700 disabled:opacity-50">
                     {loading?'প্রসেসিং...':'ট্রান্সফার করুন'}
                   </button>
                 </form>
               </div>
             )}
 
-            {/* ✅ BUY PACKAGE — ব্যালেন্স দিয়ে package কিনুন */}
+            {/* ✅ BUY PACKAGE */}
             {activeTab === 'buy_package' && (
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-2">ব্যালেন্স দিয়ে প্যাকেজ কিনুন</h2>
@@ -852,12 +822,11 @@ export default function UserDashboard() {
                   আপনার কারেন্ট ব্যালেন্স:{' '}
                   <span className="font-bold text-green-600">৳{(user.current_balance || 0).toLocaleString()}</span>
                 </p>
-
                 <div className="grid md:grid-cols-3 gap-6">
                   {[
-                    { type: 'customer',    name: 'কাস্টমার প্যাকেজ',    price: 1000,   points: '১,০০০ PV',    color: 'from-blue-500 to-cyan-600',     desc: '৩০ দিনের মেয়াদ, ডেইলি ক্লাব' },
-                    { type: 'shareholder', name: 'শেয়ারহোল্ডার প্যাকেজ', price: 5000,  points: '৫,০০০ SP',    color: 'from-purple-500 to-pink-600',   desc: 'শেয়ারহোল্ডার ক্লাব সুবিধা সহ' },
-                    { type: 'gold',        name: 'গোল্ড প্যাকেজ',        price: 100000, points: '১,০০,০০০ GP', color: 'from-yellow-500 to-orange-600', desc: '৩৬৫ দিন, সকল ক্লাব সুবিধা' },
+                    { type: 'customer',    name: 'কাস্টমার প্যাকেজ',    price: 1000,   points: '১,০০০ PV',    color: 'from-blue-500 to-cyan-600',     desc: '৩০ দিন মেয়াদ • ডেইলি ক্লাব',            note: '' },
+                    { type: 'shareholder', name: 'শেয়ারহোল্ডার প্যাকেজ', price: 5000,  points: '৫,০০০ SP',    color: 'from-purple-500 to-pink-600',   desc: '৩০ দিন মেয়াদ • ডেইলি + শেয়ারহোল্ডার ক্লাব', note: '✅ শেয়ারহোল্ডার ক্লাব পাবেন' },
+                    { type: 'gold',        name: 'গোল্ড প্যাকেজ',        price: 100000, points: '১,০০,০০০ GP', color: 'from-yellow-500 to-orange-600', desc: '৩৬৫ দিন • উইকলি + ইনসুরেন্স + পেনশন ক্লাব',  note: '⚠️ শেয়ারহোল্ডার ক্লাব নেই' },
                   ].map(pkg => {
                     const canAfford = (user.current_balance || 0) >= pkg.price;
                     return (
@@ -867,48 +836,43 @@ export default function UserDashboard() {
                         </div>
                         <h3 className="font-bold text-gray-900 mb-1">{pkg.name}</h3>
                         <p className="text-sm text-gray-500 mb-1">{pkg.points}</p>
-                        <p className="text-xs text-gray-400 mb-3">{pkg.desc}</p>
+                        <p className="text-xs text-gray-400 mb-1">{pkg.desc}</p>
+                        {pkg.note && <p className={`text-xs mb-2 ${pkg.type==='gold'?'text-amber-600':'text-green-600'}`}>{pkg.note}</p>}
                         <p className="text-2xl font-bold text-gray-900 mb-4">৳{pkg.price.toLocaleString()}</p>
-
                         {!canAfford && (
-                          <p className="text-xs text-red-500 mb-2">
-                            আরও ৳{(pkg.price - (user.current_balance || 0)).toLocaleString()} প্রয়োজন
-                          </p>
+                          <p className="text-xs text-red-500 mb-2">আরও ৳{(pkg.price-(user.current_balance||0)).toLocaleString()} প্রয়োজন</p>
                         )}
-
                         <button
                           onClick={() => handleBuyPackageWithBalance(pkg.type, pkg.price)}
                           disabled={loading || !canAfford}
-                          className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all text-white bg-gradient-to-r ${pkg.color} hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed`}
-                        >
+                          className={`w-full py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r ${pkg.color} hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all`}>
                           {loading ? 'প্রসেসিং...' : !canAfford ? 'ব্যালেন্স কম' : 'কিনুন'}
                         </button>
                       </div>
                     );
                   })}
                 </div>
-
                 <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
                   <p className="text-xs text-blue-700 font-medium">
-                    ℹ️ ব্যালেন্স দিয়ে প্যাকেজ কিনলে সাথে সাথে আপনার আইডি activate হবে এবং রেফারারের commission যাবে।
+                    ℹ️ ব্যালেন্স দিয়ে কিনলে সাথে সাথে আইডি activate হবে এবং রেফারারের commission যাবে। Package purchase থেকে club pool এ টাকা যাবে না — শুধু পণ্য কেনা (PV) থেকে যাবে।
                   </p>
                 </div>
               </div>
             )}
 
-            {/* PROFILE */}
             {activeTab === 'profile' && (
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold text-gray-900">প্রোফাইল</h2>
-                  {!profileEdit ? (
-                    <button onClick={() => setProfileEdit(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"><Edit size={14} /> এডিট</button>
-                  ) : (
-                    <div className="flex gap-2">
-                      <button onClick={() => setProfileEdit(false)} className="px-4 py-2 border border-gray-200 rounded-lg text-sm hover:bg-gray-50"><X size={14} /></button>
-                      <button onClick={handleProfileSave} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"><Save size={14} /> সেভ</button>
-                    </div>
-                  )}
+                  {!profileEdit
+                    ? <button onClick={() => setProfileEdit(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"><Edit size={14} /> এডিট</button>
+                    : (
+                      <div className="flex gap-2">
+                        <button onClick={() => setProfileEdit(false)} className="px-4 py-2 border border-gray-200 rounded-lg text-sm hover:bg-gray-50"><X size={14} /></button>
+                        <button onClick={handleProfileSave} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"><Save size={14} /> সেভ</button>
+                      </div>
+                    )
+                  }
                 </div>
                 <div className="grid md:grid-cols-2 gap-4">
                   {[
@@ -921,13 +885,12 @@ export default function UserDashboard() {
                   ].map(field => (
                     <div key={field.key}>
                       <label className="block text-xs font-medium text-gray-500 mb-1">{field.label}</label>
-                      {profileEdit ? (
-                        <input value={(profileForm as any)[field.key]||''}
-                          onChange={e => setProfileForm({...profileForm,[field.key]:e.target.value})}
-                          className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:border-indigo-500 outline-none" />
-                      ) : (
-                        <p className="px-3 py-2.5 bg-gray-50 rounded-lg text-sm text-gray-700">{(profileForm as any)[field.key]||'-'}</p>
-                      )}
+                      {profileEdit
+                        ? <input value={(profileForm as any)[field.key]||''}
+                            onChange={e => setProfileForm({...profileForm,[field.key]:e.target.value})}
+                            className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:border-indigo-500 outline-none" />
+                        : <p className="px-3 py-2.5 bg-gray-50 rounded-lg text-sm text-gray-700">{(profileForm as any)[field.key]||'-'}</p>
+                      }
                     </div>
                   ))}
                 </div>
