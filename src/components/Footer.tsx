@@ -52,7 +52,7 @@ export default function Footer() {
               </li>
               <li className="flex items-center gap-2 text-sm">
                 <Mail size={16} className="text-yellow-400" />
-                <span>info@proyojonplus.com</span>
+                <span>info@proyojonplus24.com</span>
               </li>
               <li className="flex items-start gap-2 text-sm">
                 <MapPin size={16} className="text-yellow-400 mt-0.5" />
