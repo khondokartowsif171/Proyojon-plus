@@ -12,6 +12,15 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+// Club pool percentages — PV sales থেকে
+const PV_CLUB_PCTS: Record<string, number> = {
+  daily_club:       0.30,
+  weekly_club:      0.025,
+  insurance_club:   0.0125,
+  pension_club:     0.0125,
+  shareholder_club: 0.10,
+};
+
 export default function UserDashboard() {
   const { user, refreshUser, logout } = useAuth();
   const navigate = useNavigate();
@@ -48,27 +57,25 @@ export default function UserDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    const subscription = supabase
+    const sub = supabase
       .channel('user_balance')
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'mlm_users',
-        filter: `id=eq.${user.id}`,
-      }, () => { refreshUser(); })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mlm_users', filter: `id=eq.${user.id}` },
+        () => { refreshUser(); })
       .subscribe();
-    return () => { supabase.removeChannel(subscription); };
+    return () => { supabase.removeChannel(sub); };
   }, [user]);
 
   useEffect(() => {
     if (user?.package_type === 'gold' && user.gold_package_start) {
       const interval = setInterval(() => {
         const start = new Date(user.gold_package_start!).getTime();
-        const end = start + 365 * 24 * 60 * 60 * 1000;
-        const remaining = Math.max(0, end - Date.now());
+        const end   = start + 365 * 24 * 60 * 60 * 1000;
+        const rem   = Math.max(0, end - Date.now());
         setGoldCountdown({
-          days:    Math.floor(remaining / (1000 * 60 * 60 * 24)),
-          hours:   Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-          minutes: Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60)),
-          seconds: Math.floor((remaining % (1000 * 60)) / 1000),
+          days:    Math.floor(rem / (1000 * 60 * 60 * 24)),
+          hours:   Math.floor((rem % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+          minutes: Math.floor((rem % (1000 * 60 * 60)) / (1000 * 60)),
+          seconds: Math.floor((rem % (1000 * 60)) / 1000),
         });
       }, 1000);
       return () => clearInterval(interval);
@@ -119,7 +126,6 @@ export default function UserDashboard() {
         allMembers.push({ ...m, level: i + 1, upline: parent?.name || '' });
       }
     }
-
     setGenerations(gens);
     setNetworkMembers(allMembers);
   };
@@ -146,7 +152,7 @@ export default function UserDashboard() {
         user_id: user.id, type: 'withdrawal', amount: -amount,
         description: `উইথড্রো অনুরোধ - ${withdrawForm.method} (${withdrawForm.account}) - চার্জ: ৳${charge}`,
       });
-      toast.success(`উইথড্রো অনুরোধ সফল! নেট পরিমাণ: ৳${netAmount}`);
+      toast.success(`উইথড্রো অনুরোধ সফল! নেট: ৳${netAmount}`);
       setWithdrawForm({ amount: '', method: 'bkash', account: '' });
       await refreshUser(); fetchData();
     } else { toast.error('উইথড্রো করতে সমস্যা হয়েছে'); }
@@ -177,6 +183,20 @@ export default function UserDashboard() {
     await refreshUser(); fetchData(); setLoading(false);
   };
 
+  // ── Club pool helper ──────────────────────────────────────────────────────────
+  const addToClubPools = async (pvAmount: number) => {
+    for (const [clubType, pct] of Object.entries(PV_CLUB_PCTS)) {
+      const amt = Math.floor(pvAmount * pct);
+      if (amt <= 0) continue;
+      const { data: pool } = await supabase
+        .from('mlm_club_pools').select('id, total_amount').eq('club_type', clubType).single();
+      if (pool) {
+        await supabase.from('mlm_club_pools')
+          .update({ total_amount: (pool.total_amount || 0) + amt }).eq('id', pool.id);
+      }
+    }
+  };
+
   // ── Balance দিয়ে package কেনা ────────────────────────────────────────────────
   const handleBuyPackageWithBalance = async (packageType: string, price: number) => {
     if (!user) return;
@@ -190,42 +210,52 @@ export default function UserDashboard() {
 
     setLoading(true);
 
+    const isCustomer    = packageType === 'customer';
+    const isShareholder = packageType === 'shareholder';
+    const isGold        = packageType === 'gold';
+
     let pvPoints = 0, psPoints = 0, gpPoints = 0;
     let goldStart = null;
     const expiry = new Date();
 
-    if (packageType === 'customer') {
+    if (isCustomer) {
       pvPoints = 1000; expiry.setDate(expiry.getDate() + 30);
-    } else if (packageType === 'shareholder') {
-      psPoints = 5000; pvPoints = 1000; expiry.setDate(expiry.getDate() + 30);
-    } else if (packageType === 'gold') {
-      gpPoints = 100000; pvPoints = 1000;
+    } else if (isShareholder) {
+      // ✅ Shareholder — শুধু psPoints, PV নেই
+      psPoints = 5000; expiry.setDate(expiry.getDate() + 30);
+    } else if (isGold) {
+      gpPoints = 100000;
       goldStart = new Date().toISOString();
       expiry.setDate(expiry.getDate() + 365);
     }
 
-    const isGold        = packageType === 'gold';
-    const isShareholder = packageType === 'shareholder';
+    // ✅ সমস্যা ৩ fix: balance আগে read করি, তারপর নতুন balance calculate করি
+    // `undefined` দিলে field overwrite হয় না Supabase তে
+    const newBalance = (user.current_balance || 0) - price;
 
-    // ✅ Fix 1: Shareholder club — শুধু shareholder package
-    // Gold package এ shareholder club নেই
-    await supabase.from('mlm_users').update({
-      current_balance:      (user.current_balance || 0) - price,
+    const updatePayload: any = {
+      current_balance:      newBalance,          // ✅ সঠিক balance
       package_type:         packageType,
-      pv_points:            pvPoints,
-      ps_points:            psPoints,
-      gp_points:            gpPoints,
-      monthly_pv_purchased: pvPoints,
-      gold_package_start:   goldStart,
       expires_at:           expiry.toISOString(),
       is_active:            true,
       activated_at:         new Date().toISOString(),
-      is_daily_club:        true,
-      is_shareholder_club:  isShareholder,   // ✅ Fix 1
-      is_weekly_club:       isGold,
-      is_insurance_club:    isGold,
-      is_pension_club:      isGold,
-    }).eq('id', user.id);
+      gold_package_start:   goldStart,
+      monthly_pv_purchased: isCustomer ? pvPoints : 0,
+
+      // ✅ Club flags সঠিকভাবে set
+      is_daily_club:        isCustomer,    // customer only
+      is_shareholder_club:  isShareholder, // shareholder only
+      is_weekly_club:       false,         // gold এ কোনো club নেই
+      is_insurance_club:    false,
+      is_pension_club:      false,
+    };
+
+    // ✅ Points — শুধু যে package এর জন্য প্রযোজ্য সেটা set করো
+    if (isCustomer)    updatePayload.pv_points = pvPoints;
+    if (isShareholder) updatePayload.ps_points = psPoints;
+    if (isGold)        updatePayload.gp_points = gpPoints;
+
+    await supabase.from('mlm_users').update(updatePayload).eq('id', user.id);
 
     await supabase.from('mlm_transactions').insert({
       user_id:     user.id,
@@ -234,7 +264,12 @@ export default function UserDashboard() {
       description: `ব্যালেন্স থেকে ${pkgNames[packageType]} প্যাকেজ ক্রয়`,
     });
 
-    // Referrer commission — শুধু direct, generation bonus নেই
+    // ✅ Customer package activate হলে club pool এ টাকা যাবে
+    if (isCustomer && pvPoints >= 100) {
+      await addToClubPools(pvPoints);
+    }
+
+    // Referrer commission
     if (user.referrer_id) {
       const { data: referrer } = await supabase
         .from('mlm_users').select('*').eq('id', user.referrer_id).single();
@@ -243,13 +278,13 @@ export default function UserDashboard() {
         let commission = 0;
         let desc       = '';
 
-        if (packageType === 'customer') {
+        if (isCustomer) {
           commission = Math.floor(pvPoints * 0.05);
           desc       = 'কাস্টমার রেফার কমিশন (৫%)';
-        } else if (packageType === 'shareholder') {
+        } else if (isShareholder) {
           commission = Math.floor(psPoints * 0.025);
           desc       = 'শেয়ারহোল্ডার রেফার কমিশন (২.৫%)';
-        } else if (packageType === 'gold') {
+        } else if (isGold) {
           await supabase.from('mlm_users').update({
             gold_referral_income:  (referrer.gold_referral_income || 0) + 1800,
             gold_referral_pending: (referrer.gold_referral_pending || 0) + 1800,
@@ -274,7 +309,7 @@ export default function UserDashboard() {
           });
         }
 
-        // ✅ Fix 3: Direct count + weekly/insurance/pension club check
+        // Direct count + club upgrade
         const newCount    = (referrer.direct_referrals_count || 0) + 1;
         const refUpdates: any = { direct_referrals_count: newCount };
 
@@ -282,16 +317,12 @@ export default function UserDashboard() {
           refUpdates.is_weekly_club = true;
         }
 
-        // ✅ Fix 3: Insurance ও pension — ১৫ জন weekly club member থাকলে
         if (!referrer.is_insurance_club) {
           const { data: directRefs } = await supabase
-            .from('mlm_users')
-            .select('id, is_weekly_club')
-            .eq('referrer_id', referrer.id)
-            .eq('is_active', true);
-
-          const weeklyMemberCount = (directRefs || []).filter(r => r.is_weekly_club).length;
-          if (weeklyMemberCount >= 15) {
+            .from('mlm_users').select('id, is_weekly_club')
+            .eq('referrer_id', referrer.id).eq('is_active', true);
+          const weeklyCount = (directRefs || []).filter(r => r.is_weekly_club).length;
+          if (weeklyCount >= 15) {
             refUpdates.is_insurance_club = true;
             refUpdates.is_pension_club   = true;
           }
@@ -300,9 +331,6 @@ export default function UserDashboard() {
         await supabase.from('mlm_users').update(refUpdates).eq('id', referrer.id);
       }
     }
-
-    // ✅ Fix 2: Package purchase থেকে club pool এ টাকা যাবে না
-    // শুধু PV product purchase থেকে club pool এ টাকা যাবে
 
     toast.success(`✅ ${pkgNames[packageType]} প্যাকেজ সফলভাবে কেনা হয়েছে!`);
     await refreshUser(); fetchData(); setLoading(false);
@@ -377,10 +405,10 @@ export default function UserDashboard() {
 
       {isExpired && (
         <div className="bg-red-500 text-white text-center py-3 text-sm font-medium">
-          আপনার আইডির মেয়াদ শেষ! <Link to="/shop" className="underline ml-2 font-bold">পণ্য কিনুন</Link> বা <button onClick={() => setActiveTab('buy_package')} className="underline ml-1 font-bold">প্যাকেজ কিনুন</button>
+          আপনার আইডির মেয়াদ শেষ! <Link to="/shop" className="underline ml-2 font-bold">পণ্য কিনুন</Link>
         </div>
       )}
-      {!isExpired && daysLeft <= 7 && (
+      {!isExpired && daysLeft <= 7 && user.package_type === 'customer' && (
         <div className="bg-yellow-500 text-white text-center py-2 text-sm">
           আপনার আইডির মেয়াদ {daysLeft} দিন বাকি
         </div>
@@ -435,31 +463,33 @@ export default function UserDashboard() {
             </div>
           </div>
 
-          {/* PV Progress */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center text-white">
-                  <Target size={20} />
+          {/* PV Progress — শুধু customer এর জন্য */}
+          {user.package_type === 'customer' && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center text-white">
+                    <Target size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-sm">মাসিক PV লক্ষ্যমাত্রা</h3>
+                    <p className="text-xs text-gray-500">আইডি রিএকটিভেশনের জন্য ১০০ PV প্রয়োজন</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-gray-900 text-sm">মাসিক PV লক্ষ্যমাত্রা</h3>
-                  <p className="text-xs text-gray-500">আইডি রিএকটিভেশনের জন্য ১০০ PV প্রয়োজন</p>
+                <p className="text-2xl font-bold text-green-600">{user.monthly_pv_purchased || 0}<span className="text-sm text-gray-400">/100 PV</span></p>
+              </div>
+              <div className="relative w-full h-5 bg-gray-100 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full transition-all ${pvProgress >= 100 ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gradient-to-r from-indigo-500 to-purple-500'}`} style={{ width: `${pvProgress}%` }} />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-xs font-bold text-white drop-shadow">{Math.round(pvProgress)}%</span>
                 </div>
               </div>
-              <p className="text-2xl font-bold text-green-600">{user.monthly_pv_purchased || 0}<span className="text-sm text-gray-400">/100 PV</span></p>
+              {pvProgress >= 100
+                ? <p className="text-xs text-green-600 font-medium mt-2">✅ লক্ষ্যমাত্রা পূরণ!</p>
+                : <p className="text-xs text-gray-500 mt-2">আরও {100 - (user.monthly_pv_purchased || 0)} PV প্রয়োজন। <Link to="/shop" className="text-indigo-600 font-medium hover:underline">পণ্য কিনুন</Link></p>
+              }
             </div>
-            <div className="relative w-full h-5 bg-gray-100 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full transition-all ${pvProgress >= 100 ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gradient-to-r from-indigo-500 to-purple-500'}`} style={{ width: `${pvProgress}%` }} />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-xs font-bold text-white drop-shadow">{Math.round(pvProgress)}%</span>
-              </div>
-            </div>
-            {pvProgress >= 100
-              ? <p className="text-xs text-green-600 font-medium mt-2">✅ লক্ষ্যমাত্রা পূরণ! আপনার আইডি সক্রিয়।</p>
-              : <p className="text-xs text-gray-500 mt-2">আরও {100 - (user.monthly_pv_purchased || 0)} PV প্রয়োজন। <Link to="/shop" className="text-indigo-600 font-medium hover:underline">পণ্য কিনুন</Link></p>
-            }
-          </div>
+          )}
 
           {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -480,11 +510,11 @@ export default function UserDashboard() {
           {/* Club status */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
             {[
-              { label: 'ডেইলি ক্লাব',        active: user.is_daily_club,       icon: <Gift size={18} /> },
-              { label: 'উইকলি ক্লাব',        active: user.is_weekly_club,      icon: <Clock size={18} /> },
-              { label: 'ইনসুরেন্স ক্লাব',   active: user.is_insurance_club,   icon: <Shield size={18} /> },
-              { label: 'পেনশন ক্লাব',        active: user.is_pension_club,     icon: <Crown size={18} /> },
-              { label: 'শেয়ারহোল্ডার ক্লাব', active: user.is_shareholder_club, icon: <Award size={18} /> },
+              { label: 'ডেইলি ক্লাব',        active: user.is_daily_club,       icon: <Gift size={18} />,   note: 'Customer only' },
+              { label: 'উইকলি ক্লাব',        active: user.is_weekly_club,      icon: <Clock size={18} />,  note: '১৫ referral' },
+              { label: 'ইনসুরেন্স ক্লাব',   active: user.is_insurance_club,   icon: <Shield size={18} />, note: '১৫ weekly refs' },
+              { label: 'পেনশন ক্লাব',        active: user.is_pension_club,     icon: <Crown size={18} />,  note: '১৫ weekly refs' },
+              { label: 'শেয়ারহোল্ডার ক্লাব', active: user.is_shareholder_club, icon: <Award size={18} />,  note: 'Shareholder only' },
             ].map((club, i) => (
               <div key={i} className={`rounded-xl p-4 border ${club.active ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
                 <div className="flex items-center gap-2 mb-1">
@@ -533,10 +563,10 @@ export default function UserDashboard() {
                   </div>
                   <div className="space-y-3">
                     {[
-                      { label: 'PV পয়েন্ট',           value: user.pv_points },
-                      { label: 'PS পয়েন্ট',           value: user.ps_points },
-                      { label: 'GP পয়েন্ট',           value: user.gp_points },
-                      { label: 'মাসিক PV ক্রয়',       value: `${user.monthly_pv_purchased}/100` },
+                      { label: 'PV পয়েন্ট',           value: user.pv_points || 0 },
+                      { label: 'PS পয়েন্ট',           value: user.ps_points || 0 },
+                      { label: 'GP পয়েন্ট',           value: user.gp_points || 0 },
+                      { label: 'মাসিক PV ক্রয়',       value: `${user.monthly_pv_purchased || 0}/100` },
                       { label: 'গোল্ড রেফার পেন্ডিং', value: `৳${(user.gold_referral_pending || 0).toLocaleString()}` },
                     ].map((item, i) => (
                       <div key={i} className="flex justify-between py-2 border-b border-gray-100">
@@ -639,7 +669,7 @@ export default function UserDashboard() {
                                     {member.package_type==='customer'?'কাস্টমার':member.package_type==='shareholder'?'শেয়ারহোল্ডার':'গোল্ড'}
                                   </span>
                                 </td>
-                                <td className="py-2 px-3 font-medium">{member.pv_points}</td>
+                                <td className="py-2 px-3 font-medium">{member.pv_points || 0}</td>
                                 <td className="py-2 px-3"><span className={`text-xs ${member.is_active?'text-green-600':'text-red-500'}`}>{member.is_active?'সক্রিয়':'নিষ্ক্রিয়'}</span></td>
                               </tr>
                             ))}
@@ -657,16 +687,16 @@ export default function UserDashboard() {
                 <h2 className="text-lg font-bold text-gray-900 mb-4">কমিশন বিবরণ</h2>
                 <div className="grid md:grid-cols-2 gap-6 mb-6">
                   <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 border border-blue-100">
-                    <h3 className="font-bold text-blue-800 mb-3">ডিরেক্ট কমিশন</h3>
+                    <h3 className="font-bold text-blue-800 mb-3">ডিরেক্ট রেফার কমিশন</h3>
                     <div className="space-y-2 text-sm">
-                      <div className="flex justify-between"><span className="text-gray-600">রেফার ইনকাম</span><span className="font-bold text-blue-700">৳{transactions.filter(t=>t.type==='referral_income').reduce((s,t)=>s+Math.max(0,t.amount),0).toLocaleString()}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-600">রেফার ইনকাম মোট</span><span className="font-bold text-blue-700">৳{transactions.filter(t=>t.type==='referral_income').reduce((s,t)=>s+Math.max(0,t.amount),0).toLocaleString()}</span></div>
                       <div className="flex justify-between"><span className="text-gray-600">গোল্ড রেফার মোট</span><span className="font-bold text-yellow-600">৳{(user.gold_referral_income||0).toLocaleString()}</span></div>
                       <div className="flex justify-between"><span className="text-gray-600">গোল্ড রেফার পেন্ডিং</span><span className="font-bold text-orange-600">৳{(user.gold_referral_pending||0).toLocaleString()}</span></div>
                     </div>
                   </div>
                   <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border border-green-100">
-                    <h3 className="font-bold text-green-800 mb-3">জেনারেশন বোনাস (১% × ৫ লেভেল)</h3>
-                    <p className="text-xs text-green-600 mb-3">শুধু PV product purchase এ পাবেন</p>
+                    <h3 className="font-bold text-green-800 mb-1">জেনারেশন বোনাস (১% × ৫ লেভেল)</h3>
+                    <p className="text-xs text-green-600 mb-3">শুধু PV product purchase এ</p>
                     <div className="space-y-2 text-sm">
                       {[1,2,3,4,5].map(level => {
                         const genBonus = transactions.filter(t=>t.type==='generation_bonus'&&t.description?.includes(`জেনারেশন ${level}`)).reduce((s,t)=>s+Math.max(0,t.amount),0);
@@ -814,19 +844,32 @@ export default function UserDashboard() {
               </div>
             )}
 
-            {/* ✅ BUY PACKAGE */}
             {activeTab === 'buy_package' && (
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-2">ব্যালেন্স দিয়ে প্যাকেজ কিনুন</h2>
                 <p className="text-sm text-gray-500 mb-6">
-                  আপনার কারেন্ট ব্যালেন্স:{' '}
-                  <span className="font-bold text-green-600">৳{(user.current_balance || 0).toLocaleString()}</span>
+                  আপনার কারেন্ট ব্যালেন্স: <span className="font-bold text-green-600">৳{(user.current_balance || 0).toLocaleString()}</span>
                 </p>
                 <div className="grid md:grid-cols-3 gap-6">
                   {[
-                    { type: 'customer',    name: 'কাস্টমার প্যাকেজ',    price: 1000,   points: '১,০০০ PV',    color: 'from-blue-500 to-cyan-600',     desc: '৩০ দিন মেয়াদ • ডেইলি ক্লাব',            note: '' },
-                    { type: 'shareholder', name: 'শেয়ারহোল্ডার প্যাকেজ', price: 5000,  points: '৫,০০০ SP',    color: 'from-purple-500 to-pink-600',   desc: '৩০ দিন মেয়াদ • ডেইলি + শেয়ারহোল্ডার ক্লাব', note: '✅ শেয়ারহোল্ডার ক্লাব পাবেন' },
-                    { type: 'gold',        name: 'গোল্ড প্যাকেজ',        price: 100000, points: '১,০০,০০০ GP', color: 'from-yellow-500 to-orange-600', desc: '৩৬৫ দিন • উইকলি + ইনসুরেন্স + পেনশন ক্লাব',  note: '⚠️ শেয়ারহোল্ডার ক্লাব নেই' },
+                    {
+                      type: 'customer', name: 'কাস্টমার প্যাকেজ', price: 1000,
+                      points: '১,০০০ PV', color: 'from-blue-500 to-cyan-600',
+                      clubs: ['ডেইলি ক্লাব'],
+                      note: 'Daily 30% • Weekly 2.5% • Insurance 1.25% • Pension 1.25% pool',
+                    },
+                    {
+                      type: 'shareholder', name: 'শেয়ারহোল্ডার প্যাকেজ', price: 5000,
+                      points: '৫,০০০ SP', color: 'from-purple-500 to-pink-600',
+                      clubs: ['শেয়ারহোল্ডার ক্লাব'],
+                      note: 'শুধু Shareholder club income পাবেন',
+                    },
+                    {
+                      type: 'gold', name: 'গোল্ড প্যাকেজ', price: 100000,
+                      points: '১,০০,০০০ GP', color: 'from-yellow-500 to-orange-600',
+                      clubs: [],
+                      note: 'কোনো club নেই • শুধু active ID • referral income',
+                    },
                   ].map(pkg => {
                     const canAfford = (user.current_balance || 0) >= pkg.price;
                     return (
@@ -835,9 +878,14 @@ export default function UserDashboard() {
                           <Package size={22} />
                         </div>
                         <h3 className="font-bold text-gray-900 mb-1">{pkg.name}</h3>
-                        <p className="text-sm text-gray-500 mb-1">{pkg.points}</p>
-                        <p className="text-xs text-gray-400 mb-1">{pkg.desc}</p>
-                        {pkg.note && <p className={`text-xs mb-2 ${pkg.type==='gold'?'text-amber-600':'text-green-600'}`}>{pkg.note}</p>}
+                        <p className="text-sm text-gray-500 mb-2">{pkg.points}</p>
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {pkg.clubs.length > 0
+                            ? pkg.clubs.map(c => <span key={c} className="text-[10px] px-2 py-0.5 bg-green-100 text-green-700 rounded-full">{c}</span>)
+                            : <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">কোনো ক্লাব নেই</span>
+                          }
+                        </div>
+                        <p className="text-xs text-gray-400 mb-3">{pkg.note}</p>
                         <p className="text-2xl font-bold text-gray-900 mb-4">৳{pkg.price.toLocaleString()}</p>
                         {!canAfford && (
                           <p className="text-xs text-red-500 mb-2">আরও ৳{(pkg.price-(user.current_balance||0)).toLocaleString()} প্রয়োজন</p>
@@ -851,11 +899,6 @@ export default function UserDashboard() {
                       </div>
                     );
                   })}
-                </div>
-                <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
-                  <p className="text-xs text-blue-700 font-medium">
-                    ℹ️ ব্যালেন্স দিয়ে কিনলে সাথে সাথে আইডি activate হবে এবং রেফারারের commission যাবে। Package purchase থেকে club pool এ টাকা যাবে না — শুধু পণ্য কেনা (PV) থেকে যাবে।
-                  </p>
                 </div>
               </div>
             )}

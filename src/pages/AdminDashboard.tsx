@@ -22,13 +22,17 @@ const clubLabels: Record<string, string> = {
   shareholder_club: 'শেয়ারহোল্ডার ক্লাব',
 };
 
-// Club pool percentages — শুধু PV purchase থেকে
-const clubPoolPcts: Record<string, number> = {
+// ✅ সঠিক percentage — document অনুযায়ী:
+// Customer package activate হলে:
+//   Daily 30%, Weekly 2.5%, Insurance 1.25%, Pension 1.25% (মিলিয়ে 2.5%)
+// PV sales হলে:
+//   Shareholder club 10%
+const PV_CLUB_PCTS: Record<string, number> = {
   daily_club:       0.30,
   weekly_club:      0.025,
-  insurance_club:   0.025,
-  pension_club:     0.025,
-  shareholder_club: 0.10,
+  insurance_club:   0.0125,  // ✅ Insurance+Pension মিলিয়ে 2.5%, প্রতিটা 1.25%
+  pension_club:     0.0125,
+  shareholder_club: 0.10,    // ✅ শুধু PV sales থেকে
 };
 
 export default function AdminDashboard() {
@@ -258,8 +262,8 @@ export default function AdminDashboard() {
     else if (clubType === 'weekly_club')    query = query.eq('is_weekly_club', true);
     else if (clubType === 'insurance_club') query = query.eq('is_insurance_club', true);
     else if (clubType === 'pension_club')   query = query.eq('is_pension_club', true);
-    // ✅ Fix 1: Shareholder club — শুধু shareholder package holders
-    else if (clubType === 'shareholder_club') query = query.eq('is_shareholder_club', true);
+    // ✅ Shareholder club — শুধু shareholder package holders
+    else if (clubType === 'shareholder_club') query = query.eq('is_shareholder_club', true).eq('package_type', 'shareholder');
 
     const { data: members } = await query;
     if (!members || members.length === 0) {
@@ -321,7 +325,7 @@ export default function AdminDashboard() {
     fetchAll(); setLoading(false);
   };
 
-  // ── Generation bonus — শুধু product purchase এর জন্য ────────────────────────
+  // ── Generation bonus — শুধু PV product purchase এর জন্য ─────────────────────
   const distributeGenerationBonus = async (
     userId: string, pvPoints: number, sourceId: string, gen: number,
   ) => {
@@ -348,6 +352,22 @@ export default function AdminDashboard() {
     }
   };
 
+  // ── Club pool এ টাকা জমানোর helper ──────────────────────────────────────────
+  const addToClubPools = async (pvAmount: number) => {
+    for (const [clubType, pct] of Object.entries(PV_CLUB_PCTS)) {
+      const amt = Math.floor(pvAmount * pct);
+      if (amt <= 0) continue;
+      const { data: pool } = await supabase
+        .from('mlm_club_pools').select('id, total_amount')
+        .eq('club_type', clubType).single();
+      if (pool) {
+        await supabase.from('mlm_club_pools')
+          .update({ total_amount: (pool.total_amount || 0) + amt })
+          .eq('id', pool.id);
+      }
+    }
+  };
+
   // ── Payment approve ──────────────────────────────────────────────────────────
   const handleApprovePayment = async (id: string, approve: boolean) => {
     const pv = paymentVerifications.find(p => p.id === id);
@@ -360,7 +380,8 @@ export default function AdminDashboard() {
         .eq('id', id);
 
       // ══════════════════════════════════════════════════════════════════════
-      // CASE 1: Product purchase — PV দাও + generation bonus + club pool
+      // CASE 1: Product purchase (PV sales)
+      // ✅ সমস্যা ১ fix: Club pool এ টাকা ঢুকবে
       // ══════════════════════════════════════════════════════════════════════
       if (pv.purpose === 'product_purchase') {
         const { data: userData } = await supabase
@@ -385,82 +406,77 @@ export default function AdminDashboard() {
 
           await supabase.from('mlm_users').update(updates).eq('id', pv.user_id);
 
-          // Generation bonus — শুধু PV purchase এ
+          // Generation bonus
           if (userData.referrer_id && pvToAdd > 0) {
             await distributeGenerationBonus(userData.referrer_id, pvToAdd, pv.user_id, 1);
           }
 
-          // ✅ Fix 2: Club pool — শুধু PV purchase থেকে জমা হবে
-          if (pvToAdd >= 100) {
-            for (const [clubType, pct] of Object.entries(clubPoolPcts)) {
-              const amt = Math.floor(pvToAdd * pct);
-              if (amt <= 0) continue;
-              const { data: pool } = await supabase
-                .from('mlm_club_pools').select('id, total_amount')
-                .eq('club_type', clubType).single();
-              if (pool) {
-                await supabase.from('mlm_club_pools')
-                  .update({ total_amount: (pool.total_amount || 0) + amt })
-                  .eq('id', pool.id);
-              }
-            }
+          // ✅ সমস্যা ১ fix: PV sales হলে সব club pool এ টাকা যাবে
+          if (pvToAdd >= 1) {
+            await addToClubPools(pvToAdd);
           }
         }
 
-        toast.success('✅ পণ্য পেমেন্ট অনুমোদিত! PV যোগ হয়েছে।');
+        toast.success('✅ পণ্য পেমেন্ট অনুমোদিত! PV ও Club pool আপডেট হয়েছে।');
         fetchAll(); setLoading(false);
         return;
       }
 
       // ══════════════════════════════════════════════════════════════════════
-      // CASE 2: Package purchase — শুধু direct referral commission
-      // ✅ Fix 2: Club pool এ টাকা যাবে না (package purchase থেকে)
-      // ✅ Fix 1: Gold package এ shareholder club নেই
+      // CASE 2: Package purchase
+      // ✅ সমস্যা ২ fix: Shareholder package এ daily club নেই
+      // ✅ সমস্যা ৪ fix: Gold package এ কোনো club নেই
       // ══════════════════════════════════════════════════════════════════════
+      const isCustomer    = pv.purpose === 'customer_package';
+      const isShareholder = pv.purpose === 'shareholder_package';
+      const isGold        = pv.purpose === 'gold_package';
+
       let pvPoints  = 0;
       let psPoints  = 0;
       let gpPoints  = 0;
       let goldStart = null;
       const expiry  = new Date();
 
-      if (pv.purpose === 'customer_package') {
+      if (isCustomer) {
         pvPoints = 1000;
         expiry.setDate(expiry.getDate() + 30);
-      } else if (pv.purpose === 'shareholder_package') {
-        psPoints = 5000; pvPoints = 1000;
+      } else if (isShareholder) {
+        // ✅ সমস্যা ৩ fix: Shareholder package এ PV নেই (psPoints only)
+        psPoints = 5000;
         expiry.setDate(expiry.getDate() + 30);
-      } else if (pv.purpose === 'gold_package') {
-        gpPoints  = 100000; pvPoints = 1000;
+      } else if (isGold) {
+        gpPoints  = 100000;
         goldStart = new Date().toISOString();
         expiry.setDate(expiry.getDate() + 365);
       }
 
-      const isGold        = pv.purpose === 'gold_package';
-      const isShareholder = pv.purpose === 'shareholder_package';
-
       await supabase.from('mlm_users').update({
         is_active:            true,
-        pv_points:            pvPoints,
-        ps_points:            psPoints,
-        gp_points:            gpPoints,
-        monthly_pv_purchased: pvPoints,
+        pv_points:            isCustomer ? pvPoints : undefined,  // customer only
+        ps_points:            isShareholder ? psPoints : undefined,
+        gp_points:            isGold ? gpPoints : undefined,
+        monthly_pv_purchased: isCustomer ? pvPoints : 0,
         gold_package_start:   goldStart,
         expires_at:           expiry.toISOString(),
         activated_at:         new Date().toISOString(),
-        is_daily_club:        true,
 
-        // ✅ Fix 1: Shareholder club — শুধু shareholder package
-        // Gold package এ shareholder club নেই (document অনুযায়ী)
-        is_shareholder_club: isShareholder,
-
-        // Gold package → weekly, insurance, pension club পাবে
-        is_weekly_club:   isGold,
-        is_insurance_club: isGold,
-        is_pension_club:   isGold,
-
+        // ✅ Club flags:
+        // Customer → daily only
+        // Shareholder → shareholder only (daily নেই)
+        // Gold → কোনো club নেই
+        is_daily_club:        isCustomer,    // ✅ customer only
+        is_shareholder_club:  isShareholder, // ✅ shareholder only
+        is_weekly_club:       false,
+        is_insurance_club:    false,
+        is_pension_club:      false,
       }).eq('id', pv.user_id);
 
-      // ── Referrer commission — শুধু direct, generation bonus নেই ──
+      // ✅ Customer package activate হলে club pool এ টাকা যাবে
+      if (isCustomer && pvPoints >= 100) {
+        await addToClubPools(pvPoints);
+      }
+
+      // ── Referrer commission ──
       const { data: newUser } = await supabase
         .from('mlm_users').select('referrer_id').eq('id', pv.user_id).single();
 
@@ -472,13 +488,13 @@ export default function AdminDashboard() {
           let commission = 0;
           let desc       = '';
 
-          if (pv.purpose === 'customer_package') {
-            commission = Math.floor(pvPoints * 0.05);   // ৫%
+          if (isCustomer) {
+            commission = Math.floor(pvPoints * 0.05);
             desc       = 'কাস্টমার রেফার কমিশন (৫%)';
-          } else if (pv.purpose === 'shareholder_package') {
-            commission = Math.floor(psPoints * 0.025);  // ২.৫%
+          } else if (isShareholder) {
+            commission = Math.floor(psPoints * 0.025);
             desc       = 'শেয়ারহোল্ডার রেফার কমিশন (২.৫%)';
-          } else if (pv.purpose === 'gold_package') {
+          } else if (isGold) {
             const totalGold = 1800;
             await supabase.from('mlm_users').update({
               gold_referral_income:  (referrer.gold_referral_income || 0) + totalGold,
@@ -505,9 +521,7 @@ export default function AdminDashboard() {
             });
           }
 
-          // ✅ Fix 3: Direct count বাড়াও
-          // Weekly club: ১৫ direct referral হলে
-          // Insurance/Pension club: ১৫ জন যারা WEEKLY CLUB MEMBER তাদের থাকলে
+          // Direct count + club upgrade
           const newCount    = (referrer.direct_referrals_count || 0) + 1;
           const refUpdates: any = { direct_referrals_count: newCount };
 
@@ -516,17 +530,15 @@ export default function AdminDashboard() {
             toast.success(`🎉 ${referrer.name} উইকলি ক্লাবে যোগ হয়েছে!`);
           }
 
-          // ✅ Fix 3: Insurance ও pension — ১৫ জন weekly club member থাকলে
+          // Insurance ও pension: ১৫ জন weekly club member থাকলে
           if (!referrer.is_insurance_club) {
-            // referrer এর direct referrals যারা weekly club member
             const { data: directRefs } = await supabase
               .from('mlm_users')
               .select('id, is_weekly_club')
               .eq('referrer_id', referrer.id)
               .eq('is_active', true);
-
-            const weeklyMemberCount = (directRefs || []).filter(r => r.is_weekly_club).length;
-            if (weeklyMemberCount >= 15) {
+            const weeklyCount = (directRefs || []).filter(r => r.is_weekly_club).length;
+            if (weeklyCount >= 15) {
               refUpdates.is_insurance_club = true;
               refUpdates.is_pension_club   = true;
               toast.success(`🎉 ${referrer.name} ইনসুরেন্স ও পেনশন ক্লাবে যোগ হয়েছে!`);
@@ -536,9 +548,6 @@ export default function AdminDashboard() {
           await supabase.from('mlm_users').update(refUpdates).eq('id', referrer.id);
         }
       }
-
-      // ✅ Fix 2: Package purchase এ club pool এ টাকা যাবে না
-      // শুধু product purchase (PV) থেকে club pool এ টাকা যাবে
 
       toast.success('✅ অনুমোদিত! কমিশন বিতরণ হয়েছে।');
 
@@ -771,7 +780,7 @@ export default function AdminDashboard() {
 
             {activeTab === 'network' && (
               <div>
-                <h2 className="text-lg font-bold mb-4">নেটওয়ার্ক টেবিল (Uni-Level)</h2>
+                <h2 className="text-lg font-bold mb-4">নেটওয়ার্ক টেবিল</h2>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead><tr className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
@@ -787,10 +796,10 @@ export default function AdminDashboard() {
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ${m.is_active?'bg-green-500':'bg-red-400'}`}>
                                 {m.name?.charAt(0)?.toUpperCase()}
                               </div>
-                              <div><p className="font-medium text-gray-800 text-xs">{m.name}</p><p className="text-[10px] text-gray-400">{m.phone}</p></div>
+                              <div><p className="font-medium text-xs">{m.name}</p><p className="text-[10px] text-gray-400">{m.phone}</p></div>
                             </div>
                           </td>
-                          <td className="py-2.5 px-4 text-gray-600 text-xs">{m.upline}</td>
+                          <td className="py-2.5 px-4 text-xs text-gray-600">{m.upline}</td>
                           <td className="py-2.5 px-4">
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${m.package_type==='gold'?'bg-yellow-100 text-yellow-700':m.package_type==='shareholder'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>
                               {m.package_type==='customer'?'কাস্টমার':m.package_type==='shareholder'?'শেয়ারহোল্ডার':'গোল্ড'}
@@ -946,8 +955,12 @@ export default function AdminDashboard() {
             {activeTab === 'clubs' && (
               <div>
                 <h2 className="text-lg font-bold mb-1">ক্লাব বোনাস বন্টন</h2>
-                <p className="text-xs text-gray-500 mb-1">Daily 30% • Weekly 2.5% • Insurance 2.5% • Pension 2.5% • Shareholder 10% (PV purchase থেকে)</p>
-                <p className="text-xs text-amber-600 mb-4">⚠️ শেয়ারহোল্ডার ক্লাব — শুধু shareholder package holders পাবেন</p>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-xs text-blue-800 space-y-1">
+                  <p>📌 <strong>Customer package activate</strong> → Daily 30% • Weekly 2.5% • Insurance 1.25% • Pension 1.25%</p>
+                  <p>📌 <strong>PV sales (পণ্য বিক্রয়)</strong> → উপরের সব + Shareholder 10%</p>
+                  <p>📌 <strong>Shareholder club</strong> → শুধু shareholder package holders পাবেন</p>
+                  <p>📌 <strong>Gold package</strong> → কোনো club নেই</p>
+                </div>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {clubPools.map(pool => {
                     const memberCount =
@@ -955,15 +968,19 @@ export default function AdminDashboard() {
                       : pool.club_type==='weekly_club'      ? users.filter(u=>u.is_weekly_club).length
                       : pool.club_type==='insurance_club'   ? users.filter(u=>u.is_insurance_club).length
                       : pool.club_type==='pension_club'     ? users.filter(u=>u.is_pension_club).length
-                      // ✅ Fix 1: shareholder club — শুধু shareholder package
                       : pool.club_type==='shareholder_club' ? users.filter(u=>u.is_shareholder_club&&u.package_type==='shareholder').length : 0;
                     const perMember = memberCount>0&&pool.total_amount>0 ? Math.floor(pool.total_amount/memberCount) : 0;
+                    const pctLabel =
+                      pool.club_type==='daily_club'?'৩০%'
+                      :pool.club_type==='shareholder_club'?'১০%'
+                      :pool.club_type==='insurance_club'||pool.club_type==='pension_club'?'১.২৫%'
+                      :'২.৫%';
                     return (
                       <div key={pool.id} className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 border border-gray-200">
                         <h3 className="font-bold text-gray-800 mb-1">{clubLabels[pool.club_type]||pool.club_type}</h3>
-                        <p className="text-xs text-gray-400 mb-2">
-                          {pool.club_type==='daily_club'?'৩০%':pool.club_type==='shareholder_club'?'১০%':'২.৫%'} PV pool
-                          {pool.club_type==='shareholder_club' && ' • শুধু শেয়ারহোল্ডার প্যাকেজ'}
+                        <p className="text-xs text-gray-400 mb-2">{pctLabel} PV pool
+                          {pool.club_type==='shareholder_club' && ' • শুধু শেয়ারহোল্ডার'}
+                          {pool.club_type==='daily_club' && ' • Customer package'}
                         </p>
                         <p className="text-2xl font-bold text-indigo-600 mb-1">৳{(pool.total_amount||0).toLocaleString()}</p>
                         <p className="text-xs text-gray-500 mb-1">সদস্য: {memberCount} জন</p>
