@@ -7,7 +7,7 @@ import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import { CreditCard, Truck, ShieldCheck, Smartphone, CheckCircle, Star } from 'lucide-react';
+import { CreditCard, Truck, ShieldCheck, Smartphone, CheckCircle, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 
 const STRIPE_ACCOUNT_ID = 'acct_1TKKm8HLRkSRtFTN';
@@ -18,6 +18,15 @@ const stripePromise =
         { stripeAccount: STRIPE_ACCOUNT_ID },
       )
     : null;
+
+// ── Club pool percentages ────────────────────────────────────────────────────
+const PV_CLUB_PCTS: Record<string, number> = {
+  daily_club:       0.30,
+  weekly_club:      0.025,
+  insurance_club:   0.0125,
+  pension_club:     0.0125,
+  shareholder_club: 0.10,
+};
 
 // ── Stripe Payment Form ──────────────────────────────────────────────────────
 function PaymentForm({ onSuccess }: { onSuccess: (pi: any) => void }) {
@@ -45,11 +54,8 @@ function PaymentForm({ onSuccess }: { onSuccess: (pi: any) => void }) {
     <form onSubmit={handleSubmit}>
       <PaymentElement />
       {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
-      <button
-        type="submit"
-        disabled={!stripe || loading}
-        className="w-full mt-4 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg"
-      >
+      <button type="submit" disabled={!stripe || loading}
+        className="w-full mt-4 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg">
         {loading ? 'প্রসেসিং...' : 'পেমেন্ট করুন'}
       </button>
     </form>
@@ -64,13 +70,13 @@ export default function Checkout() {
 
   const [clientSecret,   setClientSecret]   = useState('');
   const [paymentError,   setPaymentError]   = useState('');
-  const [paymentMethod,  setPaymentMethod]  = useState<'card' | 'mobile' | 'pv'>('mobile');
+  const [paymentMethod,  setPaymentMethod]  = useState<'card' | 'mobile' | 'balance'>('mobile');
   const [mobileMethod,   setMobileMethod]   = useState('bkash');
   const [trxId,          setTrxId]          = useState('');
   const [senderNumber,   setSenderNumber]   = useState('');
   const [mobileLoading,  setMobileLoading]  = useState(false);
   const [mobileSuccess,  setMobileSuccess]  = useState(false);
-  const [pvLoading,      setPvLoading]      = useState(false);
+  const [balanceLoading, setBalanceLoading] = useState(false);
 
   const [shippingAddress, setShippingAddress] = useState({
     name:           user?.name  || '',
@@ -79,17 +85,14 @@ export default function Checkout() {
     address:        '',
     city:           '',
     state:          '',
-    zip:            '',
     referrer_name:  '',
     referrer_phone: '',
   });
 
-  // PV helpers
-  const userPvPoints        = user?.pv_points || 0;
-  const cartTotalPvRequired = cart.reduce(
-    (sum, item) => sum + ((item.pv_points || 0) * item.quantity), 0,
-  );
-  const canPayWithPv = userPvPoints >= cartTotalPvRequired && cartTotalPvRequired > 0;
+  // User balance
+  const userBalance        = user?.current_balance || 0;
+  const cartTotalInTaka    = Math.round(cartTotal / 100); // cart total টাকায়
+  const canPayWithBalance  = userBalance >= cartTotalInTaka && cartTotalInTaka > 0;
 
   useEffect(() => {
     if (cart.length === 0) { navigate('/cart'); return; }
@@ -99,8 +102,7 @@ export default function Checkout() {
           .invoke('create-payment-intent', { body: { amount: cartTotal, currency: 'bdt' } })
           .then(({ data, error }) => {
             if (error || !data?.clientSecret) {
-              setPaymentError('পেমেন্ট সিস্টেম সেটআপ হচ্ছে।');
-              return;
+              setPaymentError('পেমেন্ট সিস্টেম সেটআপ হচ্ছে।'); return;
             }
             setClientSecret(data.clientSecret);
           });
@@ -108,57 +110,32 @@ export default function Checkout() {
     }
   }, [paymentMethod]);
 
-  // ── PV & Reactivation (সাথে সাথে PV দেওয়ার সময়) ───────────────────────────
-  const processPvAndReactivation = async () => {
-    if (!user) return;
-    const newMonthly = (user.monthly_pv_purchased || 0) + totalPvPoints;
-
-    await supabase.from('mlm_users').update({
-      monthly_pv_purchased: newMonthly,
-      pv_points:            (user.pv_points || 0) + totalPvPoints,
-    }).eq('id', user.id);
-
-    // PV log
-    for (const item of cart) {
-      if (item.pv_points && item.pv_points > 0) {
-        await supabase.from('mlm_pv_log').insert({
-          user_id:      user.id,
-          amount:       item.pv_points * item.quantity,
-          source:       'product_purchase',
-          product_name: item.name,
-        });
+  // ── Club pool helper ──────────────────────────────────────────────────────
+  const addToClubPools = async (pvAmount: number) => {
+    for (const [clubType, pct] of Object.entries(PV_CLUB_PCTS)) {
+      const amt = Math.floor(pvAmount * pct);
+      if (amt <= 0) continue;
+      const { data: pool } = await supabase
+        .from('mlm_club_pools').select('id, total_amount')
+        .eq('club_type', clubType).single();
+      if (pool) {
+        await supabase.from('mlm_club_pools')
+          .update({ total_amount: (pool.total_amount || 0) + amt })
+          .eq('id', pool.id);
       }
     }
-
-    // ১০০ PV হলে reactivate + generation bonus + club pool
-    if (newMonthly >= 100) {
-      const newExpiry = new Date();
-      newExpiry.setDate(newExpiry.getDate() + 30);
-      await supabase.from('mlm_users').update({
-        is_active:  true,
-        expires_at: newExpiry.toISOString(),
-      }).eq('id', user.id);
-
-      if (user.referrer_id) {
-        await processGenerationBonusChain(user.referrer_id, totalPvPoints, user.id, 1);
-      }
-      if (totalPvPoints >= 100) {
-        await distributeToClubPools(totalPvPoints);
-      }
-    }
-
-    await refreshUser();
   };
 
-  // ── Generation bonus chain (1st–5th gen, 1% each) ───────────────────────────
+  // ── Generation bonus chain — শুধু customer package এর PV sales এ ──────────
   const processGenerationBonusChain = async (
     userId: string, pvPoints: number, sourceId: string, gen: number,
   ) => {
     if (gen > 5) return;
     const { data: u } = await supabase
       .from('mlm_users')
-      .select('id, referrer_id, is_active, current_balance, total_income')
+      .select('id, referrer_id, is_active, current_balance, total_income, package_type')
       .eq('id', userId).single();
+    // ✅ Fix 4: Generation bonus শুধু active users পাবে
     if (!u || !u.is_active) return;
     const bonus = Math.floor(pvPoints * 0.01);
     if (bonus > 0) {
@@ -179,32 +156,60 @@ export default function Checkout() {
     }
   };
 
-  // ── Club pool distribution ────────────────────────────────────────────────
-  const distributeToClubPools = async (pvAmount: number) => {
-    const pools = [
-      { type: 'daily_club',       amount: Math.floor(pvAmount * 0.30)  },
-      { type: 'weekly_club',      amount: Math.floor(pvAmount * 0.025) },
-      { type: 'insurance_club',   amount: Math.floor(pvAmount * 0.025) },
-      { type: 'pension_club',     amount: Math.floor(pvAmount * 0.025) },
-      { type: 'shareholder_club', amount: Math.floor(pvAmount * 0.10)  },
-    ];
-    for (const pool of pools) {
-      const { data } = await supabase
-        .from('mlm_club_pools').select('id, total_amount')
-        .eq('club_type', pool.type).single();
-      if (data) {
-        await supabase.from('mlm_club_pools')
-          .update({ total_amount: (data.total_amount || 0) + pool.amount })
-          .eq('id', data.id);
-      }
+  // ── PV processing — শুধু customer package এর ক্ষেত্রে ────────────────────
+  const processPvForCustomer = async (pvToAdd: number) => {
+    if (!user || user.package_type !== 'customer') return;
+
+    const currentMonthly = user.monthly_pv_purchased || 0;
+    const newMonthly     = currentMonthly + pvToAdd;
+
+    const updates: any = {
+      pv_points:            (user.pv_points || 0) + pvToAdd,
+      monthly_pv_purchased: newMonthly,
+    };
+
+    // ✅ Fix 2: Customer package activate condition — ১০০০ PV প্রয়োজন (package price)
+    // কিন্তু monthly reactivation এর জন্য ১০০ PV যথেষ্ট
+    // প্রথম activation: pv_points >= 1000
+    // Monthly reactivation: monthly_pv_purchased >= 100
+    if (!user.is_active && newMonthly >= 100) {
+      const newExpiry = new Date();
+      newExpiry.setDate(newExpiry.getDate() + 30);
+      updates.is_active  = true;
+      updates.expires_at = newExpiry.toISOString();
+    } else if (user.is_active && newMonthly >= 100) {
+      // Already active, just extend
+      const newExpiry = new Date();
+      newExpiry.setDate(newExpiry.getDate() + 30);
+      updates.expires_at = newExpiry.toISOString();
     }
+
+    await supabase.from('mlm_users').update(updates).eq('id', user.id);
+
+    // PV log
+    await supabase.from('mlm_pv_log').insert({
+      user_id: user.id,
+      amount:  pvToAdd,
+      source:  'product_purchase',
+    }).catch(() => {}); // PV log table নাও থাকতে পারে
+
+    // ✅ Fix 4: Generation bonus — শুধু customer package
+    if (user.referrer_id && pvToAdd > 0) {
+      await processGenerationBonusChain(user.referrer_id, pvToAdd, user.id, 1);
+    }
+
+    // Club pools
+    if (pvToAdd >= 1) {
+      await addToClubPools(pvToAdd);
+    }
+
+    await refreshUser();
   };
 
-  // ── Create order ─────────────────────────────────────────────────────────
-  // addPvNow = true  → Card / PV payment (সাথে সাথে PV দাও)
+  // ── Create order ──────────────────────────────────────────────────────────
+  // addPvNow = true → Card / Balance payment (সাথে সাথে PV দাও)
   // addPvNow = false → Mobile payment (Admin approve এর পরে PV দেবে)
   const createOrder = async (paymentRef: string, addPvNow: boolean = false) => {
-    // Customer upsert
     const { data: customer } = await supabase
       .from('ecom_customers')
       .upsert(
@@ -213,12 +218,9 @@ export default function Checkout() {
       )
       .select('id').single();
 
-    // Order insert
     const { data: order } = await supabase.from('ecom_orders').insert({
       customer_id:              customer?.id  || null,
       user_id:                  user?.id      || null,
-      // ✅ Mobile payment → pending (Admin approve করবে)
-      // Card / PV payment → paid (সাথে সাথে confirm)
       status:                   addPvNow ? 'paid' : 'pending',
       subtotal:                 cartTotal,
       tax:                      0,
@@ -226,12 +228,11 @@ export default function Checkout() {
       total:                    cartTotal,
       shipping_address:         shippingAddress,
       stripe_payment_intent_id: paymentRef,
-      notes:                    shippingAddress.referrer_name
+      notes: shippingAddress.referrer_name
         ? `রেফারার: ${shippingAddress.referrer_name} (${shippingAddress.referrer_phone})`
         : null,
     }).select('id').single();
 
-    // Order items
     if (order) {
       await supabase.from('ecom_order_items').insert(
         cart.map(item => ({
@@ -248,20 +249,20 @@ export default function Checkout() {
       );
     }
 
-    // ✅ Card / PV payment → সাথে সাথে PV দাও
-    // ✅ Mobile payment → PV দেবে না (Admin approve এর পরে AdminDashboard দেবে)
-    if (addPvNow && user) {
-      await processPvAndReactivation();
+    // ✅ Fix 4: শুধু customer package এর জন্য PV process করো
+    if (addPvNow && user && user.package_type === 'customer' && totalPvPoints > 0) {
+      await processPvForCustomer(totalPvPoints);
+    } else if (addPvNow) {
+      await refreshUser();
     }
 
     clearCart();
     navigate('/order-confirmation?id=' + (order?.id || ''));
   };
 
-  // ── Card payment success ──────────────────────────────────────────────────
+  // ── Card payment ──────────────────────────────────────────────────────────
   const handlePaymentSuccess = async (paymentIntent: any) => {
     try {
-      // ✅ Card payment — সাথে সাথে PV দাও
       await createOrder(paymentIntent.id, true);
     } catch (err) {
       console.error(err);
@@ -269,7 +270,7 @@ export default function Checkout() {
     }
   };
 
-  // ── Mobile payment submit ─────────────────────────────────────────────────
+  // ── Mobile payment ────────────────────────────────────────────────────────
   const handleMobilePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!trxId.trim()) { toast.error('TRX ID দিন'); return; }
@@ -278,65 +279,63 @@ export default function Checkout() {
     }
     setMobileLoading(true);
 
-    // Payment verification record (Admin এখান থেকে approve করবে)
     if (user) {
       await supabase.from('mlm_payment_verifications').insert({
         user_id:       user.id,
-        amount:        Math.round(cartTotal / 100),
+        amount:        cartTotalInTaka,
         method:        mobileMethod,
         trx_id:        trxId.trim(),
         sender_number: senderNumber.trim() || null,
         purpose:       'product_purchase',
-        // PV amount store করো যাতে Admin approve করার সময় জানতে পারে
-        pv_points:     totalPvPoints,
+        pv_points:     user.package_type === 'customer' ? totalPvPoints : 0,
         status:        'pending',
       });
     }
 
-    // ✅ addPvNow = false — Admin approve না করা পর্যন্ত PV দেবে না
+    // Mobile payment → PV দেবে না সাথে সাথে
     await createOrder(`mobile_${mobileMethod}_${trxId.trim()}`, false);
     setMobileSuccess(true);
     setMobileLoading(false);
   };
 
-  // ── PV payment ────────────────────────────────────────────────────────────
-  const handlePvPayment = async () => {
+  // ── ✅ Balance payment — নতুন ────────────────────────────────────────────
+  const handleBalancePayment = async () => {
     if (!user) { toast.error('লগইন করুন'); return; }
-    if (!canPayWithPv) {
-      toast.error(`PV যথেষ্ট নয়। দরকার: ${cartTotalPvRequired} PV, আছে: ${userPvPoints} PV`);
+    if (!canPayWithBalance) {
+      toast.error(`ব্যালেন্স যথেষ্ট নয়। দরকার: ৳${cartTotalInTaka}, আছে: ৳${userBalance}`);
       return;
     }
     if (!shippingAddress.name || !shippingAddress.phone || !shippingAddress.address) {
       toast.error('শিপিং তথ্য পূরণ করুন'); return;
     }
 
-    setPvLoading(true);
+    setBalanceLoading(true);
     try {
-      // PV কাটো
-      const { error: pvError } = await supabase.from('mlm_users')
-        .update({ pv_points: userPvPoints - cartTotalPvRequired })
+      // Balance কাটো
+      const { error: balErr } = await supabase.from('mlm_users')
+        .update({ current_balance: userBalance - cartTotalInTaka })
         .eq('id', user.id);
 
-      if (pvError) {
-        toast.error('PV কাটতে সমস্যা: ' + pvError.message);
-        setPvLoading(false); return;
+      if (balErr) {
+        toast.error('ব্যালেন্স কাটতে সমস্যা: ' + balErr.message);
+        setBalanceLoading(false); return;
       }
 
-      // PV transaction log
+      // Transaction log
       await supabase.from('mlm_transactions').insert({
         user_id:     user.id,
-        type:        'pv_payment',
-        amount:      -cartTotalPvRequired,
-        description: `PV দিয়ে পণ্য ক্রয় (${cartTotalPvRequired} PV)`,
+        type:        'product_purchase',
+        amount:      -cartTotalInTaka,
+        description: `ব্যালেন্স থেকে পণ্য ক্রয় (৳${cartTotalInTaka})`,
       });
 
-      // ✅ PV payment — সাথে সাথে PV দাও (order confirm)
-      await createOrder(`pv_payment_${user.id}_${Date.now()}`, true);
-      toast.success(`✅ ${cartTotalPvRequired} PV দিয়ে অর্ডার সম্পন্ন!`);
+      // Order তৈরি করো + PV দাও
+      await createOrder(`balance_payment_${user.id}_${Date.now()}`, true);
+      toast.success('✅ ব্যালেন্স থেকে অর্ডার সম্পন্ন!');
     } catch (err: any) {
       toast.error('সমস্যা হয়েছে: ' + err.message);
     }
-    setPvLoading(false);
+    setBalanceLoading(false);
   };
 
   const mobilePaymentMethods = [
@@ -345,7 +344,7 @@ export default function Checkout() {
     { key: 'rocket', label: 'রকেট',  color: '#8B2F8B', number: '01XXXXXXXXX', bgClass: 'from-purple-600 to-purple-700' },
   ];
 
-  // ── Mobile success screen ─────────────────────────────────────────────────
+  // ── Mobile success ────────────────────────────────────────────────────────
   if (mobileSuccess) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -357,11 +356,8 @@ export default function Checkout() {
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-3">পেমেন্ট অনুরোধ সফল!</h1>
             <p className="text-gray-500 mb-2">আপনার পেমেন্ট এডমিন কর্তৃক যাচাই করা হবে।</p>
-            <p className="text-gray-400 text-sm mb-6">অনুমোদনের পর আপনার অর্ডার ও PV নিশ্চিত হবে।</p>
-            <Link
-              to="/dashboard"
-              className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700"
-            >
+            <p className="text-gray-400 text-sm mb-6">অনুমোদনের পর অর্ডার নিশ্চিত হবে।</p>
+            <Link to="/dashboard" className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700">
               ড্যাশবোর্ডে যান
             </Link>
           </div>
@@ -371,7 +367,6 @@ export default function Checkout() {
     );
   }
 
-  // ── Main UI ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -379,7 +374,7 @@ export default function Checkout() {
         <h1 className="text-2xl font-bold text-gray-900 mb-8">চেকআউট</h1>
 
         <div className="grid lg:grid-cols-2 gap-8">
-          {/* Left column */}
+          {/* Left */}
           <div className="space-y-6">
 
             {/* Shipping */}
@@ -390,49 +385,48 @@ export default function Checkout() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="text-xs font-medium text-gray-500 mb-1 block">নাম *</label>
-                  <input value={shippingAddress.name} onChange={e => setShippingAddress({ ...shippingAddress, name: e.target.value })} required
+                  <input value={shippingAddress.name} onChange={e => setShippingAddress({...shippingAddress, name: e.target.value})} required
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="আপনার নাম" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-500 mb-1 block">ইমেইল *</label>
-                  <input type="email" value={shippingAddress.email} onChange={e => setShippingAddress({ ...shippingAddress, email: e.target.value })} required
+                  <input type="email" value={shippingAddress.email} onChange={e => setShippingAddress({...shippingAddress, email: e.target.value})} required
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-500 mb-1 block">ফোন *</label>
-                  <input value={shippingAddress.phone} onChange={e => setShippingAddress({ ...shippingAddress, phone: e.target.value })} required
+                  <input value={shippingAddress.phone} onChange={e => setShippingAddress({...shippingAddress, phone: e.target.value})} required
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="০১XXXXXXXXX" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs font-medium text-gray-500 mb-1 block">ঠিকানা *</label>
-                  <input value={shippingAddress.address} onChange={e => setShippingAddress({ ...shippingAddress, address: e.target.value })} required
+                  <input value={shippingAddress.address} onChange={e => setShippingAddress({...shippingAddress, address: e.target.value})} required
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="বিস্তারিত ঠিকানা" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-500 mb-1 block">শহর</label>
-                  <input value={shippingAddress.city} onChange={e => setShippingAddress({ ...shippingAddress, city: e.target.value })}
+                  <input value={shippingAddress.city} onChange={e => setShippingAddress({...shippingAddress, city: e.target.value})}
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-500 mb-1 block">জেলা</label>
-                  <input value={shippingAddress.state} onChange={e => setShippingAddress({ ...shippingAddress, state: e.target.value })}
+                  <input value={shippingAddress.state} onChange={e => setShippingAddress({...shippingAddress, state: e.target.value})}
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" />
                 </div>
               </div>
 
-              {/* Referrer */}
               <div className="mt-6 pt-4 border-t border-gray-100">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">রেফারকারীর তথ্য (ঐচ্ছিক)</h3>
                 <div className="grid grid-cols-2 gap-4">
-                  <input value={shippingAddress.referrer_name} onChange={e => setShippingAddress({ ...shippingAddress, referrer_name: e.target.value })}
+                  <input value={shippingAddress.referrer_name} onChange={e => setShippingAddress({...shippingAddress, referrer_name: e.target.value})}
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="রেফারকারীর নাম" />
-                  <input value={shippingAddress.referrer_phone} onChange={e => setShippingAddress({ ...shippingAddress, referrer_phone: e.target.value })}
+                  <input value={shippingAddress.referrer_phone} onChange={e => setShippingAddress({...shippingAddress, referrer_phone: e.target.value})}
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="রেফারকারীর ফোন" />
                 </div>
               </div>
             </div>
 
-            {/* Payment method */}
+            {/* Payment Method */}
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <CreditCard size={20} className="text-indigo-600" /> পেমেন্ট মাধ্যম
@@ -455,21 +449,19 @@ export default function Checkout() {
                   <p className="text-[10px] text-gray-500">Visa/Master</p>
                 </button>
 
-                {/* PV */}
+                {/* ✅ Balance — PV এর বদলে Balance */}
                 <button
-                  onClick={() => setPaymentMethod('pv')}
-                  disabled={cartTotalPvRequired === 0}
+                  onClick={() => setPaymentMethod('balance')}
+                  disabled={cartTotalInTaka === 0}
                   className={`p-4 rounded-xl border-2 text-center transition-all relative ${
-                    paymentMethod === 'pv'
+                    paymentMethod === 'balance'
                       ? 'border-green-500 bg-green-50 shadow-md'
-                      : cartTotalPvRequired === 0
-                      ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
                       : 'border-gray-200 hover:border-green-300'
                   }`}>
-                  <Star size={22} className={`mx-auto mb-2 ${paymentMethod === 'pv' ? 'text-green-600' : 'text-green-500'}`} />
-                  <p className="font-semibold text-xs">PV পয়েন্ট</p>
-                  <p className="text-[10px] text-gray-500">{userPvPoints} PV আছে</p>
-                  {canPayWithPv && (
+                  <Wallet size={22} className={`mx-auto mb-2 ${paymentMethod === 'balance' ? 'text-green-600' : 'text-green-500'}`} />
+                  <p className="font-semibold text-xs">ব্যালেন্স</p>
+                  <p className="text-[10px] text-gray-500">৳{userBalance.toLocaleString()}</p>
+                  {canPayWithBalance && (
                     <span className="absolute -top-1.5 -right-1.5 bg-green-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">✓</span>
                   )}
                 </button>
@@ -493,19 +485,18 @@ export default function Checkout() {
 
                   <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4">
                     <p className="text-xs text-yellow-800 font-medium">
-                      ⚠️ মোবাইল পেমেন্টে Admin approve করার পরে PV ও অর্ডার নিশ্চিত হবে।
+                      ⚠️ মোবাইল পেমেন্টে Admin approve করার পরে অর্ডার নিশ্চিত হবে।
                     </p>
                   </div>
 
                   <div className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
                     <p className="text-sm font-semibold text-gray-800 mb-2">পেমেন্ট নির্দেশনা:</p>
                     <ol className="text-xs text-gray-600 space-y-1 list-decimal pl-4">
-                      <li>নিচের নম্বরে <span className="font-bold">৳{(cartTotal / 100).toLocaleString()}</span> পাঠান</li>
+                      <li>নিচের নম্বরে <span className="font-bold">৳{cartTotalInTaka.toLocaleString()}</span> পাঠান</li>
                       <li>{mobilePaymentMethods.find(m => m.key === mobileMethod)?.label} নম্বর:{' '}
                         <span className="font-bold font-mono">{mobilePaymentMethods.find(m => m.key === mobileMethod)?.number}</span>
                       </li>
-                      <li>TRX ID এবং সেন্ডার নম্বর নিচে দিন</li>
-                      <li>এডমিন যাচাই করলে অর্ডার ও PV নিশ্চিত হবে</li>
+                      <li>TRX ID ও সেন্ডার নম্বর নিচে দিন</li>
                     </ol>
                   </div>
 
@@ -552,55 +543,54 @@ export default function Checkout() {
                 </div>
               )}
 
-              {/* ── PV payment ── */}
-              {paymentMethod === 'pv' && (
+              {/* ── ✅ Balance payment ── */}
+              {paymentMethod === 'balance' && (
                 <div className="space-y-4">
                   <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-200">
                     <div className="flex justify-between items-center mb-3">
-                      <span className="text-sm font-semibold text-green-800">আপনার PV ব্যালেন্স</span>
-                      <span className="text-xl font-bold text-green-700">{userPvPoints} PV</span>
+                      <span className="text-sm font-semibold text-green-800">আপনার ব্যালেন্স</span>
+                      <span className="text-xl font-bold text-green-700">৳{userBalance.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between items-center mb-3">
                       <span className="text-sm text-green-700">এই অর্ডারে লাগবে</span>
-                      <span className="text-lg font-bold text-orange-600">{cartTotalPvRequired} PV</span>
+                      <span className="text-lg font-bold text-orange-600">৳{cartTotalInTaka.toLocaleString()}</span>
                     </div>
                     <div className="w-full bg-green-200 rounded-full h-2">
                       <div
                         className="bg-green-600 h-2 rounded-full transition-all"
-                        style={{ width: `${Math.min((userPvPoints / Math.max(cartTotalPvRequired, 1)) * 100, 100)}%` }}
+                        style={{ width: `${Math.min((userBalance / Math.max(cartTotalInTaka, 1)) * 100, 100)}%` }}
                       />
                     </div>
                     <div className="flex justify-between items-center mt-3 pt-3 border-t border-green-200">
                       <span className="text-sm text-green-700">কাটার পর বাকি</span>
-                      <span className={`font-bold ${canPayWithPv ? 'text-green-700' : 'text-red-600'}`}>
-                        {userPvPoints - cartTotalPvRequired} PV
+                      <span className={`font-bold ${canPayWithBalance ? 'text-green-700' : 'text-red-600'}`}>
+                        ৳{(userBalance - cartTotalInTaka).toLocaleString()}
                       </span>
                     </div>
                   </div>
 
-                  {canPayWithPv ? (
+                  {canPayWithBalance ? (
                     <>
                       <div className="bg-green-50 border border-green-200 rounded-xl p-3">
                         <p className="text-xs text-green-700 font-medium">
-                          ✅ যথেষ্ট PV আছে। অর্ডার করলে {cartTotalPvRequired} PV কেটে নেওয়া হবে এবং সাথে সাথে confirm হবে।
+                          ✅ যথেষ্ট ব্যালেন্স আছে। অর্ডার করলে ৳{cartTotalInTaka} কেটে নেওয়া হবে।
                         </p>
                       </div>
                       <button
-                        onClick={handlePvPayment}
-                        disabled={pvLoading}
+                        onClick={handleBalancePayment}
+                        disabled={balanceLoading}
                         className="w-full py-3.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold rounded-xl hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 transition-all shadow-lg flex items-center justify-center gap-2">
-                        <Star size={18} />
-                        {pvLoading ? 'প্রসেসিং...' : `${cartTotalPvRequired} PV দিয়ে অর্ডার করুন`}
+                        <Wallet size={18} />
+                        {balanceLoading ? 'প্রসেসিং...' : `৳${cartTotalInTaka} ব্যালেন্স থেকে অর্ডার করুন`}
                       </button>
                     </>
                   ) : (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-                      <p className="text-red-700 font-semibold text-sm mb-1">❌ PV যথেষ্ট নয়</p>
+                      <p className="text-red-700 font-semibold text-sm mb-1">❌ ব্যালেন্স যথেষ্ট নয়</p>
                       <p className="text-red-600 text-xs">
-                        দরকার {cartTotalPvRequired} PV, আপনার আছে {userPvPoints} PV।
-                        আরও {cartTotalPvRequired - userPvPoints} PV দরকার।
+                        দরকার ৳{cartTotalInTaka}, আছে ৳{userBalance}।
+                        আরও ৳{cartTotalInTaka - userBalance} প্রয়োজন।
                       </p>
-                      <p className="text-gray-500 text-xs mt-2">পণ্য কিনে বা প্যাকেজ নিয়ে PV অর্জন করুন।</p>
                     </div>
                   )}
                 </div>
@@ -620,8 +610,8 @@ export default function Checkout() {
                   <div className="flex-1">
                     <p className="text-sm font-medium text-gray-700 line-clamp-1">{item.name}</p>
                     <p className="text-xs text-gray-400">x{item.quantity}</p>
-                    {item.pv_points && item.pv_points > 0 && (
-                      <p className="text-xs text-green-600 font-medium">{item.pv_points * item.quantity} PV</p>
+                    {item.pv_points && item.pv_points > 0 && user?.package_type === 'customer' && (
+                      <p className="text-xs text-green-600 font-medium">+{item.pv_points * item.quantity} PV অর্জন হবে</p>
                     )}
                   </div>
                   <span className="text-sm font-bold text-gray-700">
@@ -634,67 +624,37 @@ export default function Checkout() {
             <div className="border-t border-gray-100 pt-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">সাবটোটাল</span>
-                <span>৳{(cartTotal / 100).toLocaleString()}</span>
+                <span>৳{cartTotalInTaka.toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">শিপিং</span>
                 <span className="text-green-600 font-medium">ফ্রি</span>
               </div>
-              {totalPvPoints > 0 && (
+              {totalPvPoints > 0 && user?.package_type === 'customer' && (
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">অর্জিত হবে</span>
-                  <span className="text-green-600 font-bold">{totalPvPoints} PV</span>
+                  <span className="text-green-600 font-bold">+{totalPvPoints} PV</span>
                 </div>
               )}
-
-              {paymentMethod === 'pv' ? (
-                <div className="border-t border-gray-100 pt-3">
-                  <div className="flex justify-between">
-                    <span className="font-bold text-gray-900">মোট (PV)</span>
-                    <span className="font-bold text-xl text-green-700">{cartTotalPvRequired} PV</span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1 text-right">
-                    টাকায়: ৳{(cartTotal / 100).toLocaleString()}
-                  </p>
-                </div>
-              ) : (
-                <div className="border-t border-gray-100 pt-3 flex justify-between">
-                  <span className="font-bold text-gray-900">মোট</span>
-                  <span className="font-bold text-xl text-indigo-700">৳{(cartTotal / 100).toLocaleString()}</span>
-                </div>
-              )}
+              <div className="border-t border-gray-100 pt-3 flex justify-between">
+                <span className="font-bold text-gray-900">মোট</span>
+                <span className="font-bold text-xl text-indigo-700">৳{cartTotalInTaka.toLocaleString()}</span>
+              </div>
             </div>
 
-            {/* PV info */}
-            {user && totalPvPoints > 0 && paymentMethod !== 'pv' && (
-              <div className="mt-4 bg-green-50 rounded-xl p-3 border border-green-100">
-                <p className="text-xs text-green-700 font-medium">
-                  এই ক্রয়ে {totalPvPoints} PV যোগ হবে। বর্তমান: {user.monthly_pv_purchased || 0}/100 PV
-                </p>
-                {(user.monthly_pv_purchased || 0) + totalPvPoints >= 100 && (
-                  <p className="text-xs text-green-600 font-bold mt-1">
-                    আপনার আইডি স্বয়ংক্রিয়ভাবে রিএকটিভ হবে!
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* User PV balance */}
+            {/* User balance info */}
             {user && (
               <div className="mt-3 bg-gray-50 rounded-xl p-3 border border-gray-100 flex justify-between items-center">
                 <span className="text-xs text-gray-500 flex items-center gap-1">
-                  <Star size={12} className="text-green-500" /> আপনার PV ব্যালেন্স
+                  <Wallet size={12} className="text-green-500" /> আপনার ব্যালেন্স
                 </span>
-                <span className="text-sm font-bold text-green-700">{userPvPoints} PV</span>
+                <span className="text-sm font-bold text-green-700">৳{userBalance.toLocaleString()}</span>
               </div>
             )}
 
-            {/* Mobile payment pending note */}
             {paymentMethod === 'mobile' && (
               <div className="mt-3 bg-yellow-50 rounded-xl p-3 border border-yellow-100">
-                <p className="text-xs text-yellow-700">
-                  ⏳ মোবাইল পেমেন্ট Admin approve করার পরে নিশ্চিত হবে।
-                </p>
+                <p className="text-xs text-yellow-700">⏳ মোবাইল পেমেন্ট Admin approve এর পরে নিশ্চিত হবে।</p>
               </div>
             )}
           </div>

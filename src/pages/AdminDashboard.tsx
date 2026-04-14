@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import AdminProductManager from '@/components/AdminProductManager';
 import {
-  Users, Wallet, TrendingUp, Gift, Shield, Crown, Award, Clock,
-  Search, Lock, Unlock, Eye, EyeOff, Edit, Trash2, RefreshCw,
-  DollarSign, ArrowDownRight, CheckCircle, XCircle, Send, Play, Loader2,
-  BarChart3, Network, Settings, Package, FolderTree, CreditCard, FileText,
-  Plus, Save, X, ChevronDown, ChevronRight, ShoppingBag, AlertCircle
+  Users, Wallet, TrendingUp, Gift, Search, Lock, Unlock, Edit, Trash2, RefreshCw,
+  DollarSign, CheckCircle, XCircle, Play, Loader2, BarChart3, Network, Package,
+  FolderTree, CreditCard, FileText, Plus, Save, ChevronDown, ChevronRight, ShoppingBag,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -22,17 +20,13 @@ const clubLabels: Record<string, string> = {
   shareholder_club: 'শেয়ারহোল্ডার ক্লাব',
 };
 
-// ✅ সঠিক percentage — document অনুযায়ী:
-// Customer package activate হলে:
-//   Daily 30%, Weekly 2.5%, Insurance 1.25%, Pension 1.25% (মিলিয়ে 2.5%)
-// PV sales হলে:
-//   Shareholder club 10%
+// Club pool percentages — শুধু PV sales থেকে
 const PV_CLUB_PCTS: Record<string, number> = {
   daily_club:       0.30,
   weekly_club:      0.025,
-  insurance_club:   0.0125,  // ✅ Insurance+Pension মিলিয়ে 2.5%, প্রতিটা 1.25%
+  insurance_club:   0.0125,
   pension_club:     0.0125,
-  shareholder_club: 0.10,    // ✅ শুধু PV sales থেকে
+  shareholder_club: 0.10,
 };
 
 export default function AdminDashboard() {
@@ -49,9 +43,7 @@ export default function AdminDashboard() {
   const [paymentVerifications, setPV] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [editUser, setEditUser] = useState<any>(null);
-  const [stats, setStats] = useState({
-    totalUsers: 0, activeUsers: 0, totalIncome: 0, totalWithdrawals: 0,
-  });
+  const [stats, setStats] = useState({ totalUsers: 0, activeUsers: 0, totalIncome: 0, totalWithdrawals: 0 });
   const [loading, setLoading] = useState(false);
   const [cronRunning, setCronRunning] = useState(false);
   const [cronResult, setCronResult] = useState<any>(null);
@@ -66,8 +58,7 @@ export default function AdminDashboard() {
   }, [user]);
 
   const fetchAll = async () => {
-    const { data: usersData } = await supabase
-      .from('mlm_users').select('*').order('created_at', { ascending: false });
+    const { data: usersData } = await supabase.from('mlm_users').select('*').order('created_at', { ascending: false });
     if (usersData) {
       setUsers(usersData);
       setStats({
@@ -88,42 +79,30 @@ export default function AdminDashboard() {
     const { data: pools } = await supabase.from('mlm_club_pools').select('*');
     if (pools) setClubPools(pools);
 
-    const { data: wds } = await supabase
-      .from('mlm_withdrawals')
+    const { data: wds } = await supabase.from('mlm_withdrawals')
       .select('*, user_id, user:mlm_users(name, email, phone)')
       .order('created_at', { ascending: false }).limit(100);
     if (wds) {
       setWithdrawals(wds);
-      setStats(prev => ({
-        ...prev,
-        totalWithdrawals: wds.reduce((s: number, w: any) => s + (w.net_amount || 0), 0),
-      }));
+      setStats(prev => ({ ...prev, totalWithdrawals: wds.reduce((s: number, w: any) => s + (w.net_amount || 0), 0) }));
     }
 
-    const { data: txns } = await supabase
-      .from('mlm_transactions')
-      .select('*, user:mlm_users(name)')
-      .order('created_at', { ascending: false }).limit(100);
+    const { data: txns } = await supabase.from('mlm_transactions')
+      .select('*, user:mlm_users(name)').order('created_at', { ascending: false }).limit(100);
     if (txns) setTransactions(txns);
 
-    const { data: ordersData } = await supabase
-      .from('ecom_orders')
-      .select('*, customer:ecom_customers(name, email)')
-      .order('created_at', { ascending: false }).limit(50);
+    const { data: ordersData } = await supabase.from('ecom_orders')
+      .select('*, customer:ecom_customers(name, email)').order('created_at', { ascending: false }).limit(50);
     if (ordersData) setOrders(ordersData);
 
-    const { data: catsData } = await supabase
-      .from('mlm_categories').select('*').order('sort_order');
+    const { data: catsData } = await supabase.from('mlm_categories').select('*').order('sort_order');
     if (catsData) setCategories(catsData);
 
-    const { data: prodsData } = await supabase
-      .from('ecom_products').select('*').order('created_at', { ascending: false });
+    const { data: prodsData } = await supabase.from('ecom_products').select('*').order('created_at', { ascending: false });
     if (prodsData) setProducts(prodsData);
 
-    const { data: pvData } = await supabase
-      .from('mlm_payment_verifications')
-      .select('*, user_id, user:mlm_users(name, email, phone)')
-      .order('created_at', { ascending: false });
+    const { data: pvData } = await supabase.from('mlm_payment_verifications')
+      .select('*, user_id, user:mlm_users(name, email, phone)').order('created_at', { ascending: false });
     if (pvData) setPV(pvData);
   };
 
@@ -134,10 +113,9 @@ export default function AdminDashboard() {
     try {
       const dailyGold   = parseFloat((1800 / 365).toFixed(2));
       const dailyBakeya = Math.round((100000 * 0.36) / 365);
-
       let goldCount = 0;
-      const { data: goldUsers } = await supabase
-        .from('mlm_users')
+
+      const { data: goldUsers } = await supabase.from('mlm_users')
         .select('id, gold_referral_pending, current_balance, total_income')
         .gt('gold_referral_pending', 0).eq('is_active', true).neq('role', 'admin');
 
@@ -156,26 +134,18 @@ export default function AdminDashboard() {
         }
       }
 
-      const { data: goldBuyers } = await supabase
-        .from('mlm_users').select('id, bakeya_amount')
+      const { data: goldBuyers } = await supabase.from('mlm_users').select('id, bakeya_amount')
         .eq('package_type', 'gold').eq('is_active', true).neq('role', 'admin');
-
       for (const buyer of (goldBuyers || [])) {
-        await supabase.from('mlm_users')
-          .update({ bakeya_amount: (buyer.bakeya_amount || 0) + dailyBakeya })
-          .eq('id', buyer.id);
+        await supabase.from('mlm_users').update({ bakeya_amount: (buyer.bakeya_amount || 0) + dailyBakeya }).eq('id', buyer.id);
       }
 
       let deactivatedCount = 0;
-      const { data: expiredUsers } = await supabase
-        .from('mlm_users').select('id')
-        .lt('expires_at', new Date().toISOString())
-        .eq('is_active', true).neq('role', 'admin')
+      const { data: expiredUsers } = await supabase.from('mlm_users').select('id')
+        .lt('expires_at', new Date().toISOString()).eq('is_active', true).neq('role', 'admin')
         .neq('package_type', 'gold').neq('package_type', 'shareholder');
-
       for (const u of (expiredUsers || [])) {
-        const { data: profile } = await supabase
-          .from('mlm_users').select('monthly_pv_purchased').eq('id', u.id).single();
+        const { data: profile } = await supabase.from('mlm_users').select('monthly_pv_purchased').eq('id', u.id).single();
         if (!profile || profile.monthly_pv_purchased < 100) {
           await supabase.from('mlm_users').update({ is_active: false }).eq('id', u.id);
           deactivatedCount++;
@@ -189,15 +159,7 @@ export default function AdminDashboard() {
         pvReset = 1;
       }
 
-      setCronResult({
-        success: true,
-        results: {
-          goldReferralDistributed: goldCount,
-          bakeyaAccumulated:       (goldBuyers || []).length,
-          deactivatedUsers:        deactivatedCount,
-          monthlyPvReset:          pvReset,
-        },
-      });
+      setCronResult({ success: true, results: { goldReferralDistributed: goldCount, bakeyaAccumulated: (goldBuyers || []).length, deactivatedUsers: deactivatedCount, monthlyPvReset: pvReset } });
       toast.success('দৈনিক কাজ সম্পন্ন!');
       fetchAll();
     } catch (e: any) {
@@ -209,7 +171,7 @@ export default function AdminDashboard() {
 
   const handleLockUser = async (userId: string, lock: boolean) => {
     await supabase.from('mlm_users').update({ is_locked: lock }).eq('id', userId);
-    toast.success(lock ? 'আইডি লক করা হয়েছে' : 'আইডি আনলক করা হয়েছে');
+    toast.success(lock ? 'আইডি লক' : 'আইডি আনলক');
     fetchAll();
   };
 
@@ -231,18 +193,14 @@ export default function AdminDashboard() {
   const handleAddCategory = async () => {
     if (!catForm.name) { toast.error('ক্যাটাগরি নাম দিন'); return; }
     setLoading(true);
-    await supabase.from('mlm_categories').insert({
-      name: catForm.name, parent_id: catForm.parent_id || null, description: catForm.description || null,
-    });
+    await supabase.from('mlm_categories').insert({ name: catForm.name, parent_id: catForm.parent_id || null, description: catForm.description || null });
     toast.success('ক্যাটাগরি যোগ হয়েছে!');
     setCatForm({ name: '', parent_id: '', description: '' });
     setShowCatForm(false); fetchAll(); setLoading(false);
   };
 
   const handleDeleteCategory = async (id: string) => {
-    if (categories.filter(c => c.parent_id === id).length > 0) {
-      toast.error('আগে সাব-ক্যাটাগরি মুছুন!'); return;
-    }
+    if (categories.filter(c => c.parent_id === id).length > 0) { toast.error('আগে সাব-ক্যাটাগরি মুছুন!'); return; }
     await supabase.from('mlm_categories').delete().eq('id', id);
     toast.success('মুছে ফেলা হয়েছে!'); fetchAll();
   };
@@ -250,38 +208,24 @@ export default function AdminDashboard() {
   const handleDistributeClub = async (clubType: string) => {
     setLoading(true);
     const pool = clubPools.find(p => p.club_type === clubType);
-    if (!pool || pool.total_amount <= 0) {
-      toast.error('বন্টনযোগ্য পরিমাণ নেই'); setLoading(false); return;
-    }
+    if (!pool || pool.total_amount <= 0) { toast.error('বন্টনযোগ্য পরিমাণ নেই'); setLoading(false); return; }
 
-    let query = supabase.from('mlm_users')
-      .select('id, current_balance, total_income')
-      .eq('is_active', true).neq('role', 'admin');
-
+    let query = supabase.from('mlm_users').select('id, current_balance, total_income').eq('is_active', true).neq('role', 'admin');
     if (clubType === 'daily_club')          query = query.eq('is_daily_club', true);
     else if (clubType === 'weekly_club')    query = query.eq('is_weekly_club', true);
     else if (clubType === 'insurance_club') query = query.eq('is_insurance_club', true);
     else if (clubType === 'pension_club')   query = query.eq('is_pension_club', true);
-    // ✅ Shareholder club — শুধু shareholder package holders
     else if (clubType === 'shareholder_club') query = query.eq('is_shareholder_club', true).eq('package_type', 'shareholder');
 
     const { data: members } = await query;
-    if (!members || members.length === 0) {
-      toast.error('এই ক্লাবে কোনো সক্রিয় সদস্য নেই'); setLoading(false); return;
-    }
+    if (!members || members.length === 0) { toast.error('এই ক্লাবে কোনো সক্রিয় সদস্য নেই'); setLoading(false); return; }
 
     const perMember = Math.floor(pool.total_amount / members.length);
     if (perMember <= 0) { toast.error('পরিমাণ যথেষ্ট নয়'); setLoading(false); return; }
 
     for (const member of members) {
-      await supabase.from('mlm_users').update({
-        current_balance: (member.current_balance || 0) + perMember,
-        total_income:    (member.total_income || 0) + perMember,
-      }).eq('id', member.id);
-      await supabase.from('mlm_transactions').insert({
-        user_id: member.id, type: clubType, amount: perMember,
-        description: `${clubLabels[clubType] || clubType} বোনাস বন্টন`,
-      });
+      await supabase.from('mlm_users').update({ current_balance: (member.current_balance || 0) + perMember, total_income: (member.total_income || 0) + perMember }).eq('id', member.id);
+      await supabase.from('mlm_transactions').insert({ user_id: member.id, type: clubType, amount: perMember, description: `${clubLabels[clubType]} বোনাস বন্টন` });
     }
 
     await supabase.from('mlm_club_pools').update({ total_amount: 0 }).eq('id', pool.id);
@@ -295,98 +239,59 @@ export default function AdminDashboard() {
     if (!wd) { setLoading(false); return; }
 
     if (approve) {
-      const { error } = await supabase.from('mlm_withdrawals')
-        .update({ status: 'approved', processed_at: new Date().toISOString() }).eq('id', id);
-      if (error) {
-        toast.error('সমস্যা হয়েছে: ' + error.message);
-      } else {
-        await supabase.from('mlm_transactions').insert({
-          user_id: wd.user_id, type: 'withdrawal_approved', amount: -(wd.amount || 0),
-          description: `উইথড্রো অনুমোদিত - ${wd.method} - ${wd.account_number}`,
-        });
-        toast.success(`✅ ৳${wd.net_amount} উইথড্রো অনুমোদিত হয়েছে`);
+      const { error } = await supabase.from('mlm_withdrawals').update({ status: 'approved', processed_at: new Date().toISOString() }).eq('id', id);
+      if (error) { toast.error('সমস্যা: ' + error.message); }
+      else {
+        await supabase.from('mlm_transactions').insert({ user_id: wd.user_id, type: 'withdrawal_approved', amount: -(wd.amount || 0), description: `উইথড্রো অনুমোদিত - ${wd.method} - ${wd.account_number}` });
+        toast.success(`✅ ৳${wd.net_amount} উইথড্রো অনুমোদিত`);
       }
     } else {
-      const { data: userData } = await supabase
-        .from('mlm_users').select('current_balance').eq('id', wd.user_id).single();
-      if (userData) {
-        await supabase.from('mlm_users')
-          .update({ current_balance: (userData.current_balance || 0) + (wd.amount || 0) })
-          .eq('id', wd.user_id);
-      }
-      await supabase.from('mlm_withdrawals')
-        .update({ status: 'rejected', processed_at: new Date().toISOString() }).eq('id', id);
-      await supabase.from('mlm_transactions').insert({
-        user_id: wd.user_id, type: 'withdrawal_refund', amount: wd.amount || 0,
-        description: `উইথড্রো বাতিল - ৳${wd.amount} ব্যালেন্সে ফেরত`,
-      });
-      toast.error(`❌ উইথড্রো বাতিল - ৳${wd.amount} ফেরত দেওয়া হয়েছে`);
+      const { data: userData } = await supabase.from('mlm_users').select('current_balance').eq('id', wd.user_id).single();
+      if (userData) await supabase.from('mlm_users').update({ current_balance: (userData.current_balance || 0) + (wd.amount || 0) }).eq('id', wd.user_id);
+      await supabase.from('mlm_withdrawals').update({ status: 'rejected', processed_at: new Date().toISOString() }).eq('id', id);
+      await supabase.from('mlm_transactions').insert({ user_id: wd.user_id, type: 'withdrawal_refund', amount: wd.amount || 0, description: `উইথড্রো বাতিল - ৳${wd.amount} ফেরত` });
+      toast.error(`❌ উইথড্রো বাতিল`);
     }
     fetchAll(); setLoading(false);
   };
 
-  // ── Generation bonus — শুধু PV product purchase এর জন্য ─────────────────────
-  const distributeGenerationBonus = async (
-    userId: string, pvPoints: number, sourceId: string, gen: number,
-  ) => {
+  // ── Generation bonus — শুধু customer package PV sales ────────────────────
+  const distributeGenerationBonus = async (userId: string, pvPoints: number, sourceId: string, gen: number) => {
     if (gen > 5) return;
-    const { data: u } = await supabase
-      .from('mlm_users')
-      .select('id, referrer_id, is_active, current_balance, total_income')
-      .eq('id', userId).single();
+    const { data: u } = await supabase.from('mlm_users')
+      .select('id, referrer_id, is_active, current_balance, total_income').eq('id', userId).single();
     if (!u || !u.is_active) return;
     const bonus = Math.floor(pvPoints * 0.01);
     if (bonus > 0) {
-      await supabase.from('mlm_users').update({
-        current_balance: (u.current_balance || 0) + bonus,
-        total_income:    (u.total_income || 0) + bonus,
-      }).eq('id', userId);
-      await supabase.from('mlm_transactions').insert({
-        user_id: userId, type: 'generation_bonus', amount: bonus,
-        description: `জেনারেশন ${gen} বোনাস (PV: ${pvPoints})`,
-        related_user_id: sourceId,
-      });
+      await supabase.from('mlm_users').update({ current_balance: (u.current_balance || 0) + bonus, total_income: (u.total_income || 0) + bonus }).eq('id', userId);
+      await supabase.from('mlm_transactions').insert({ user_id: userId, type: 'generation_bonus', amount: bonus, description: `জেনারেশন ${gen} বোনাস (PV: ${pvPoints})`, related_user_id: sourceId });
     }
-    if (u.referrer_id) {
-      await distributeGenerationBonus(u.referrer_id, pvPoints, sourceId, gen + 1);
-    }
+    if (u.referrer_id) await distributeGenerationBonus(u.referrer_id, pvPoints, sourceId, gen + 1);
   };
 
-  // ── Club pool এ টাকা জমানোর helper ──────────────────────────────────────────
+  // ── Club pool helper ─────────────────────────────────────────────────────
   const addToClubPools = async (pvAmount: number) => {
     for (const [clubType, pct] of Object.entries(PV_CLUB_PCTS)) {
       const amt = Math.floor(pvAmount * pct);
       if (amt <= 0) continue;
-      const { data: pool } = await supabase
-        .from('mlm_club_pools').select('id, total_amount')
-        .eq('club_type', clubType).single();
-      if (pool) {
-        await supabase.from('mlm_club_pools')
-          .update({ total_amount: (pool.total_amount || 0) + amt })
-          .eq('id', pool.id);
-      }
+      const { data: pool } = await supabase.from('mlm_club_pools').select('id, total_amount').eq('club_type', clubType).single();
+      if (pool) await supabase.from('mlm_club_pools').update({ total_amount: (pool.total_amount || 0) + amt }).eq('id', pool.id);
     }
   };
 
-  // ── Payment approve ──────────────────────────────────────────────────────────
+  // ── Payment approve ──────────────────────────────────────────────────────
   const handleApprovePayment = async (id: string, approve: boolean) => {
     const pv = paymentVerifications.find(p => p.id === id);
     if (!pv) return;
     setLoading(true);
 
     if (approve) {
-      await supabase.from('mlm_payment_verifications')
-        .update({ status: 'approved', processed_at: new Date().toISOString() })
-        .eq('id', id);
+      await supabase.from('mlm_payment_verifications').update({ status: 'approved', processed_at: new Date().toISOString() }).eq('id', id);
 
-      // ══════════════════════════════════════════════════════════════════════
-      // CASE 1: Product purchase (PV sales)
-      // ✅ সমস্যা ১ fix: Club pool এ টাকা ঢুকবে
-      // ══════════════════════════════════════════════════════════════════════
+      // ══ CASE 1: Product purchase ══════════════════════════════════════════
       if (pv.purpose === 'product_purchase') {
-        const { data: userData } = await supabase
-          .from('mlm_users')
-          .select('pv_points, monthly_pv_purchased, referrer_id')
+        const { data: userData } = await supabase.from('mlm_users')
+          .select('pv_points, monthly_pv_purchased, referrer_id, package_type, is_active')
           .eq('id', pv.user_id).single();
 
         if (userData) {
@@ -397,7 +302,8 @@ export default function AdminDashboard() {
             monthly_pv_purchased: newMonthly,
           };
 
-          if (newMonthly >= 100) {
+          // ✅ Fix 2: Customer package — monthly reactivation ১০০ PV হলে
+          if (userData.package_type === 'customer' && newMonthly >= 100) {
             const expiry = new Date();
             expiry.setDate(expiry.getDate() + 30);
             updates.is_active  = true;
@@ -406,15 +312,13 @@ export default function AdminDashboard() {
 
           await supabase.from('mlm_users').update(updates).eq('id', pv.user_id);
 
-          // Generation bonus
-          if (userData.referrer_id && pvToAdd > 0) {
+          // ✅ Fix 4: Generation bonus — শুধু customer package
+          if (userData.package_type === 'customer' && userData.referrer_id && pvToAdd > 0) {
             await distributeGenerationBonus(userData.referrer_id, pvToAdd, pv.user_id, 1);
           }
 
-          // ✅ সমস্যা ১ fix: PV sales হলে সব club pool এ টাকা যাবে
-          if (pvToAdd >= 1) {
-            await addToClubPools(pvToAdd);
-          }
+          // Club pools
+          if (pvToAdd >= 1) await addToClubPools(pvToAdd);
         }
 
         toast.success('✅ পণ্য পেমেন্ট অনুমোদিত! PV ও Club pool আপডেট হয়েছে।');
@@ -422,27 +326,21 @@ export default function AdminDashboard() {
         return;
       }
 
-      // ══════════════════════════════════════════════════════════════════════
-      // CASE 2: Package purchase
-      // ✅ সমস্যা ২ fix: Shareholder package এ daily club নেই
-      // ✅ সমস্যা ৪ fix: Gold package এ কোনো club নেই
-      // ══════════════════════════════════════════════════════════════════════
+      // ══ CASE 2: Package purchase ══════════════════════════════════════════
       const isCustomer    = pv.purpose === 'customer_package';
       const isShareholder = pv.purpose === 'shareholder_package';
       const isGold        = pv.purpose === 'gold_package';
 
-      let pvPoints  = 0;
-      let psPoints  = 0;
-      let gpPoints  = 0;
+      let pvPoints = 0, psPoints = 0, gpPoints = 0;
       let goldStart = null;
-      const expiry  = new Date();
+      const expiry = new Date();
 
       if (isCustomer) {
+        // ✅ Fix 2: Customer package activate — ১০০০ PV set করো
         pvPoints = 1000;
         expiry.setDate(expiry.getDate() + 30);
       } else if (isShareholder) {
-        // ✅ সমস্যা ৩ fix: Shareholder package এ PV নেই (psPoints only)
-        psPoints = 5000;
+        psPoints = 5000; // শুধু SP, PV নেই
         expiry.setDate(expiry.getDate() + 30);
       } else if (isGold) {
         gpPoints  = 100000;
@@ -450,39 +348,36 @@ export default function AdminDashboard() {
         expiry.setDate(expiry.getDate() + 365);
       }
 
-      await supabase.from('mlm_users').update({
+      const updatePayload: any = {
         is_active:            true,
-        pv_points:            isCustomer ? pvPoints : undefined,  // customer only
-        ps_points:            isShareholder ? psPoints : undefined,
-        gp_points:            isGold ? gpPoints : undefined,
-        monthly_pv_purchased: isCustomer ? pvPoints : 0,
-        gold_package_start:   goldStart,
         expires_at:           expiry.toISOString(),
         activated_at:         new Date().toISOString(),
-
-        // ✅ Club flags:
-        // Customer → daily only
-        // Shareholder → shareholder only (daily নেই)
-        // Gold → কোনো club নেই
-        is_daily_club:        isCustomer,    // ✅ customer only
-        is_shareholder_club:  isShareholder, // ✅ shareholder only
+        gold_package_start:   goldStart,
+        monthly_pv_purchased: isCustomer ? pvPoints : 0,
+        // Club flags
+        is_daily_club:        isCustomer,
+        is_shareholder_club:  isShareholder,
         is_weekly_club:       false,
         is_insurance_club:    false,
         is_pension_club:      false,
-      }).eq('id', pv.user_id);
+      };
+
+      if (isCustomer)    updatePayload.pv_points = pvPoints;
+      if (isShareholder) updatePayload.ps_points = psPoints;
+      if (isGold)        updatePayload.gp_points = gpPoints;
+
+      await supabase.from('mlm_users').update(updatePayload).eq('id', pv.user_id);
 
       // ✅ Customer package activate হলে club pool এ টাকা যাবে
       if (isCustomer && pvPoints >= 100) {
         await addToClubPools(pvPoints);
       }
 
-      // ── Referrer commission ──
-      const { data: newUser } = await supabase
-        .from('mlm_users').select('referrer_id').eq('id', pv.user_id).single();
+      // ── Referrer commission ──────────────────────────────────────────────
+      const { data: newUser } = await supabase.from('mlm_users').select('referrer_id').eq('id', pv.user_id).single();
 
       if (newUser?.referrer_id) {
-        const { data: referrer } = await supabase
-          .from('mlm_users').select('*').eq('id', newUser.referrer_id).single();
+        const { data: referrer } = await supabase.from('mlm_users').select('*').eq('id', newUser.referrer_id).single();
 
         if (referrer && referrer.is_active) {
           let commission = 0;
@@ -502,41 +397,48 @@ export default function AdminDashboard() {
             }).eq('id', referrer.id);
             await supabase.from('mlm_transactions').insert({
               user_id: referrer.id, type: 'referral_income', amount: totalGold,
-              description: 'গোল্ড রেফার ইনকাম (৳১৮০০, ৩৬৫ দিনে বন্টন)',
-              related_user_id: pv.user_id,
+              description: 'গোল্ড রেফার ইনকাম (৳১৮০০, ৩৬৫ দিনে বন্টন)', related_user_id: pv.user_id,
             });
             const dailyBakeya = Math.round((100000 * 0.36) / 365);
-            await supabase.from('mlm_users')
-              .update({ bakeya_amount: dailyBakeya }).eq('id', pv.user_id);
+            await supabase.from('mlm_users').update({ bakeya_amount: dailyBakeya }).eq('id', pv.user_id);
           }
 
+          // ✅ Fix 3: Commission credit — সাথে সাথে balance এ যাবে
           if (commission > 0) {
-            await supabase.from('mlm_users').update({
+            const { error: commErr } = await supabase.from('mlm_users').update({
               current_balance: (referrer.current_balance || 0) + commission,
               total_income:    (referrer.total_income || 0) + commission,
             }).eq('id', referrer.id);
-            await supabase.from('mlm_transactions').insert({
-              user_id: referrer.id, type: 'referral_income', amount: commission,
-              description: desc, related_user_id: pv.user_id,
-            });
+
+            if (!commErr) {
+              await supabase.from('mlm_transactions').insert({
+                user_id: referrer.id, type: 'referral_income', amount: commission,
+                description: desc, related_user_id: pv.user_id,
+              });
+            } else {
+              console.error('Commission error:', commErr);
+            }
           }
 
-          // Direct count + club upgrade
-          const newCount    = (referrer.direct_referrals_count || 0) + 1;
+          // ✅ Fix 5: direct_referrals_count — একবারই increment করো
+          // পুরনো count database থেকে নাও (stale না হওয়ার জন্য)
+          const { data: freshReferrer } = await supabase.from('mlm_users')
+            .select('direct_referrals_count, is_weekly_club, is_insurance_club')
+            .eq('id', referrer.id).single();
+
+          const currentCount = freshReferrer?.direct_referrals_count || 0;
+          const newCount     = currentCount + 1;
           const refUpdates: any = { direct_referrals_count: newCount };
 
-          if (newCount >= 15 && !referrer.is_weekly_club) {
+          if (newCount >= 15 && !freshReferrer?.is_weekly_club) {
             refUpdates.is_weekly_club = true;
             toast.success(`🎉 ${referrer.name} উইকলি ক্লাবে যোগ হয়েছে!`);
           }
 
-          // Insurance ও pension: ১৫ জন weekly club member থাকলে
-          if (!referrer.is_insurance_club) {
-            const { data: directRefs } = await supabase
-              .from('mlm_users')
-              .select('id, is_weekly_club')
-              .eq('referrer_id', referrer.id)
-              .eq('is_active', true);
+          // Insurance ও pension: ১৫ জন weekly club member হলে
+          if (!freshReferrer?.is_insurance_club) {
+            const { data: directRefs } = await supabase.from('mlm_users')
+              .select('id, is_weekly_club').eq('referrer_id', referrer.id).eq('is_active', true);
             const weeklyCount = (directRefs || []).filter(r => r.is_weekly_club).length;
             if (weeklyCount >= 15) {
               refUpdates.is_insurance_club = true;
@@ -552,9 +454,7 @@ export default function AdminDashboard() {
       toast.success('✅ অনুমোদিত! কমিশন বিতরণ হয়েছে।');
 
     } else {
-      await supabase.from('mlm_payment_verifications')
-        .update({ status: 'rejected', processed_at: new Date().toISOString() })
-        .eq('id', id);
+      await supabase.from('mlm_payment_verifications').update({ status: 'rejected', processed_at: new Date().toISOString() }).eq('id', id);
       toast.error('❌ প্রত্যাখ্যাত!');
     }
 
@@ -566,7 +466,6 @@ export default function AdminDashboard() {
     u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.phone?.includes(searchQuery),
   );
-
   const parentCategories = categories.filter(c => !c.parent_id);
   const getSubCategories = (pid: string) => categories.filter(c => c.parent_id === pid);
 
@@ -600,9 +499,7 @@ export default function AdminDashboard() {
             <nav className="space-y-1">
               {sidebarItems.map(item => (
                 <button key={item.id} onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                    activeTab === item.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:bg-white/10 hover:text-white'
-                  }`}>
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === item.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:bg-white/10 hover:text-white'}`}>
                   {item.icon}
                   {sidebarOpen && <span>{item.label}</span>}
                 </button>
@@ -615,9 +512,8 @@ export default function AdminDashboard() {
           <div className="flex flex-wrap gap-1.5 mb-4 lg:hidden overflow-x-auto">
             {sidebarItems.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap ${
-                  activeTab === tab.id ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600'
-                }`}>{tab.label}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap ${activeTab === tab.id ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600'}`}>
+                {tab.label}
               </button>
             ))}
           </div>
@@ -628,8 +524,7 @@ export default function AdminDashboard() {
               <p className="text-gray-500 text-xs">সকল কার্যক্রম পরিচালনা করুন</p>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={fetchAll}
-                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs hover:bg-gray-50">
+              <button onClick={fetchAll} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs hover:bg-gray-50">
                 <RefreshCw size={14} /> রিফ্রেশ
               </button>
               <button onClick={handleRunDailyCron} disabled={cronRunning}
@@ -832,8 +727,7 @@ export default function AdminDashboard() {
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold">ক্যাটাগরি ম্যানেজমেন্ট</h2>
-                  <button onClick={() => setShowCatForm(!showCatForm)}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs hover:bg-indigo-700">
+                  <button onClick={() => setShowCatForm(!showCatForm)} className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs hover:bg-indigo-700">
                     <Plus size={14} /> নতুন ক্যাটাগরি
                   </button>
                 </div>
@@ -915,17 +809,8 @@ export default function AdminDashboard() {
                           <td className="py-2 px-3 font-mono text-xs">{pv.trx_id}</td>
                           <td className="py-2 px-3 text-xs">{pv.sender_number||'-'}</td>
                           <td className="py-2 px-3 text-xs">
-                            <span className={`px-2 py-0.5 rounded-full text-xs ${
-                              pv.purpose==='product_purchase'?'bg-teal-100 text-teal-700'
-                              :pv.purpose==='gold_package'?'bg-yellow-100 text-yellow-700'
-                              :pv.purpose==='shareholder_package'?'bg-purple-100 text-purple-700'
-                              :'bg-blue-100 text-blue-700'
-                            }`}>
-                              {pv.purpose==='customer_package'?'কাস্টমার'
-                                :pv.purpose==='shareholder_package'?'শেয়ারহোল্ডার'
-                                :pv.purpose==='gold_package'?'গোল্ড'
-                                :pv.purpose==='product_purchase'?'পণ্য ক্রয়'
-                                :pv.purpose}
+                            <span className={`px-2 py-0.5 rounded-full text-xs ${pv.purpose==='product_purchase'?'bg-teal-100 text-teal-700':pv.purpose==='gold_package'?'bg-yellow-100 text-yellow-700':pv.purpose==='shareholder_package'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>
+                              {pv.purpose==='customer_package'?'কাস্টমার':pv.purpose==='shareholder_package'?'শেয়ারহোল্ডার':pv.purpose==='gold_package'?'গোল্ড':pv.purpose==='product_purchase'?'পণ্য ক্রয়':pv.purpose}
                             </span>
                           </td>
                           <td className="py-2 px-3">
@@ -943,9 +828,7 @@ export default function AdminDashboard() {
                           </td>
                         </tr>
                       ))}
-                      {paymentVerifications.length===0 && (
-                        <tr><td colSpan={8} className="text-center py-8 text-gray-400 text-xs">কোন পেমেন্ট অনুরোধ নেই</td></tr>
-                      )}
+                      {paymentVerifications.length===0 && <tr><td colSpan={8} className="text-center py-8 text-gray-400 text-xs">কোন পেমেন্ট অনুরোধ নেই</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -956,10 +839,8 @@ export default function AdminDashboard() {
               <div>
                 <h2 className="text-lg font-bold mb-1">ক্লাব বোনাস বন্টন</h2>
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-xs text-blue-800 space-y-1">
-                  <p>📌 <strong>Customer package activate</strong> → Daily 30% • Weekly 2.5% • Insurance 1.25% • Pension 1.25%</p>
-                  <p>📌 <strong>PV sales (পণ্য বিক্রয়)</strong> → উপরের সব + Shareholder 10%</p>
-                  <p>📌 <strong>Shareholder club</strong> → শুধু shareholder package holders পাবেন</p>
-                  <p>📌 <strong>Gold package</strong> → কোনো club নেই</p>
+                  <p>📌 Customer package + PV sales → Daily 30% • Weekly 2.5% • Insurance 1.25% • Pension 1.25% • Shareholder 10%</p>
+                  <p>📌 Shareholder club → শুধু shareholder package holders পাবেন</p>
                 </div>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {clubPools.map(pool => {
@@ -970,26 +851,16 @@ export default function AdminDashboard() {
                       : pool.club_type==='pension_club'     ? users.filter(u=>u.is_pension_club).length
                       : pool.club_type==='shareholder_club' ? users.filter(u=>u.is_shareholder_club&&u.package_type==='shareholder').length : 0;
                     const perMember = memberCount>0&&pool.total_amount>0 ? Math.floor(pool.total_amount/memberCount) : 0;
-                    const pctLabel =
-                      pool.club_type==='daily_club'?'৩০%'
-                      :pool.club_type==='shareholder_club'?'১০%'
-                      :pool.club_type==='insurance_club'||pool.club_type==='pension_club'?'১.২৫%'
-                      :'২.৫%';
+                    const pctLabel = pool.club_type==='daily_club'?'৩০%':pool.club_type==='shareholder_club'?'১০%':pool.club_type==='weekly_club'?'২.৫%':'১.২৫%';
                     return (
                       <div key={pool.id} className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 border border-gray-200">
                         <h3 className="font-bold text-gray-800 mb-1">{clubLabels[pool.club_type]||pool.club_type}</h3>
-                        <p className="text-xs text-gray-400 mb-2">{pctLabel} PV pool
-                          {pool.club_type==='shareholder_club' && ' • শুধু শেয়ারহোল্ডার'}
-                          {pool.club_type==='daily_club' && ' • Customer package'}
-                        </p>
+                        <p className="text-xs text-gray-400 mb-2">{pctLabel} PV pool</p>
                         <p className="text-2xl font-bold text-indigo-600 mb-1">৳{(pool.total_amount||0).toLocaleString()}</p>
                         <p className="text-xs text-gray-500 mb-1">সদস্য: {memberCount} জন</p>
                         {perMember>0 && <p className="text-xs text-gray-400 mb-3">প্রতি জনে: ৳{perMember}</p>}
-                        <button onClick={() => handleDistributeClub(pool.club_type)}
-                          disabled={loading||pool.total_amount<=0}
-                          className="w-full py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                          বন্টন করুন
-                        </button>
+                        <button onClick={() => handleDistributeClub(pool.club_type)} disabled={loading||pool.total_amount<=0}
+                          className="w-full py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50">বন্টন করুন</button>
                       </div>
                     );
                   })}
@@ -1082,11 +953,7 @@ export default function AdminDashboard() {
                             <td className="py-2 px-3 font-mono text-xs">{order.id.slice(0,8)}...</td>
                             <td className="py-2 px-3 text-xs">{order.customer?.name||order.shipping_address?.name||'N/A'}</td>
                             <td className="py-2 px-3 font-bold text-xs">৳{((order.total||0)/100).toLocaleString()}</td>
-                            <td className="py-2 px-3">
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${order.status==='paid'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>
-                                {order.status==='paid'?'পেইড':'পেন্ডিং'}
-                              </span>
-                            </td>
+                            <td className="py-2 px-3"><span className={`text-xs px-2 py-0.5 rounded-full ${order.status==='paid'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>{order.status==='paid'?'পেইড':'পেন্ডিং'}</span></td>
                             <td className="py-2 px-3 text-xs">{new Date(order.created_at).toLocaleDateString('bn-BD')}</td>
                           </tr>
                         ))}
@@ -1183,7 +1050,6 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
-
       <Footer />
     </div>
   );
