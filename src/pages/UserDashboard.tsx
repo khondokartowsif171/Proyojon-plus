@@ -1,993 +1,664 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '@/lib/supabase';
+import { useCart } from '@/contexts/CartContext';
+import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import {
-  Wallet, TrendingUp, Users, Gift, Shield, Crown, Award, Clock,
-  ArrowUpRight, ArrowDownRight, Send, Loader2, Copy,
-  Package, Timer, ChevronDown, ChevronUp, User, BarChart3,
-  Network, FileText, Share2, Target, Edit, Save, X, Smartphone, CheckCircle,
-} from 'lucide-react';
+import { CreditCard, Truck, ShieldCheck, Smartphone, CheckCircle, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  addToClubPools,
-  processReferrerCommission,
-  buildPackageActivationPayload,
-  MONTHLY_PV_TO_RENEW,
-  WITHDRAW_CHARGE_PCT,
-  TRANSFER_MIN,
-} from '@/lib/mlm-business-logic';
 
-// ── Buy Package Tab — Shareholder & Gold only ────────────────────────────────
-const PKG_LIST = [
-  {
-    type: 'shareholder' as const,
-    name: 'শেয়ারহোল্ডার প্যাকেজ',
-    price: 5000,
-    points: '৫,০০০ SP',
-    color: 'from-purple-500 to-pink-600',
-    accentColor: '#a855f7',
-    accentBg: '#faf5ff',
-    club: 'শেয়ারহোল্ডার ক্লাব (PV এর ১০%)',
-    features: ['২.৫% রেফার কমিশন (৳১২৫) — সাথে সাথে', 'শেয়ারহোল্ডার ক্লাব income', 'কোনো PV নেই', 'আজীবন মেয়াদ — রিনিউ লাগে না'],
-  },
-  {
-    type: 'gold' as const,
-    name: 'গোল্ড প্যাকেজ',
-    price: 100000,
-    points: '১,০০,০০০ GP',
-    color: 'from-yellow-500 to-orange-600',
-    accentColor: '#f59e0b',
-    accentBg: '#fffbeb',
-    club: null,
-    features: ['রেফারার পায় ৳৪.৯৩/দিন × ৩৬৫ দিন', 'বায়ার বকেয়া ৳৩৬,০০০ accumulate', 'কোনো ক্লাব নেই', '৩৬৫ দিন মেয়াদ'],
-  },
-] as const;
+const STRIPE_ACCOUNT_ID = 'acct_1TKKm8HLRkSRtFTN';
+const stripePromise =
+  STRIPE_ACCOUNT_ID && STRIPE_ACCOUNT_ID !== 'STRIPE_ACCOUNT_ID'
+    ? loadStripe(
+        'pk_live_51OJhJBHdGQpsHqInIzu7c6PzGPSH0yImD4xfpofvxvFZs0VFhPRXZCyEgYkkhOtBOXFWvssYASs851mflwQvjnrl00T6DbUwWZ',
+        { stripeAccount: STRIPE_ACCOUNT_ID },
+      )
+    : null;
 
-function BuyPackageTab({ user, loading, setLoading, onSuccess }: {
-  user: any; loading: boolean;
-  setLoading: (v: boolean) => void;
-  onSuccess: () => void;
-}) {
-  const [selPkg, setSelPkg]       = useState<'shareholder' | 'gold'>('shareholder');
-  const [payMode, setPayMode]     = useState<'balance' | 'mobile'>('balance');
-  const [mobileMth, setMobileMth] = useState('bkash');
-  const [trxId, setTrxId]         = useState('');
-  const [senderNo, setSenderNo]   = useState('');
-  const [done, setDone]           = useState(false);
+// ── Club pool percentages ────────────────────────────────────────────────────
+const PV_CLUB_PCTS: Record<string, number> = {
+  daily_club:       0.30,
+  weekly_club:      0.025,
+  insurance_club:   0.0125,
+  pension_club:     0.0125,
+  shareholder_club: 0.10,
+};
 
-  const pkg        = PKG_LIST.find(p => p.type === selPkg)!;
-  const canAfford  = Number(user?.current_balance || 0) >= pkg.price;
+// ── Stripe Payment Form ──────────────────────────────────────────────────────
+function PaymentForm({ onSuccess }: { onSuccess: (pi: any) => void }) {
+  const stripe   = useStripe();
+  const elements = useElements();
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
 
-  const reset = () => { setDone(false); setTrxId(''); setSenderNo(''); };
-
-  const handleBalance = async () => {
-    if (!canAfford) { toast.error('পর্যাপ্ত ব্যালেন্স নেই'); return; }
-    if (!window.confirm(`৳${pkg.price.toLocaleString()} দিয়ে ${pkg.name} কিনবেন?`)) return;
-    setLoading(true);
-    const { updates, psPoints, gpPoints } = buildPackageActivationPayload(selPkg);
-    await supabase.from('mlm_users').update({
-      ...updates, current_balance: Number(user.current_balance || 0) - pkg.price,
-    }).eq('id', user.id);
-    await supabase.from('mlm_transactions').insert({
-      user_id: user.id, type: 'package_purchase', amount: -pkg.price,
-      description: `ব্যালেন্স থেকে ${pkg.name} ক্রয়`,
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setLoading(true); setError('');
+    const { error: submitError, paymentIntent } = await stripe.confirmPayment({
+      elements, redirect: 'if_required',
     });
-    if (user.referrer_id) {
-      const pts = selPkg === 'shareholder' ? psPoints : gpPoints;
-      await processReferrerCommission(user.id, user.referrer_id, selPkg, pts);
+    if (submitError) {
+      setError(submitError.message || 'পেমেন্ট সমস্যা');
+      setLoading(false);
+    } else if (paymentIntent?.status === 'succeeded') {
+      onSuccess(paymentIntent);
     }
-    toast.success(`✅ ${pkg.name} কেনা হয়েছে! কমিশন পাঠানো হয়েছে।`);
-    setDone(true); onSuccess(); setLoading(false);
   };
-
-  const handleMobile = async () => {
-    if (!trxId.trim()) { toast.error('TRX ID দিন'); return; }
-    setLoading(true);
-    await supabase.from('mlm_payment_verifications').insert({
-      user_id: user.id, amount: pkg.price, method: mobileMth,
-      trx_id: trxId.trim(), sender_number: senderNo.trim() || null,
-      purpose: `${selPkg}_package`, status: 'pending',
-    });
-    toast.success('✅ পেমেন্ট জমা! Admin verify করলে আইডি সক্রিয় ও কমিশন যাবে।');
-    setDone(true); setLoading(false);
-  };
-
-  if (done) return (
-    <div className="text-center py-12">
-      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-        <CheckCircle size={32} className="text-green-600" />
-      </div>
-      <h3 className="text-lg font-bold text-gray-900 mb-2">সফল!</h3>
-      <p className="text-gray-500 text-sm mb-6">
-        {payMode === 'balance' ? `${pkg.name} কেনা সম্পন্ন।` : 'পেমেন্ট জমা হয়েছে — Admin verify করবেন।'}
-      </p>
-      <button onClick={reset} className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700">
-        আবার কিনুন
-      </button>
-    </div>
-  );
-
-  const mobileMethods = [
-    { key: 'bkash',  label: 'বিকাশ', color: '#E2136E', bg: 'from-pink-500 to-pink-600' },
-    { key: 'nagad',  label: 'নগদ',   color: '#F6921E', bg: 'from-orange-400 to-orange-500' },
-    { key: 'rocket', label: 'রকেট',  color: '#8B2F8B', bg: 'from-purple-600 to-purple-700' },
-  ];
 
   return (
-    <div>
-      <h2 className="text-lg font-bold text-gray-900 mb-1">প্যাকেজ কিনুন</h2>
-      <p className="text-sm text-gray-500 mb-5">
-        ব্যালেন্স: <span className="font-bold text-green-600">৳{Number(user.current_balance || 0).toLocaleString()}</span>
-      </p>
-
-      {/* Package cards */}
-      <div className="grid md:grid-cols-2 gap-4 mb-6">
-        {PKG_LIST.map(p => (
-          <button key={p.type} onClick={() => setSelPkg(p.type)}
-            className={`p-5 rounded-2xl border-2 text-left transition-all ${selPkg === p.type ? 'shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`}
-            style={selPkg === p.type ? { borderColor: p.accentColor, backgroundColor: p.accentBg } : {}}>
-            <div className="flex items-start justify-between mb-3">
-              <div className={`w-11 h-11 bg-gradient-to-br ${p.color} rounded-xl flex items-center justify-center text-white shadow-sm`}>
-                <Package size={20} />
-              </div>
-              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${selPkg === p.type ? 'border-indigo-500 bg-indigo-500' : 'border-gray-300'}`}>
-                {selPkg === p.type && <div className="w-2 h-2 bg-white rounded-full" />}
-              </div>
-            </div>
-            <h3 className="font-bold text-gray-900 mb-1">{p.name}</h3>
-            <p className="text-xs text-gray-500 mb-2">{p.points}</p>
-            {p.club
-              ? <span className="text-[10px] px-2 py-0.5 bg-green-100 text-green-700 rounded-full">{p.club}</span>
-              : <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">কোনো ক্লাব নেই</span>
-            }
-            <p className="text-2xl font-extrabold text-gray-900 mt-3">৳{p.price.toLocaleString()}</p>
-          </button>
-        ))}
-      </div>
-
-      {/* Features */}
-      <div className="bg-gray-50 rounded-xl p-4 mb-5">
-        <p className="text-xs font-semibold text-gray-600 mb-2">{pkg.name} — সুবিধা:</p>
-        <ul className="space-y-1.5">
-          {pkg.features.map((f, i) => (
-            <li key={i} className="flex items-center gap-2 text-xs text-gray-600">
-              <div className={`w-4 h-4 bg-gradient-to-br ${pkg.color} rounded-full flex items-center justify-center flex-shrink-0`}>
-                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-              </div>
-              {f}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Payment method */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-5">
-        <p className="text-sm font-semibold text-gray-700 mb-3">পেমেন্ট পদ্ধতি</p>
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          {[
-            { key: 'balance', label: 'ব্যালেন্স থেকে', icon: <Wallet size={18} />, sub: `৳${(user.current_balance||0).toLocaleString()} আছে`, color: 'from-green-500 to-emerald-500' },
-            { key: 'mobile',  label: 'মোবাইল পেমেন্ট', icon: <Smartphone size={18} />, sub: 'বিকাশ / নগদ / রকেট', color: 'from-pink-500 to-orange-400' },
-          ].map(m => (
-            <button key={m.key} onClick={() => setPayMode(m.key as any)}
-              className={`p-3.5 rounded-xl border-2 text-left transition-all ${payMode===m.key?'border-indigo-500 bg-indigo-50 shadow-sm':'border-gray-200 hover:border-gray-300'}`}>
-              <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${m.color} flex items-center justify-center text-white mb-2`}>{m.icon}</div>
-              <p className={`font-semibold text-xs mb-0.5 ${payMode===m.key?'text-indigo-700':'text-gray-800'}`}>{m.label}</p>
-              <p className="text-[10px] text-gray-400">{m.sub}</p>
-            </button>
-          ))}
-        </div>
-
-        {payMode === 'balance' && (
-          <div>
-            <div className={`rounded-xl p-3 text-xs border mb-3 ${canAfford?'bg-green-50 border-green-200 text-green-800':'bg-red-50 border-red-200 text-red-800'}`}>
-              {canAfford
-                ? `✅ ব্যালেন্স থেকে ৳${pkg.price.toLocaleString()} কাটা হবে এবং আইডি সাথে সাথে সক্রিয় হবে।`
-                : `❌ ব্যালেন্স কম। আরও ৳${(pkg.price-(user.current_balance||0)).toLocaleString()} প্রয়োজন।`
-              }
-            </div>
-            <button onClick={handleBalance} disabled={loading || !canAfford}
-              className={`w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r ${pkg.color} hover:opacity-90 disabled:opacity-40 transition-all`}>
-              {loading ? 'প্রসেসিং...' : `৳${pkg.price.toLocaleString()} — ব্যালেন্স দিয়ে কিনুন`}
-            </button>
-          </div>
-        )}
-
-        {payMode === 'mobile' && (
-          <div>
-            <div className="grid grid-cols-3 gap-2 mb-3">
-              {mobileMethods.map(m => (
-                <button key={m.key} onClick={() => setMobileMth(m.key)}
-                  className={`p-2.5 rounded-xl border-2 text-center transition-all ${mobileMth===m.key?'shadow-md':'border-gray-200'}`}
-                  style={mobileMth===m.key?{borderColor:m.color,backgroundColor:m.color+'18'}:{}}>
-                  <div className={`w-9 h-9 mx-auto mb-1 rounded-lg bg-gradient-to-br ${m.bg} flex items-center justify-center`}>
-                    <span className="text-white font-bold text-xs">{m.label[0]}</span>
-                  </div>
-                  <p className="font-bold text-[11px]" style={{color:m.color}}>{m.label}</p>
-                </button>
-              ))}
-            </div>
-            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 mb-3 text-xs text-indigo-700">
-              <ol className="list-decimal pl-4 space-y-0.5">
-                <li>{mobileMethods.find(m=>m.key===mobileMth)?.label} নম্বরে <strong>৳{pkg.price.toLocaleString()}</strong> পাঠান</li>
-                <li>TRX ID নিচে দিন এবং জমা দিন</li>
-                <li>Admin verify করলে আইডি সক্রিয় ও কমিশন যাবে</li>
-              </ol>
-            </div>
-            <div className="space-y-2 mb-3">
-              <input value={trxId} onChange={e=>setTrxId(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-mono focus:border-indigo-500 outline-none"
-                placeholder="TRX ID *" />
-              <input value={senderNo} onChange={e=>setSenderNo(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none"
-                placeholder="সেন্ডার নম্বর (ঐচ্ছিক)" />
-            </div>
-            <button onClick={handleMobile} disabled={loading || !trxId.trim()}
-              className={`w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r ${pkg.color} hover:opacity-90 disabled:opacity-40 transition-all`}>
-              {loading ? 'প্রসেসিং...' : 'পেমেন্ট জমা দিন'}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+    <form onSubmit={handleSubmit}>
+      <PaymentElement />
+      {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+      <button type="submit" disabled={!stripe || loading}
+        className="w-full mt-4 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg">
+        {loading ? 'প্রসেসিং...' : 'পেমেন্ট করুন'}
+      </button>
+    </form>
   );
 }
 
-export default function UserDashboard() {
-  const { user, loading: authLoading, refreshUser } = useAuth();
+// ── Main Checkout ────────────────────────────────────────────────────────────
+export default function Checkout() {
   const navigate = useNavigate();
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [generations, setGenerations] = useState<any[][]>([[], [], [], [], []]);
-  const [networkMembers, setNetworkMembers] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [withdrawForm, setWithdrawForm] = useState({ amount: '', method: 'bkash', account: '' });
-  const [transferForm, setTransferForm] = useState({ amount: '', toEmail: '' });
-  const [goldCountdown, setGoldCountdown] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-  const [loading, setLoading] = useState(false);
-  const [profileEdit, setProfileEdit] = useState(false);
-  const [profileForm, setProfileForm] = useState({
-    name: '', phone: '', address: '', nid_number: '', nominee_name: '', nominee_phone: '',
+  const { cart, cartTotal, totalPvPoints, clearCart } = useCart();
+  const { user, refreshUser } = useAuth();
+
+  const [clientSecret,   setClientSecret]   = useState('');
+  const [paymentError,   setPaymentError]   = useState('');
+  const [paymentMethod,  setPaymentMethod]  = useState<'card' | 'mobile' | 'balance'>('mobile');
+  const [mobileMethod,   setMobileMethod]   = useState('bkash');
+  const [trxId,          setTrxId]          = useState('');
+  const [senderNumber,   setSenderNumber]   = useState('');
+  const [mobileLoading,  setMobileLoading]  = useState(false);
+  const [mobileSuccess,  setMobileSuccess]  = useState(false);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+
+  const [shippingAddress, setShippingAddress] = useState({
+    name:           user?.name  || '',
+    email:          user?.email || '',
+    phone:          user?.phone || '',
+    address:        '',
+    city:           '',
+    state:          '',
+    referrer_name:  '',
+    referrer_phone: '',
   });
-  const [withdrawals, setWithdrawals] = useState<any[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // User balance
+  const userBalance        = user?.current_balance || 0;
+  const cartTotalInTaka    = Math.round(cartTotal / 100); // cart total টাকায়
+  const canPayWithBalance  = userBalance >= cartTotalInTaka && cartTotalInTaka > 0;
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) { navigate('/login'); return; }
-    if (user.role === 'admin') { navigate('/admin'); return; }
-    fetchData();
-    setProfileForm({
-      name:          user.name || '',
-      phone:         user.phone || '',
-      address:       (user as any).address || '',
-      nid_number:    (user as any).nid_number || '',
-      nominee_name:  (user as any).nominee_name || '',
-      nominee_phone: (user as any).nominee_phone || '',
-    });
-  }, [user]);
-
-  // Poll for balance updates every 30 seconds
-  useEffect(() => {
-    if (!user) return;
-    const interval = setInterval(() => { refreshUser(); }, 30000);
-    return () => clearInterval(interval);
-  }, [user]);
-
-  // Gold countdown timer
-  useEffect(() => {
-    if (user?.package_type === 'gold' && user.gold_package_start) {
-      const interval = setInterval(() => {
-        const start = new Date(user.gold_package_start!).getTime();
-        const end   = start + 365 * 24 * 60 * 60 * 1000;
-        const rem   = Math.max(0, end - Date.now());
-        setGoldCountdown({
-          days:    Math.floor(rem / (1000 * 60 * 60 * 24)),
-          hours:   Math.floor((rem % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-          minutes: Math.floor((rem % (1000 * 60 * 60)) / (1000 * 60)),
-          seconds: Math.floor((rem % (1000 * 60)) / 1000),
-        });
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [user]);
-
-  const fetchData = async () => {
-    if (!user) return;
-    const [txRes, wdRes] = await Promise.all([
-      supabase.from('mlm_transactions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
-      supabase.from('mlm_withdrawals').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20),
-    ]);
-    if (txRes.data) setTransactions(txRes.data);
-    if (wdRes.data) setWithdrawals(wdRes.data);
-    await fetchGenerations(user.id);
-  };
-
-  const fetchGenerations = async (userId: string) => {
-    const gens: any[][] = [[], [], [], [], []];
-    const allMembers: any[] = [];
-
-    const { data: gen1 } = await supabase.from('mlm_users')
-      .select('id, name, email, phone, package_type, is_active, pv_points, current_balance, total_income, referrer_id, created_at')
-      .eq('referrer_id', userId).order('created_at', { ascending: false });
-    gens[0] = gen1 || [];
-    for (const m of gens[0]) allMembers.push({ ...m, level: 1, upline: user?.name || '' });
-
-    for (let i = 1; i < 5; i++) {
-      const parentIds = gens[i - 1].map((u: any) => u.id);
-      if (parentIds.length === 0) break;
-      const { data } = await supabase.from('mlm_users')
-        .select('id, name, email, phone, package_type, is_active, pv_points, current_balance, total_income, referrer_id, created_at')
-        .in('referrer_id', parentIds);
-      gens[i] = data || [];
-      for (const m of gens[i]) {
-        const parent = gens[i - 1].find((p: any) => p.id === m.referrer_id);
-        allMembers.push({ ...m, level: i + 1, upline: parent?.name || '' });
+    if (cart.length === 0) { navigate('/cart'); return; }
+    if (paymentMethod === 'card') {
+      if (cartTotal > 0) {
+        supabase.functions
+          .invoke('create-payment-intent', { body: { amount: cartTotal, currency: 'bdt' } })
+          .then(({ data, error }) => {
+            if (error || !data?.clientSecret) {
+              setPaymentError('পেমেন্ট সিস্টেম সেটআপ হচ্ছে।'); return;
+            }
+            setClientSecret(data.clientSecret);
+          });
       }
     }
-    setGenerations(gens);
-    setNetworkMembers(allMembers);
-  };
+  }, [paymentMethod]);
 
-  const handleWithdraw = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
-    setLoading(true);
-    const amount = parseInt(withdrawForm.amount);
-    if (isNaN(amount) || amount <= 0)        { toast.error('সঠিক পরিমাণ লিখুন'); setLoading(false); return; }
-    if (amount < 100)                         { toast.error('সর্বনিম্ন উইথড্রো ৳১০০'); setLoading(false); return; }
-    if (amount > Number(user.current_balance || 0)) { toast.error('পর্যাপ্ত ব্যালেন্স নেই'); setLoading(false); return; }
-    if (!withdrawForm.account.trim())               { toast.error('একাউন্ট নম্বর দিন'); setLoading(false); return; }
-
-    const charge    = Math.floor(amount * WITHDRAW_CHARGE_PCT);
-    const netAmount = amount - charge;
-
-    try {
-      await supabase.from('mlm_withdrawals').insert({
-        user_id: user.id, amount, charge, net_amount: netAmount,
-        method: withdrawForm.method, account_number: withdrawForm.account,
-      });
-      await supabase.from('mlm_users').update({ current_balance: Number(user.current_balance || 0) - amount }).eq('id', user.id);
-      await supabase.from('mlm_transactions').insert({
-        user_id: user.id, type: 'withdrawal', amount: -amount,
-        description: `উইথড্রো অনুরোধ - ${withdrawForm.method} (${withdrawForm.account}) — চার্জ ৳${charge}`,
-      });
-      toast.success(`✅ উইথড্রো অনুরোধ সফল! নেট পাবেন: ৳${netAmount}`);
-      setWithdrawForm({ amount: '', method: 'bkash', account: '' });
-      await refreshUser(); fetchData();
-    } catch {
-      toast.error('উইথড্রো করতে সমস্যা হয়েছে');
+  // ── Club pool helper ──────────────────────────────────────────────────────
+  const addToClubPools = async (pvAmount: number) => {
+    for (const [clubType, pct] of Object.entries(PV_CLUB_PCTS)) {
+      const amt = Math.floor(pvAmount * pct);
+      if (amt <= 0) continue;
+      const { data: pool } = await supabase
+        .from('mlm_club_pools').select('id, total_amount')
+        .eq('club_type', clubType).single();
+      if (pool) {
+        await supabase.from('mlm_club_pools')
+          .update({ total_amount: (pool.total_amount || 0) + amt })
+          .eq('id', pool.id);
+      }
     }
-    setLoading(false);
   };
 
-  const handleTransfer = async (e: React.FormEvent) => {
+  // ── Generation bonus chain — শুধু customer package এর PV sales এ ──────────
+  const processGenerationBonusChain = async (
+    userId: string, pvPoints: number, sourceId: string, gen: number,
+  ) => {
+    if (gen > 5) return;
+    const { data: u } = await supabase
+      .from('mlm_users')
+      .select('id, referrer_id, is_active, current_balance, total_income, package_type')
+      .eq('id', userId).single();
+    // ✅ Fix 4: Generation bonus শুধু active users পাবে
+    if (!u || !u.is_active) return;
+    const bonus = Math.floor(pvPoints * 0.01);
+    if (bonus > 0) {
+      await supabase.from('mlm_users').update({
+        current_balance: (u.current_balance || 0) + bonus,
+        total_income:    (u.total_income || 0) + bonus,
+      }).eq('id', u.id);
+      await supabase.from('mlm_transactions').insert({
+        user_id:         u.id,
+        type:            'generation_bonus',
+        amount:          bonus,
+        description:     `জেনারেশন ${gen} বোনাস (PV: ${pvPoints})`,
+        related_user_id: sourceId,
+      });
+    }
+    if (u.referrer_id) {
+      await processGenerationBonusChain(u.referrer_id, pvPoints, sourceId, gen + 1);
+    }
+  };
+
+  // ── PV processing — শুধু customer package এর ক্ষেত্রে ────────────────────
+  const processPvForCustomer = async (pvToAdd: number) => {
+    if (!user || user.package_type !== 'customer') return;
+
+    const currentMonthly = user.monthly_pv_purchased || 0;
+    const newMonthly     = currentMonthly + pvToAdd;
+
+    const updates: any = {
+      pv_points:            (user.pv_points || 0) + pvToAdd,
+      monthly_pv_purchased: newMonthly,
+    };
+
+    // ✅ Fix 2: Customer package activate condition — ১০০০ PV প্রয়োজন (package price)
+    // কিন্তু monthly reactivation এর জন্য ১০০ PV যথেষ্ট
+    // প্রথম activation: pv_points >= 1000
+    // Monthly reactivation: monthly_pv_purchased >= 100
+    if (!user.is_active && newMonthly >= 100) {
+      const newExpiry = new Date();
+      newExpiry.setDate(newExpiry.getDate() + 30);
+      updates.is_active  = true;
+      updates.expires_at = newExpiry.toISOString();
+    } else if (user.is_active && newMonthly >= 100) {
+      // Already active, just extend
+      const newExpiry = new Date();
+      newExpiry.setDate(newExpiry.getDate() + 30);
+      updates.expires_at = newExpiry.toISOString();
+    }
+
+    await supabase.from('mlm_users').update(updates).eq('id', user.id);
+
+    // PV log
+    await supabase.from('mlm_pv_log').insert({
+      user_id: user.id,
+      amount:  pvToAdd,
+      source:  'product_purchase',
+    }).catch(() => {}); // PV log table নাও থাকতে পারে
+
+    // ✅ Fix 4: Generation bonus — শুধু customer package
+    if (user.referrer_id && pvToAdd > 0) {
+      await processGenerationBonusChain(user.referrer_id, pvToAdd, user.id, 1);
+    }
+
+    // Club pools
+    if (pvToAdd >= 1) {
+      await addToClubPools(pvToAdd);
+    }
+
+    await refreshUser();
+  };
+
+  // ── Create order ──────────────────────────────────────────────────────────
+  // addPvNow = true → Card / Balance payment (সাথে সাথে PV দাও)
+  // addPvNow = false → Mobile payment (Admin approve এর পরে PV দেবে)
+  const createOrder = async (paymentRef: string, addPvNow: boolean = false) => {
+    const { data: customer } = await supabase
+      .from('ecom_customers')
+      .upsert(
+        { email: shippingAddress.email, name: shippingAddress.name, phone: shippingAddress.phone },
+        { onConflict: 'email' },
+      )
+      .select('id').single();
+
+    const { data: order } = await supabase.from('ecom_orders').insert({
+      customer_id:              customer?.id  || null,
+      user_id:                  user?.id      || null,
+      status:                   addPvNow ? 'paid' : 'pending',
+      subtotal:                 cartTotal,
+      tax:                      0,
+      shipping:                 0,
+      total:                    cartTotal,
+      shipping_address:         shippingAddress,
+      stripe_payment_intent_id: paymentRef,
+      notes: shippingAddress.referrer_name
+        ? `রেফারার: ${shippingAddress.referrer_name} (${shippingAddress.referrer_phone})`
+        : null,
+    }).select('id').single();
+
+    if (order) {
+      await supabase.from('ecom_order_items').insert(
+        cart.map(item => ({
+          order_id:      order.id,
+          product_id:    item.product_id,
+          variant_id:    item.variant_id    || null,
+          product_name:  item.name,
+          variant_title: item.variant_title || null,
+          sku:           item.sku           || null,
+          quantity:      item.quantity,
+          unit_price:    item.price,
+          total:         item.price * item.quantity,
+        })),
+      );
+    }
+
+    // ✅ Fix 4: শুধু customer package এর জন্য PV process করো
+    if (addPvNow && user && user.package_type === 'customer' && totalPvPoints > 0) {
+      await processPvForCustomer(totalPvPoints);
+    } else if (addPvNow) {
+      await refreshUser();
+    }
+
+    clearCart();
+    navigate('/order-confirmation?id=' + (order?.id || ''));
+  };
+
+  // ── Card payment ──────────────────────────────────────────────────────────
+  const handlePaymentSuccess = async (paymentIntent: any) => {
+    try {
+      await createOrder(paymentIntent.id, true);
+    } catch (err) {
+      console.error(err);
+      toast.error('অর্ডার তৈরি করতে সমস্যা');
+    }
+  };
+
+  // ── Mobile payment ────────────────────────────────────────────────────────
+  const handleMobilePayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
-    setLoading(true);
-    const amount = parseInt(transferForm.amount);
-    if (isNaN(amount) || amount < TRANSFER_MIN) { toast.error(`সর্বনিম্ন ট্রান্সফার ৳${TRANSFER_MIN}`); setLoading(false); return; }
-    if (amount > Number(user.current_balance || 0)) { toast.error('পর্যাপ্ত ব্যালেন্স নেই'); setLoading(false); return; }
-    if (!transferForm.toEmail.trim())            { toast.error('প্রাপকের ইমেইল দিন'); setLoading(false); return; }
-    if (transferForm.toEmail === user.email)     { toast.error('নিজেকে ট্রান্সফার করা যাবে না'); setLoading(false); return; }
+    if (!trxId.trim()) { toast.error('TRX ID দিন'); return; }
+    if (!shippingAddress.name || !shippingAddress.phone || !shippingAddress.address) {
+      toast.error('শিপিং তথ্য পূরণ করুন'); return;
+    }
+    setMobileLoading(true);
 
-    const { data: toUser } = await supabase.from('mlm_users').select('id, name, current_balance').eq('email', transferForm.toEmail).single();
-    if (!toUser) { toast.error('প্রাপকের ইমেইল পাওয়া যায়নি'); setLoading(false); return; }
+    if (user) {
+      await supabase.from('mlm_payment_verifications').insert({
+        user_id:       user.id,
+        amount:        cartTotalInTaka,
+        method:        mobileMethod,
+        trx_id:        trxId.trim(),
+        sender_number: senderNumber.trim() || null,
+        purpose:       'product_purchase',
+        pv_points:     user.package_type === 'customer' ? totalPvPoints : 0,
+        status:        'pending',
+      });
+    }
 
-    await supabase.from('mlm_users').update({ current_balance: Number(user.current_balance || 0) - amount }).eq('id', user.id);
-    await supabase.from('mlm_users').update({ current_balance: Number(toUser.current_balance || 0) + amount }).eq('id', toUser.id);
-    await supabase.from('mlm_transfers').insert({ from_user_id: user.id, to_user_id: toUser.id, amount });
-    await supabase.from('mlm_transactions').insert([
-      { user_id: user.id,   type: 'transfer_out', amount: -amount, description: `ট্রান্সফার → ${toUser.name}`,       related_user_id: toUser.id },
-      { user_id: toUser.id, type: 'transfer_in',  amount,          description: `ট্রান্সফার প্রাপ্ত ← ${user.name}`, related_user_id: user.id  },
-    ]);
-    toast.success(`✅ ৳${amount} সফলভাবে ${toUser.name} কে ট্রান্সফার হয়েছে`);
-    setTransferForm({ amount: '', toEmail: '' });
-    await refreshUser(); fetchData(); setLoading(false);
+    // Mobile payment → PV দেবে না সাথে সাথে
+    await createOrder(`mobile_${mobileMethod}_${trxId.trim()}`, false);
+    setMobileSuccess(true);
+    setMobileLoading(false);
   };
 
-  const handleProfileSave = async () => {
-    if (!user) return;
-    setLoading(true);
-    await supabase.from('mlm_users').update({
-      name: profileForm.name, phone: profileForm.phone, address: profileForm.address,
-      nid_number: profileForm.nid_number, nominee_name: profileForm.nominee_name,
-      nominee_phone: profileForm.nominee_phone,
-    }).eq('id', user.id);
-    toast.success('প্রোফাইল আপডেট সফল');
-    setProfileEdit(false); await refreshUser(); setLoading(false);
+  // ── ✅ Balance payment — নতুন ────────────────────────────────────────────
+  const handleBalancePayment = async () => {
+    if (!user) { toast.error('লগইন করুন'); return; }
+    if (!canPayWithBalance) {
+      toast.error(`ব্যালেন্স যথেষ্ট নয়। দরকার: ৳${cartTotalInTaka}, আছে: ৳${userBalance}`);
+      return;
+    }
+    if (!shippingAddress.name || !shippingAddress.phone || !shippingAddress.address) {
+      toast.error('শিপিং তথ্য পূরণ করুন'); return;
+    }
+
+    setBalanceLoading(true);
+    try {
+      // Balance কাটো
+      const { error: balErr } = await supabase.from('mlm_users')
+        .update({ current_balance: userBalance - cartTotalInTaka })
+        .eq('id', user.id);
+
+      if (balErr) {
+        toast.error('ব্যালেন্স কাটতে সমস্যা: ' + balErr.message);
+        setBalanceLoading(false); return;
+      }
+
+      // Transaction log
+      await supabase.from('mlm_transactions').insert({
+        user_id:     user.id,
+        type:        'product_purchase',
+        amount:      -cartTotalInTaka,
+        description: `ব্যালেন্স থেকে পণ্য ক্রয় (৳${cartTotalInTaka})`,
+      });
+
+      // Order তৈরি করো + PV দাও
+      await createOrder(`balance_payment_${user.id}_${Date.now()}`, true);
+      toast.success('✅ ব্যালেন্স থেকে অর্ডার সম্পন্ন!');
+    } catch (err: any) {
+      toast.error('সমস্যা হয়েছে: ' + err.message);
+    }
+    setBalanceLoading(false);
   };
 
-  const copyReferralLink = () => {
-    if (!user) return;
-    navigator.clipboard.writeText(`${window.location.origin}/register?ref=${user.id}`);
-    toast.success('রেফারাল লিংক কপি হয়েছে!');
-  };
-
-  const isExpired  = user ? new Date(user.expires_at) < new Date() : false;
-  const daysLeft   = user ? Math.max(0, Math.ceil((new Date(user.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : 0;
-  const pvProgress = Math.min(100, ((user?.monthly_pv_purchased || 0) / MONTHLY_PV_TO_RENEW) * 100);
-
-  if (authLoading) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-3">
-      <Loader2 size={40} className="animate-spin text-indigo-600" />
-      <p className="text-sm text-gray-500">লোড হচ্ছে...</p>
-    </div>
-  );
-  if (!user) return null;
-
-  const sidebarItems = [
-    { id: 'overview',     label: 'ওভারভিউ',       icon: <BarChart3 size={18} /> },
-    { id: 'network',      label: 'নেটওয়ার্ক',     icon: <Network size={18} /> },
-    { id: 'generations',  label: 'জেনারেশন',      icon: <Users size={18} /> },
-    { id: 'commission',   label: 'কমিশন',          icon: <TrendingUp size={18} /> },
-    { id: 'transactions', label: 'লেনদেন',         icon: <FileText size={18} /> },
-    { id: 'withdraw',     label: 'উইথড্রো',        icon: <Wallet size={18} /> },
-    { id: 'transfer',     label: 'ট্রান্সফার',     icon: <Send size={18} /> },
-    { id: 'buy_package',  label: 'প্যাকেজ কিনুন', icon: <Package size={18} /> },
-    { id: 'profile',      label: 'প্রোফাইল',       icon: <User size={18} /> },
+  const mobilePaymentMethods = [
+    { key: 'bkash',  label: 'বিকাশ', color: '#E2136E', number: '01XXXXXXXXX', bgClass: 'from-pink-500 to-pink-600' },
+    { key: 'nagad',  label: 'নগদ',   color: '#F6921E', number: '01XXXXXXXXX', bgClass: 'from-orange-400 to-orange-500' },
+    { key: 'rocket', label: 'রকেট',  color: '#8B2F8B', number: '01XXXXXXXXX', bgClass: 'from-purple-600 to-purple-700' },
   ];
 
-  const totalTeam = generations.reduce((s, g) => s + g.length, 0);
+  // ── Mobile success ────────────────────────────────────────────────────────
+  if (mobileSuccess) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="max-w-lg mx-auto px-4 py-16 text-center">
+          <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <CheckCircle size={40} className="text-green-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-3">পেমেন্ট অনুরোধ সফল!</h1>
+            <p className="text-gray-500 mb-2">আপনার পেমেন্ট এডমিন কর্তৃক যাচাই করা হবে।</p>
+            <p className="text-gray-400 text-sm mb-6">অনুমোদনের পর অর্ডার নিশ্চিত হবে।</p>
+            <Link to="/dashboard" className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700">
+              ড্যাশবোর্ডে যান
+            </Link>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <h1 className="text-2xl font-bold text-gray-900 mb-8">চেকআউট</h1>
 
-      {/* Gold countdown */}
-      {user.package_type === 'gold' && user.gold_package_start && (
-        <div className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white">
-          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-center gap-6 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Timer size={20} />
-              <span className="font-semibold text-sm">গোল্ড প্যাকেজ কাউন্টডাউন:</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {[
-                { value: goldCountdown.days,    label: 'দিন' },
-                { value: goldCountdown.hours,   label: 'ঘন্টা' },
-                { value: goldCountdown.minutes, label: 'মিনিট' },
-                { value: goldCountdown.seconds, label: 'সেকেন্ড' },
-              ].map((t, i) => (
-                <React.Fragment key={i}>
-                  <div className="bg-white/20 backdrop-blur-sm rounded-lg px-3 py-1 text-center min-w-[52px]">
-                    <p className="text-lg font-bold">{String(t.value).padStart(2, '0')}</p>
-                    <p className="text-[10px]">{t.label}</p>
-                  </div>
-                  {i < 3 && <span className="text-xl font-bold">:</span>}
-                </React.Fragment>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+        <div className="grid lg:grid-cols-2 gap-8">
+          {/* Left */}
+          <div className="space-y-6">
 
-      {/* Expiry warnings */}
-      {isExpired && user.package_type !== 'gold' && (
-        <div className="bg-red-500 text-white text-center py-3 text-sm font-medium">
-          আপনার আইডির মেয়াদ শেষ! মাসে ১০০ PV পণ্য কিনলে রিনিউ হবে।{' '}
-          <Link to="/shop" className="underline font-bold">শপে যান</Link>
-        </div>
-      )}
-      {!isExpired && daysLeft <= 7 && user.package_type === 'customer' && (
-        <div className="bg-yellow-500 text-white text-center py-2 text-sm">
-          আপনার আইডির মেয়াদ {daysLeft} দিন বাকি — মাসে ১০০ PV কিনলে রিনিউ হবে
-        </div>
-      )}
-
-      <div className="flex">
-        {/* Sidebar */}
-        <aside className={`${sidebarOpen ? 'w-64' : 'w-16'} bg-white border-r border-gray-200 min-h-[calc(100vh-64px)] transition-all duration-300 hidden lg:block`}>
-          <div className="p-4">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-gray-100 mb-4">
-              {sidebarOpen ? <ChevronDown size={18} className="rotate-90" /> : <ChevronUp size={18} className="rotate-90" />}
-            </button>
-            <nav className="space-y-1">
-              {sidebarItems.map(item => (
-                <button key={item.id} onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === item.id ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}>
-                  {item.icon}
-                  {sidebarOpen && <span>{item.label}</span>}
-                </button>
-              ))}
-            </nav>
-          </div>
-        </aside>
-
-        <main className="flex-1 p-4 lg:p-8 max-w-full overflow-x-hidden">
-          {/* Mobile tabs */}
-          <div className="flex flex-wrap gap-2 mb-6 lg:hidden bg-white rounded-xl p-1.5 shadow-sm border border-gray-100 overflow-x-auto">
-            {sidebarItems.map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap ${activeTab === tab.id ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Header */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">স্বাগতম, {user.name}!</h1>
-              <p className="text-gray-500 text-sm">
-                {user.package_type === 'customer' ? 'কাস্টমার' : user.package_type === 'shareholder' ? 'শেয়ারহোল্ডার' : 'গোল্ড'} প্যাকেজ
-                {' • '}{user.is_active ? <span className="text-green-600 font-medium">সক্রিয়</span> : <span className="text-red-600 font-medium">নিষ্ক্রিয়</span>}
-              </p>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={copyReferralLink} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700">
-                <Share2 size={16} /> রেফার লিংক কপি
-              </button>
-              <Link to="/shop" className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700">
-                <Package size={16} /> শপ
-              </Link>
-            </div>
-          </div>
-
-          {/* PV Progress — customer only */}
-          {user.package_type === 'customer' && (
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center text-white">
-                    <Target size={20} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-gray-900 text-sm">মাসিক PV লক্ষ্যমাত্রা</h3>
-                    <p className="text-xs text-gray-500">আইডি রিনিউর জন্য মাসে {MONTHLY_PV_TO_RENEW} PV প্রয়োজন</p>
-                  </div>
+            {/* Shipping */}
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Truck size={20} className="text-indigo-600" /> শিপিং তথ্য
+              </h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">নাম *</label>
+                  <input value={shippingAddress.name} onChange={e => setShippingAddress({...shippingAddress, name: e.target.value})} required
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="আপনার নাম" />
                 </div>
-                <p className="text-2xl font-bold text-green-600">
-                  {user.monthly_pv_purchased || 0}<span className="text-sm text-gray-400">/{MONTHLY_PV_TO_RENEW} PV</span>
-                </p>
-              </div>
-              <div className="relative w-full h-5 bg-gray-100 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full transition-all ${pvProgress >= 100 ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gradient-to-r from-indigo-500 to-purple-500'}`}
-                  style={{ width: `${pvProgress}%` }} />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xs font-bold text-white drop-shadow">{Math.round(pvProgress)}%</span>
-                </div>
-              </div>
-              {pvProgress >= 100
-                ? <p className="text-xs text-green-600 font-medium mt-2">✅ লক্ষ্যমাত্রা পূরণ! আইডি রিনিউ হবে।</p>
-                : <p className="text-xs text-gray-500 mt-2">আরও {MONTHLY_PV_TO_RENEW - (user.monthly_pv_purchased || 0)} PV প্রয়োজন। <Link to="/shop" className="text-indigo-600 font-medium hover:underline">পণ্য কিনুন</Link></p>
-              }
-            </div>
-          )}
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            {[
-              { label: 'কারেন্ট ব্যালেন্স', value: `৳${Number(user.current_balance || 0).toLocaleString()}`, icon: <Wallet size={22} />,    color: 'from-blue-500 to-cyan-500' },
-              { label: 'টোটাল ইনকাম',      value: `৳${(user.total_income || 0).toLocaleString()}`,   icon: <TrendingUp size={22} />, color: 'from-green-500 to-emerald-500' },
-              { label: 'ডিরেক্ট রেফারাল',  value: user.direct_referrals_count || 0,                   icon: <Users size={22} />,     color: 'from-purple-500 to-pink-500' },
-              { label: 'মোট টিম',          value: totalTeam,                                           icon: <Network size={22} />,   color: 'from-orange-500 to-red-500' },
-            ].map((stat, i) => (
-              <div key={i} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <div className={`w-11 h-11 bg-gradient-to-br ${stat.color} rounded-xl flex items-center justify-center text-white mb-3`}>{stat.icon}</div>
-                <p className="text-xs text-gray-500 mb-1">{stat.label}</p>
-                <p className="text-xl font-bold text-gray-900">{stat.value}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Club status */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-            {[
-              { label: 'ডেইলি ক্লাব',         active: user.is_daily_club,       icon: <Gift size={18} />,   note: 'PV এর ৩০%' },
-              { label: 'উইকলি ক্লাব',         active: user.is_weekly_club,      icon: <Clock size={18} />,  note: '১৫ রেফারে' },
-              { label: 'ইনসুরেন্স ক্লাব',    active: user.is_insurance_club,   icon: <Shield size={18} />, note: '১৫ weekly refs' },
-              { label: 'পেনশন ক্লাব',         active: user.is_pension_club,     icon: <Crown size={18} />,  note: '১৫ weekly refs' },
-              { label: 'শেয়ারহোল্ডার ক্লাব', active: user.is_shareholder_club, icon: <Award size={18} />,  note: 'Shareholder only' },
-            ].map((club, i) => (
-              <div key={i} className={`rounded-xl p-4 border ${club.active ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={club.active ? 'text-green-600' : 'text-gray-400'}>{club.icon}</span>
-                  <span className="text-xs font-medium text-gray-700">{club.label}</span>
-                </div>
-                <span className={`text-xs font-bold ${club.active ? 'text-green-600' : 'text-gray-400'}`}>
-                  {club.active ? '✅ সদস্য' : `❌ (${club.note})`}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Gold bakeya */}
-          {user.package_type === 'gold' && (
-            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 mb-6">
-              <div className="flex items-center gap-3">
-                <Award size={24} className="text-orange-600" />
                 <div>
-                  <p className="font-semibold text-orange-800">বকেয়া হিসাব (দৈনিক জমা হচ্ছে)</p>
-                  <p className="text-2xl font-bold text-orange-600">৳{Number(user.bakeya_amount || 0).toLocaleString()}</p>
-                  <p className="text-xs text-orange-500 mt-1">মোট বকেয়া: ৳৩৬,০০০ | প্যাকেজ বাতিল করতে এই পরিমাণ পরিশোধ করতে হবে</p>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">ইমেইল *</label>
+                  <input type="email" value={shippingAddress.email} onChange={e => setShippingAddress({...shippingAddress, email: e.target.value})} required
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">ফোন *</label>
+                  <input value={shippingAddress.phone} onChange={e => setShippingAddress({...shippingAddress, phone: e.target.value})} required
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="০১XXXXXXXXX" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">ঠিকানা *</label>
+                  <input value={shippingAddress.address} onChange={e => setShippingAddress({...shippingAddress, address: e.target.value})} required
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="বিস্তারিত ঠিকানা" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">শহর</label>
+                  <input value={shippingAddress.city} onChange={e => setShippingAddress({...shippingAddress, city: e.target.value})}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">জেলা</label>
+                  <input value={shippingAddress.state} onChange={e => setShippingAddress({...shippingAddress, state: e.target.value})}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" />
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">রেফারকারীর তথ্য (ঐচ্ছিক)</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <input value={shippingAddress.referrer_name} onChange={e => setShippingAddress({...shippingAddress, referrer_name: e.target.value})}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="রেফারকারীর নাম" />
+                  <input value={shippingAddress.referrer_phone} onChange={e => setShippingAddress({...shippingAddress, referrer_phone: e.target.value})}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="রেফারকারীর ফোন" />
                 </div>
               </div>
             </div>
-          )}
 
-          {/* Main content */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            {/* Payment Method */}
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <CreditCard size={20} className="text-indigo-600" /> পেমেন্ট মাধ্যম
+              </h2>
 
-            {activeTab === 'overview' && (
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-4">একাউন্ট তথ্য</h2>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    {[
-                      { label: 'আইডি',     value: user.id.slice(0, 12) + '...' },
-                      { label: 'ইমেইল',   value: user.email },
-                      { label: 'ফোন',     value: user.phone },
-                      { label: 'প্যাকেজ', value: user.package_type === 'customer' ? 'কাস্টমার' : user.package_type === 'shareholder' ? 'শেয়ারহোল্ডার' : 'গোল্ড' },
-                      { label: 'মেয়াদ',  value: isExpired ? '⚠️ মেয়াদ শেষ' : `${daysLeft} দিন বাকি` },
-                    ].map((item, i) => (
-                      <div key={i} className="flex justify-between py-2 border-b border-gray-100">
-                        <span className="text-sm text-gray-500">{item.label}</span>
-                        <span className="text-sm font-medium text-gray-700">{item.value}</span>
-                      </div>
+              <div className="grid grid-cols-3 gap-3 mb-6">
+                {/* Mobile */}
+                <button onClick={() => setPaymentMethod('mobile')}
+                  className={`p-4 rounded-xl border-2 text-center transition-all ${paymentMethod === 'mobile' ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-gray-200 hover:border-gray-300'}`}>
+                  <Smartphone size={22} className="mx-auto mb-2 text-indigo-600" />
+                  <p className="font-semibold text-xs">মোবাইল</p>
+                  <p className="text-[10px] text-gray-500">বিকাশ/নগদ</p>
+                </button>
+
+                {/* Card */}
+                <button onClick={() => setPaymentMethod('card')}
+                  className={`p-4 rounded-xl border-2 text-center transition-all ${paymentMethod === 'card' ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-gray-200 hover:border-gray-300'}`}>
+                  <CreditCard size={22} className="mx-auto mb-2 text-indigo-600" />
+                  <p className="font-semibold text-xs">কার্ড</p>
+                  <p className="text-[10px] text-gray-500">Visa/Master</p>
+                </button>
+
+                {/* ✅ Balance — PV এর বদলে Balance */}
+                <button
+                  onClick={() => setPaymentMethod('balance')}
+                  disabled={cartTotalInTaka === 0}
+                  className={`p-4 rounded-xl border-2 text-center transition-all relative ${
+                    paymentMethod === 'balance'
+                      ? 'border-green-500 bg-green-50 shadow-md'
+                      : 'border-gray-200 hover:border-green-300'
+                  }`}>
+                  <Wallet size={22} className={`mx-auto mb-2 ${paymentMethod === 'balance' ? 'text-green-600' : 'text-green-500'}`} />
+                  <p className="font-semibold text-xs">ব্যালেন্স</p>
+                  <p className="text-[10px] text-gray-500">৳{userBalance.toLocaleString()}</p>
+                  {canPayWithBalance && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-green-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">✓</span>
+                  )}
+                </button>
+              </div>
+
+              {/* ── Mobile payment form ── */}
+              {paymentMethod === 'mobile' && (
+                <div>
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    {mobilePaymentMethods.map(m => (
+                      <button key={m.key} onClick={() => setMobileMethod(m.key)}
+                        className={`p-3 rounded-xl border-2 text-center transition-all ${mobileMethod === m.key ? 'shadow-lg' : 'border-gray-200'}`}
+                        style={mobileMethod === m.key ? { borderColor: m.color, backgroundColor: m.color + '10' } : {}}>
+                        <div className={`w-12 h-12 mx-auto mb-2 rounded-xl bg-gradient-to-br ${m.bgClass} flex items-center justify-center`}>
+                          <span className="text-white font-bold text-xs">{m.label.charAt(0)}</span>
+                        </div>
+                        <p className="font-bold text-xs" style={{ color: m.color }}>{m.label}</p>
+                      </button>
                     ))}
                   </div>
-                  <div className="space-y-3">
-                    {[
-                      { label: 'PV পয়েন্ট',           value: user.pv_points || 0 },
-                      { label: 'PS পয়েন্ট',           value: user.ps_points || 0 },
-                      { label: 'GP পয়েন্ট',           value: user.gp_points || 0 },
-                      { label: 'মাসিক PV ক্রয়',       value: `${user.monthly_pv_purchased || 0}/${MONTHLY_PV_TO_RENEW}` },
-                      { label: 'গোল্ড রেফার পেন্ডিং', value: `৳${Number(user.gold_referral_pending || 0).toLocaleString()}` },
-                    ].map((item, i) => (
-                      <div key={i} className="flex justify-between py-2 border-b border-gray-100">
-                        <span className="text-sm text-gray-500">{item.label}</span>
-                        <span className="text-sm font-bold text-gray-700">{item.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="mt-6 bg-indigo-50 rounded-xl p-4 border border-indigo-100">
-                  <h3 className="font-semibold text-sm text-indigo-800 mb-2">আপনার রেফারাল লিংক</h3>
-                  <div className="flex items-center gap-2">
-                    <input readOnly value={`${window.location.origin}/register?ref=${user.id}`}
-                      className="flex-1 px-3 py-2 bg-white rounded-lg border text-xs font-mono text-gray-600" />
-                    <button onClick={copyReferralLink} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs hover:bg-indigo-700 flex items-center gap-1">
-                      <Copy size={14} /> কপি
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            {activeTab === 'network' && (
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-2">নেটওয়ার্ক সামারি</h2>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-                  <div className="bg-indigo-50 rounded-xl p-4 text-center border border-indigo-100">
-                    <p className="text-2xl font-bold text-indigo-700">{totalTeam}</p>
-                    <p className="text-xs text-gray-600 font-medium">মোট Member</p>
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4">
+                    <p className="text-xs text-yellow-800 font-medium">
+                      ⚠️ মোবাইল পেমেন্টে Admin approve করার পরে অর্ডার নিশ্চিত হবে।
+                    </p>
                   </div>
-                  {generations.map((gen, i) => (
-                    <div key={i} className="bg-gray-50 rounded-xl p-4 text-center border border-gray-200">
-                      <p className="text-2xl font-bold text-gray-800">{gen.length}</p>
-                      <p className="text-xs text-gray-600 font-medium">Level {i + 1}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead><tr className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
-                      <th className="text-left py-3 px-4 text-xs rounded-tl-lg">নাম</th>
-                      <th className="text-left py-3 px-4 text-xs">আপলাইন</th>
-                      <th className="text-center py-3 px-4 text-xs">লেভেল</th>
-                      <th className="text-right py-3 px-4 text-xs">আয়</th>
-                      <th className="text-right py-3 px-4 text-xs rounded-tr-lg">ব্যালেন্স</th>
-                    </tr></thead>
-                    <tbody>
-                      {networkMembers.length === 0
-                        ? <tr><td colSpan={5} className="text-center py-8 text-gray-400 text-sm">কোন সদস্য নেই — রেফার করুন!</td></tr>
-                        : networkMembers.map((m, i) => (
-                          <tr key={m.id} className={`border-b border-gray-50 ${i%2===0?'bg-white':'bg-gray-50'} hover:bg-indigo-50`}>
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-2">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${m.is_active?'bg-green-500':'bg-red-400'}`}>
-                                  {m.name?.charAt(0)?.toUpperCase()}
-                                </div>
-                                <div>
-                                  <p className="font-medium text-sm">{m.name}</p>
-                                  <p className="text-[10px] text-gray-400">{m.phone || m.email}</p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-xs text-gray-600">{m.upline}</td>
-                            <td className="py-3 px-4 text-center">
-                              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${m.level===1?'bg-blue-100 text-blue-700':m.level===2?'bg-purple-100 text-purple-700':m.level===3?'bg-green-100 text-green-700':m.level===4?'bg-orange-100 text-orange-700':'bg-red-100 text-red-700'}`}>
-                                L{m.level}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-right font-bold text-green-600">৳{Number(m.total_income||0).toLocaleString()}</td>
-                            <td className="py-3 px-4 text-right font-bold text-indigo-600">৳{Number(m.current_balance||0).toLocaleString()}</td>
-                          </tr>
-                        ))
-                      }
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
 
-            {activeTab === 'generations' && (
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-1">জেনারেশন টেবিল</h2>
-                <p className="text-xs text-gray-500 mb-4">PV product sales এর উপর ১% generation bonus (৫ level)</p>
-                {generations.map((gen, i) => (
-                  <div key={i} className="mb-6">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`text-xs font-bold px-3 py-1 rounded-full ${i===0?'bg-blue-100 text-blue-700':i===1?'bg-purple-100 text-purple-700':i===2?'bg-green-100 text-green-700':i===3?'bg-orange-100 text-orange-700':'bg-red-100 text-red-700'}`}>
-                        জেনারেশন {i + 1}
-                      </span>
-                      <span className="text-xs text-gray-500">{gen.length} জন</span>
-                    </div>
-                    {gen.length === 0 ? <p className="text-xs text-gray-400 py-2 pl-2">কোন সদস্য নেই</p> : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead><tr className="bg-gray-50">
-                            {['নাম','ফোন','প্যাকেজ','PV','স্ট্যাটাস'].map(h => (
-                              <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-500">{h}</th>
-                            ))}
-                          </tr></thead>
-                          <tbody>
-                            {gen.map((member: any) => (
-                              <tr key={member.id} className="border-b border-gray-50 hover:bg-gray-50">
-                                <td className="py-2 px-3">{member.name}</td>
-                                <td className="py-2 px-3 text-xs text-gray-500">{member.phone || member.email}</td>
-                                <td className="py-2 px-3">
-                                  <span className={`text-xs px-2 py-0.5 rounded-full ${member.package_type==='gold'?'bg-yellow-100 text-yellow-700':member.package_type==='shareholder'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>
-                                    {member.package_type==='customer'?'কাস্টমার':member.package_type==='shareholder'?'শেয়ারহোল্ডার':'গোল্ড'}
-                                  </span>
-                                </td>
-                                <td className="py-2 px-3 font-medium">{member.pv_points || 0}</td>
-                                <td className="py-2 px-3"><span className={`text-xs font-medium ${member.is_active?'text-green-600':'text-red-500'}`}>{member.is_active?'✅ সক্রিয়':'❌ নিষ্ক্রিয়'}</span></td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                  <div className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
+                    <p className="text-sm font-semibold text-gray-800 mb-2">পেমেন্ট নির্দেশনা:</p>
+                    <ol className="text-xs text-gray-600 space-y-1 list-decimal pl-4">
+                      <li>নিচের নম্বরে <span className="font-bold">৳{cartTotalInTaka.toLocaleString()}</span> পাঠান</li>
+                      <li>{mobilePaymentMethods.find(m => m.key === mobileMethod)?.label} নম্বর:{' '}
+                        <span className="font-bold font-mono">{mobilePaymentMethods.find(m => m.key === mobileMethod)?.number}</span>
+                      </li>
+                      <li>TRX ID ও সেন্ডার নম্বর নিচে দিন</li>
+                    </ol>
                   </div>
-                ))}
-              </div>
-            )}
 
-            {activeTab === 'commission' && (
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-4">কমিশন বিবরণ</h2>
-                <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-5 text-xs text-blue-800 space-y-1">
-                  <p>✅ Customer রেফার: ৫% (৳৫০) — আইডি activate হলেই সাথে সাথে</p>
-                  <p>✅ Shareholder রেফার: ২.৫% (৳১২৫) — আইডি activate হলেই সাথে সাথে</p>
-                  <p>✅ Gold রেফার: ৳১,৮০০ মোট — ৳৪.৯৩/দিন করে ৩৬৫ দিনে</p>
-                  <p>✅ Generation bonus: PV sales এর ১% × ৫ level</p>
-                </div>
-                <div className="grid md:grid-cols-2 gap-6 mb-6">
-                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 border border-blue-100">
-                    <h3 className="font-bold text-blue-800 mb-3">ডিরেক্ট রেফার কমিশন</h3>
-                    <div className="space-y-3 text-sm">
-                      <div className="flex justify-between py-2 border-b border-blue-100">
-                        <span className="text-gray-600">মোট রেফার ইনকাম</span>
-                        <span className="font-bold text-blue-700">৳{transactions.filter(t=>t.type==='referral_income'&&t.amount>0).reduce((s,t)=>s+Number(t.amount),0).toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between py-2 border-b border-blue-100">
-                        <span className="text-gray-600">গোল্ড রেফার মোট</span>
-                        <span className="font-bold text-yellow-600">৳{Number(user.gold_referral_income||0).toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between py-2">
-                        <span className="text-gray-600">গোল্ড রেফার পেন্ডিং</span>
-                        <span className="font-bold text-orange-600">৳{Number(user.gold_referral_pending||0).toLocaleString()}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border border-green-100">
-                    <h3 className="font-bold text-green-800 mb-1">জেনারেশন বোনাস</h3>
-                    <p className="text-xs text-green-600 mb-3">১% × ৫ লেভেল — শুধু PV product sales এ</p>
-                    <div className="space-y-2 text-sm">
-                      {[1,2,3,4,5].map(level => {
-                        const genBonus = transactions.filter(t=>t.type==='generation_bonus'&&t.description?.includes(`জেনারেশন ${level}`)).reduce((s,t)=>s+Math.max(0,Number(t.amount)),0);
-                        return (
-                          <div key={level} className="flex justify-between py-1 border-b border-green-100">
-                            <span className="text-gray-600">জেনারেশন {level}</span>
-                            <span className="font-bold text-green-700">৳{genBonus.toLocaleString()}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-5 border border-purple-100">
-                  <h3 className="font-bold text-purple-800 mb-3">ক্লাব বোনাস</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-                    {['daily_club','weekly_club','insurance_club','pension_club','shareholder_club'].map(club => {
-                      const clubBonus = transactions.filter(t=>t.type===club&&Number(t.amount)>0).reduce((s,t)=>s+Number(t.amount),0);
-                      const labels: Record<string,string> = { daily_club:'ডেইলি', weekly_club:'উইকলি', insurance_club:'ইনসুরেন্স', pension_club:'পেনশন', shareholder_club:'শেয়ারহোল্ডার' };
-                      return (
-                        <div key={club} className="text-center bg-white rounded-lg p-3 shadow-sm">
-                          <p className="text-xs text-gray-500 mb-1">{labels[club]}</p>
-                          <p className="font-bold text-purple-700">৳{clubBonus.toLocaleString()}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'transactions' && (
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-4">লেনদেনের ইতিহাস</h2>
-                {transactions.length === 0
-                  ? <p className="text-gray-400 text-center py-8">কোন লেনদেন নেই</p>
-                  : (
-                    <div className="space-y-2">
-                      {transactions.map(txn => (
-                        <div key={txn.id} className="flex items-center justify-between py-3 px-4 rounded-xl bg-gray-50 hover:bg-gray-100">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${txn.amount>=0?'bg-green-100 text-green-600':'bg-red-100 text-red-600'}`}>
-                              {txn.amount>=0?<ArrowDownRight size={16} />:<ArrowUpRight size={16} />}
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">{txn.description}</p>
-                              <p className="text-xs text-gray-400">{txn.type} • {new Date(txn.created_at).toLocaleDateString('bn-BD')}</p>
-                            </div>
-                          </div>
-                          <span className={`font-bold text-sm ${txn.amount>=0?'text-green-600':'text-red-600'}`}>
-                            {txn.amount>=0?'+':''}৳{Math.abs(txn.amount).toLocaleString()}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )
-                }
-              </div>
-            )}
-
-            {activeTab === 'withdraw' && (
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-1">উইথড্রো</h2>
-                <p className="text-sm text-gray-500 mb-4">চার্জ: ৫% | সর্বনিম্ন: ৳১০০ | উপলব্ধ: <span className="font-bold text-green-600">৳{Number(user.current_balance || 0).toLocaleString()}</span></p>
-                <div className="grid lg:grid-cols-2 gap-8">
-                  <form onSubmit={handleWithdraw} className="space-y-4">
+                  <form onSubmit={handleMobilePayment} className="space-y-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">পরিমাণ (৳)</label>
-                      <input type="number" min="100" value={withdrawForm.amount}
-                        onChange={e => setWithdrawForm({...withdrawForm,amount:e.target.value})} required
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm"
-                        placeholder="সর্বনিম্ন ৳১০০" />
-                      {withdrawForm.amount && parseInt(withdrawForm.amount) >= 100 && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          চার্জ (৫%): ৳{Math.floor(parseInt(withdrawForm.amount)*WITHDRAW_CHARGE_PCT)} | পাবেন: ৳{parseInt(withdrawForm.amount)-Math.floor(parseInt(withdrawForm.amount)*WITHDRAW_CHARGE_PCT)}
-                        </p>
-                      )}
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">TRX ID *</label>
+                      <input value={trxId} onChange={e => setTrxId(e.target.value)} required
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none font-mono" placeholder="TXN123456789" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">মাধ্যম</label>
-                      <div className="grid grid-cols-4 gap-2">
-                        {[
-                          { key: 'bkash',  label: 'বিকাশ', color: '#E2136E' },
-                          { key: 'nagad',  label: 'নগদ',   color: '#F6921E' },
-                          { key: 'rocket', label: 'রকেট',  color: '#8B2F8B' },
-                          { key: 'bank',   label: 'ব্যাংক', color: '#1a56db' },
-                        ].map(m => (
-                          <button key={m.key} type="button" onClick={() => setWithdrawForm({...withdrawForm,method:m.key})}
-                            className={`py-3 rounded-xl text-xs font-bold border-2 transition-all ${withdrawForm.method===m.key?'text-white shadow-lg':'bg-white text-gray-600 border-gray-200'}`}
-                            style={withdrawForm.method===m.key?{backgroundColor:m.color,borderColor:m.color}:{}}>{m.label}
-                          </button>
-                        ))}
-                      </div>
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">সেন্ডার নম্বর</label>
+                      <input value={senderNumber} onChange={e => setSenderNumber(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="০১XXXXXXXXX" />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">একাউন্ট নম্বর</label>
-                      <input type="text" value={withdrawForm.account}
-                        onChange={e => setWithdrawForm({...withdrawForm,account:e.target.value})} required
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm"
-                        placeholder="একাউন্ট নম্বর" />
-                    </div>
-                    <button type="submit" disabled={loading}
-                      className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50">
-                      {loading?'প্রসেসিং...':'উইথড্রো অনুরোধ করুন'}
+                    <button type="submit" disabled={mobileLoading || !trxId}
+                      className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg">
+                      {mobileLoading ? 'প্রসেসিং...' : 'পেমেন্ট জমা দিন'}
                     </button>
                   </form>
-                  <div>
-                    <h3 className="font-semibold text-sm text-gray-700 mb-3">উইথড্রো ইতিহাস</h3>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {withdrawals.length === 0
-                        ? <p className="text-gray-400 text-center py-4 text-xs">কোন উইথড্রো নেই</p>
-                        : withdrawals.map(wd => (
-                          <div key={wd.id} className="flex items-center justify-between py-2.5 px-3 bg-gray-50 rounded-lg text-xs">
-                            <div>
-                              <p className="font-medium">{wd.method?.toUpperCase()} - {wd.account_number}</p>
-                              <p className="text-gray-400">{new Date(wd.created_at).toLocaleDateString('bn-BD')}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-bold">৳{wd.net_amount}</p>
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full ${wd.status==='approved'?'bg-green-100 text-green-700':wd.status==='rejected'?'bg-red-100 text-red-700':'bg-yellow-100 text-yellow-700'}`}>
-                                {wd.status==='approved'?'অনুমোদিত':wd.status==='rejected'?'প্রত্যাখ্যাত':'পেন্ডিং'}
-                              </span>
-                            </div>
-                          </div>
-                        ))
-                      }
+                </div>
+              )}
+
+              {/* ── Card payment ── */}
+              {paymentMethod === 'card' && (
+                <div>
+                  {!stripePromise ? (
+                    <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-xl">
+                      <p className="text-yellow-800 text-sm">কার্ড পেমেন্ট সিস্টেম সেটআপ হচ্ছে।</p>
+                    </div>
+                  ) : paymentError ? (
+                    <div className="bg-red-50 border border-red-200 p-4 rounded-xl">
+                      <p className="text-red-800 text-sm">{paymentError}</p>
+                    </div>
+                  ) : clientSecret ? (
+                    <Elements stripe={stripePromise} options={{ clientSecret }}>
+                      <PaymentForm onSuccess={handlePaymentSuccess} />
+                    </Elements>
+                  ) : (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full" />
+                      <span className="ml-3 text-gray-500 text-sm">লোড হচ্ছে...</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── ✅ Balance payment ── */}
+              {paymentMethod === 'balance' && (
+                <div className="space-y-4">
+                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-sm font-semibold text-green-800">আপনার ব্যালেন্স</span>
+                      <span className="text-xl font-bold text-green-700">৳{userBalance.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-sm text-green-700">এই অর্ডারে লাগবে</span>
+                      <span className="text-lg font-bold text-orange-600">৳{cartTotalInTaka.toLocaleString()}</span>
+                    </div>
+                    <div className="w-full bg-green-200 rounded-full h-2">
+                      <div
+                        className="bg-green-600 h-2 rounded-full transition-all"
+                        style={{ width: `${Math.min((userBalance / Math.max(cartTotalInTaka, 1)) * 100, 100)}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center mt-3 pt-3 border-t border-green-200">
+                      <span className="text-sm text-green-700">কাটার পর বাকি</span>
+                      <span className={`font-bold ${canPayWithBalance ? 'text-green-700' : 'text-red-600'}`}>
+                        ৳{(userBalance - cartTotalInTaka).toLocaleString()}
+                      </span>
                     </div>
                   </div>
-                </div>
-              </div>
-            )}
 
-            {activeTab === 'transfer' && (
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-1">আইডি টু আইডি ট্রান্সফার</h2>
-                <p className="text-sm text-gray-500 mb-4">সর্বনিম্ন: ৳{TRANSFER_MIN} | উপলব্ধ: <span className="font-bold text-green-600">৳{(user.current_balance||0).toLocaleString()}</span></p>
-                <form onSubmit={handleTransfer} className="max-w-md space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">প্রাপকের ইমেইল</label>
-                    <input type="email" value={transferForm.toEmail}
-                      onChange={e => setTransferForm({...transferForm,toEmail:e.target.value})} required
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm"
-                      placeholder="প্রাপকের ইমেইল" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">পরিমাণ (৳)</label>
-                    <input type="number" min={TRANSFER_MIN} value={transferForm.amount}
-                      onChange={e => setTransferForm({...transferForm,amount:e.target.value})} required
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm"
-                      placeholder={`সর্বনিম্ন ৳${TRANSFER_MIN}`} />
-                  </div>
-                  <button type="submit" disabled={loading}
-                    className="w-full py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold rounded-xl hover:from-green-700 hover:to-emerald-700 disabled:opacity-50">
-                    {loading?'প্রসেসিং...':'ট্রান্সফার করুন'}
-                  </button>
-                </form>
-              </div>
-            )}
-
-            {activeTab === 'buy_package' && (
-              <BuyPackageTab user={user} loading={loading} setLoading={setLoading} onSuccess={() => { refreshUser(); fetchData(); }} />
-            )}
-
-            {activeTab === 'profile' && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-gray-900">প্রোফাইল</h2>
-                  {!profileEdit
-                    ? <button onClick={() => setProfileEdit(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"><Edit size={14} /> এডিট</button>
-                    : (
-                      <div className="flex gap-2">
-                        <button onClick={() => setProfileEdit(false)} className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"><X size={14} /></button>
-                        <button onClick={handleProfileSave} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50"><Save size={14} /> সেভ</button>
+                  {canPayWithBalance ? (
+                    <>
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                        <p className="text-xs text-green-700 font-medium">
+                          ✅ যথেষ্ট ব্যালেন্স আছে। অর্ডার করলে ৳{cartTotalInTaka} কেটে নেওয়া হবে।
+                        </p>
                       </div>
-                    )
-                  }
-                </div>
-                <div className="grid md:grid-cols-2 gap-4">
-                  {[
-                    { label: 'নাম',        key: 'name' },
-                    { label: 'ফোন',       key: 'phone' },
-                    { label: 'ঠিকানা',    key: 'address' },
-                    { label: 'NID নম্বর', key: 'nid_number' },
-                    { label: 'নমিনি নাম', key: 'nominee_name' },
-                    { label: 'নমিনি ফোন', key: 'nominee_phone' },
-                  ].map(field => (
-                    <div key={field.key}>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">{field.label}</label>
-                      {profileEdit
-                        ? <input value={(profileForm as any)[field.key]||''}
-                            onChange={e => setProfileForm({...profileForm,[field.key]:e.target.value})}
-                            className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:border-indigo-500 outline-none" />
-                        : <p className="px-3 py-2.5 bg-gray-50 rounded-lg text-sm text-gray-700">{(profileForm as any)[field.key]||'—'}</p>
-                      }
+                      <button
+                        onClick={handleBalancePayment}
+                        disabled={balanceLoading}
+                        className="w-full py-3.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold rounded-xl hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 transition-all shadow-lg flex items-center justify-center gap-2">
+                        <Wallet size={18} />
+                        {balanceLoading ? 'প্রসেসিং...' : `৳${cartTotalInTaka} ব্যালেন্স থেকে অর্ডার করুন`}
+                      </button>
+                    </>
+                  ) : (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                      <p className="text-red-700 font-semibold text-sm mb-1">❌ ব্যালেন্স যথেষ্ট নয়</p>
+                      <p className="text-red-600 text-xs">
+                        দরকার ৳{cartTotalInTaka}, আছে ৳{userBalance}।
+                        আরও ৳{cartTotalInTaka - userBalance} প্রয়োজন।
+                      </p>
                     </div>
-                  ))}
+                  )}
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right — Order summary */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 h-fit sticky top-24">
+            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <ShieldCheck size={20} className="text-indigo-600" /> অর্ডার সারাংশ
+            </h2>
+            <div className="space-y-3 mb-6">
+              {cart.map(item => (
+                <div key={item.product_id + (item.variant_id || '')} className="flex items-center gap-3 py-2">
+                  <img src={item.image || '/placeholder.svg'} alt={item.name} className="w-14 h-14 object-cover rounded-lg" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-700 line-clamp-1">{item.name}</p>
+                    <p className="text-xs text-gray-400">x{item.quantity}</p>
+                    {item.pv_points && item.pv_points > 0 && user?.package_type === 'customer' && (
+                      <p className="text-xs text-green-600 font-medium">+{item.pv_points * item.quantity} PV অর্জন হবে</p>
+                    )}
+                  </div>
+                  <span className="text-sm font-bold text-gray-700">
+                    ৳{((item.price * item.quantity) / 100).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-gray-100 pt-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">সাবটোটাল</span>
+                <span>৳{cartTotalInTaka.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">শিপিং</span>
+                <span className="text-green-600 font-medium">ফ্রি</span>
+              </div>
+              {totalPvPoints > 0 && user?.package_type === 'customer' && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">অর্জিত হবে</span>
+                  <span className="text-green-600 font-bold">+{totalPvPoints} PV</span>
+                </div>
+              )}
+              <div className="border-t border-gray-100 pt-3 flex justify-between">
+                <span className="font-bold text-gray-900">মোট</span>
+                <span className="font-bold text-xl text-indigo-700">৳{cartTotalInTaka.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* User balance info */}
+            {user && (
+              <div className="mt-3 bg-gray-50 rounded-xl p-3 border border-gray-100 flex justify-between items-center">
+                <span className="text-xs text-gray-500 flex items-center gap-1">
+                  <Wallet size={12} className="text-green-500" /> আপনার ব্যালেন্স
+                </span>
+                <span className="text-sm font-bold text-green-700">৳{userBalance.toLocaleString()}</span>
               </div>
             )}
 
+            {paymentMethod === 'mobile' && (
+              <div className="mt-3 bg-yellow-50 rounded-xl p-3 border border-yellow-100">
+                <p className="text-xs text-yellow-700">⏳ মোবাইল পেমেন্ট Admin approve এর পরে নিশ্চিত হবে।</p>
+              </div>
+            )}
           </div>
-        </main>
+        </div>
       </div>
       <Footer />
     </div>
