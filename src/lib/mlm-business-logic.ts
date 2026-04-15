@@ -7,18 +7,17 @@
 import { supabase } from '@/lib/supabase';
 
 // ── Constants ────────────────────────────────────────────────────────────────
-export const GOLD_REFERRAL_TOTAL     = 1800;       // রেফারার পায় ৳১৮০০ মোট
-export const GOLD_BAKEYA_TOTAL       = 36000;      // বায়ারের মোট বকেয়া
+export const GOLD_REFERRAL_TOTAL     = 1800;
+export const GOLD_BAKEYA_TOTAL       = 36000;
 export const GOLD_DAYS               = 365;
-export const GOLD_DAILY_REFERRAL     = parseFloat((GOLD_REFERRAL_TOTAL / GOLD_DAYS).toFixed(4)); // ৳4.9315/দিন
-export const GOLD_DAILY_BAKEYA       = parseFloat((GOLD_BAKEYA_TOTAL / GOLD_DAYS).toFixed(4));   // ৳98.63/দিন
+export const GOLD_DAILY_REFERRAL     = parseFloat((GOLD_REFERRAL_TOTAL / GOLD_DAYS).toFixed(4));
+export const GOLD_DAILY_BAKEYA       = parseFloat((GOLD_BAKEYA_TOTAL   / GOLD_DAYS).toFixed(4));
 
-export const CUSTOMER_PV_TO_ACTIVATE = 1000;   // ১,০০০ PV কিনলে activate
-export const MONTHLY_PV_TO_RENEW     = 100;    // মাসে ১০০ PV কিনলে renew
-export const WITHDRAW_CHARGE_PCT     = 0.05;   // ৫% charge
-export const TRANSFER_MIN            = 100;    // minimum ৳১০০ transfer
+export const CUSTOMER_PV_TO_ACTIVATE = 1000;
+export const MONTHLY_PV_TO_RENEW     = 100;
+export const WITHDRAW_CHARGE_PCT     = 0.05;
+export const TRANSFER_MIN            = 100;
 
-// Club pool percentages (only from PV sales)
 export const PV_CLUB_PCTS: Record<string, number> = {
   daily_club:       0.30,
   weekly_club:      0.025,
@@ -27,21 +26,23 @@ export const PV_CLUB_PCTS: Record<string, number> = {
   shareholder_club: 0.10,
 };
 
-// Referral commission percentages
-export const CUSTOMER_REFERRAL_PCT    = 0.05;   // ৫% of PV (৳50 for 1000 PV)
-export const SHAREHOLDER_REFERRAL_PCT = 0.025;  // ২.৫% of SP (৳125 for 5000 SP)
-export const GENERATION_BONUS_PCT     = 0.01;   // ১% each gen, 5 levels
+export const CUSTOMER_REFERRAL_PCT    = 0.05;
+export const SHAREHOLDER_REFERRAL_PCT = 0.025;
+export const GENERATION_BONUS_PCT     = 0.01;
 
 // ── Club pool: add PV amount to all relevant pools ───────────────────────────
 export const addToClubPools = async (pvAmount: number): Promise<void> => {
+  const { data: pools } = await supabase.from('mlm_club_pools').select('*');
+  if (!pools) return;
+
   for (const [clubType, pct] of Object.entries(PV_CLUB_PCTS)) {
     const amt = Math.floor(pvAmount * pct);
     if (amt <= 0) continue;
-    const { data: pool } = await supabase
-      .from('mlm_club_pools').select('id, total_amount').eq('club_type', clubType).single();
+    const pool = pools.find((p: any) => p.club_type === clubType);
     if (pool) {
       await supabase.from('mlm_club_pools')
-        .update({ total_amount: (pool.total_amount || 0) + amt }).eq('id', pool.id);
+        .update({ total_amount: Number(pool.total_amount || 0) + amt })
+        .eq('club_type', clubType);
     }
   }
 };
@@ -51,19 +52,18 @@ export const distributeGenerationBonus = async (
   userId: string,
   pvPoints: number,
   sourceUserId: string,
-  gen: number
+  gen: number,
 ): Promise<void> => {
   if (gen > 5) return;
-  const { data: u } = await supabase.from('mlm_users')
-    .select('id, referrer_id, is_active, current_balance, total_income')
-    .eq('id', userId).single();
+
+  const { data: u } = await supabase.from('mlm_users').select('*').eq('id', userId).single();
   if (!u || !u.is_active) return;
 
   const bonus = Math.floor(pvPoints * GENERATION_BONUS_PCT);
   if (bonus > 0) {
     await supabase.from('mlm_users').update({
-      current_balance: (u.current_balance || 0) + bonus,
-      total_income:    (u.total_income || 0) + bonus,
+      current_balance: Number(u.current_balance || 0) + bonus,
+      total_income:    Number(u.total_income    || 0) + bonus,
     }).eq('id', userId);
     await supabase.from('mlm_transactions').insert({
       user_id:         userId,
@@ -83,26 +83,24 @@ export const processReferrerCommission = async (
   newUserId: string,
   referrerId: string,
   packageType: 'customer' | 'shareholder' | 'gold',
-  pvOrSpOrGp: number, // 1000 PV / 5000 SP / 100000 GP
+  pvOrSpOrGp: number,
 ): Promise<void> => {
-  const { data: referrer } = await supabase
-    .from('mlm_users').select('*').eq('id', referrerId).single();
+  const { data: referrer } = await supabase.from('mlm_users').select('*').eq('id', referrerId).single();
   if (!referrer || !referrer.is_active) return;
 
   let commission = 0;
-  let desc = '';
+  let desc       = '';
 
   if (packageType === 'customer') {
-    commission = Math.floor(pvOrSpOrGp * CUSTOMER_REFERRAL_PCT);  // ৳50
-    desc = `কাস্টমার রেফার কমিশন (৫% × ${pvOrSpOrGp} PV)`;
+    commission = Math.floor(pvOrSpOrGp * CUSTOMER_REFERRAL_PCT);
+    desc       = `কাস্টমার রেফার কমিশন (৫% × ${pvOrSpOrGp} PV)`;
   } else if (packageType === 'shareholder') {
-    commission = Math.floor(pvOrSpOrGp * SHAREHOLDER_REFERRAL_PCT); // ৳125
-    desc = `শেয়ারহোল্ডার রেফার কমিশন (২.৫% × ${pvOrSpOrGp} SP)`;
+    commission = Math.floor(pvOrSpOrGp * SHAREHOLDER_REFERRAL_PCT);
+    desc       = `শেয়ারহোল্ডার রেফার কমিশন (২.৫% × ${pvOrSpOrGp} SP)`;
   } else if (packageType === 'gold') {
-    // Gold: ৳১৮০০ distributed over 365 days — add to pending
     await supabase.from('mlm_users').update({
-      gold_referral_income:  (referrer.gold_referral_income || 0) + GOLD_REFERRAL_TOTAL,
-      gold_referral_pending: (referrer.gold_referral_pending || 0) + GOLD_REFERRAL_TOTAL,
+      gold_referral_income:  Number(referrer.gold_referral_income  || 0) + GOLD_REFERRAL_TOTAL,
+      gold_referral_pending: Number(referrer.gold_referral_pending || 0) + GOLD_REFERRAL_TOTAL,
     }).eq('id', referrerId);
     await supabase.from('mlm_transactions').insert({
       user_id:         referrerId,
@@ -111,52 +109,40 @@ export const processReferrerCommission = async (
       description:     `গোল্ড রেফার ইনকাম (৳${GOLD_REFERRAL_TOTAL}, ${GOLD_DAYS} দিনে বন্টন)`,
       related_user_id: newUserId,
     });
-    // Gold buyer gets bakeya accumulation
     const dailyBakeya = Math.ceil(GOLD_BAKEYA_TOTAL / GOLD_DAYS);
     await supabase.from('mlm_users').update({ bakeya_amount: dailyBakeya }).eq('id', newUserId);
   }
 
-  // ✅ Immediately credit commission (customer & shareholder)
   if (commission > 0) {
-    const { error: commErr } = await supabase.from('mlm_users').update({
-      current_balance: (referrer.current_balance || 0) + commission,
-      total_income:    (referrer.total_income || 0) + commission,
+    await supabase.from('mlm_users').update({
+      current_balance: Number(referrer.current_balance || 0) + commission,
+      total_income:    Number(referrer.total_income    || 0) + commission,
     }).eq('id', referrerId);
-    if (!commErr) {
-      await supabase.from('mlm_transactions').insert({
-        user_id:         referrerId,
-        type:            'referral_income',
-        amount:          commission,
-        description:     desc,
-        related_user_id: newUserId,
-      });
-    }
+    await supabase.from('mlm_transactions').insert({
+      user_id:         referrerId,
+      type:            'referral_income',
+      amount:          commission,
+      description:     desc,
+      related_user_id: newUserId,
+    });
   }
 
   // ── Update direct_referrals_count + club upgrade ─────────────────────────
-  // ✅ FIXED: DB থেকে actual count recount করো — stale value এড়াতে
-  const { count: actualCount } = await supabase.from('mlm_users')
-    .select('id', { count: 'exact', head: true })
+  const { count: actualCount } = await supabase
+    .from('mlm_users').select('id', { count: 'exact', head: true })
     .eq('referrer_id', referrerId);
+  const newCount = actualCount || 0;
 
-  const newCount = (actualCount || 0);
+  const { data: freshRef } = await supabase.from('mlm_users').select('*').eq('id', referrerId).single();
+  const refUpdates: Record<string, any> = { direct_referrals_count: newCount };
 
-  const { data: freshRef } = await supabase.from('mlm_users')
-    .select('is_weekly_club, is_insurance_club, is_pension_club')
-    .eq('id', referrerId).single();
-
-  const refUpdates: any = { direct_referrals_count: newCount };
-
-  // Weekly club: 15+ direct customer referrals
   if (newCount >= 15 && !freshRef?.is_weekly_club) {
     refUpdates.is_weekly_club = true;
   }
 
-  // Insurance + Pension: 15 of my direct refs are weekly club members
   if (!freshRef?.is_insurance_club) {
-    const { data: directRefs } = await supabase.from('mlm_users')
-      .select('id, is_weekly_club').eq('referrer_id', referrerId).eq('is_active', true);
-    const weeklyCount = (directRefs || []).filter(r => r.is_weekly_club).length;
+    const { data: directRefs } = await supabase.from('mlm_users').select('is_weekly_club').eq('referrer_id', referrerId);
+    const weeklyCount = (directRefs || []).filter((r: any) => r.is_weekly_club).length;
     if (weeklyCount >= 15) {
       refUpdates.is_insurance_club = true;
       refUpdates.is_pension_club   = true;
@@ -168,7 +154,7 @@ export const processReferrerCommission = async (
 
 // ── Build activation payload for package ─────────────────────────────────────
 export const buildPackageActivationPayload = (
-  packageType: 'customer' | 'shareholder' | 'gold'
+  packageType: 'customer' | 'shareholder' | 'gold',
 ): {
   updates: Record<string, any>;
   pvPoints: number;
@@ -180,11 +166,11 @@ export const buildPackageActivationPayload = (
   let goldStart: string | null = null;
 
   if (packageType === 'customer') {
-    pvPoints = CUSTOMER_PV_TO_ACTIVATE; // 1000
+    pvPoints = CUSTOMER_PV_TO_ACTIVATE;
     expiry.setDate(expiry.getDate() + 30);
   } else if (packageType === 'shareholder') {
     psPoints = 5000;
-    expiry.setFullYear(expiry.getFullYear() + 50); // আজীবন — রিনিউ লাগে না
+    expiry.setFullYear(expiry.getFullYear() + 50);
   } else if (packageType === 'gold') {
     gpPoints  = 100000;
     goldStart = new Date().toISOString();
@@ -197,10 +183,9 @@ export const buildPackageActivationPayload = (
     activated_at:         new Date().toISOString(),
     gold_package_start:   goldStart,
     monthly_pv_purchased: packageType === 'customer' ? pvPoints : 0,
-    // ✅ Club flags — only what each package earns
     is_daily_club:        packageType === 'customer',
     is_shareholder_club:  packageType === 'shareholder',
-    is_weekly_club:       false, // earned via referrals, not package
+    is_weekly_club:       false,
     is_insurance_club:    false,
     is_pension_club:      false,
   };

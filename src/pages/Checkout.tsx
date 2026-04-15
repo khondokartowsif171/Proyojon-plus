@@ -48,7 +48,6 @@ export default function Checkout() {
     userId: string,
     newMonthlyPv: number,
     freshIsActive: boolean,
-    freshReferrerId: string | null,
   ) => {
     const expiry = new Date();
     expiry.setDate(expiry.getDate() + 30);
@@ -59,9 +58,6 @@ export default function Checkout() {
         expires_at: expiry.toISOString(), is_daily_club: true,
         monthly_pv_purchased: newMonthlyPv,
       }).eq('id', userId);
-      if (freshReferrerId) {
-        await processReferrerCommission(userId, freshReferrerId, 'customer', CUSTOMER_PV_TO_ACTIVATE);
-      }
       toast.success('🎉 আইডি সক্রিয় হয়েছে!');
     } else if (freshIsActive && newMonthlyPv >= MONTHLY_PV_TO_RENEW) {
       await supabase.from('mlm_users').update({
@@ -132,8 +128,8 @@ export default function Checkout() {
         if (!fresh) throw new Error('ইউজার ডেটা পাওয়া যায়নি');
 
         await supabase.from('mlm_users').update({
-          current_balance: (fresh.current_balance || 0) - totalTaka,
-          pv_points:       (fresh.pv_points || 0) + totalPV,
+          current_balance: Number(fresh.current_balance || 0) - totalTaka,
+          pv_points:       Number(fresh.pv_points || 0) + totalPV,
         }).eq('id', user.id);
 
         await supabase.from('mlm_transactions').insert({
@@ -155,7 +151,7 @@ export default function Checkout() {
           await distributeGenerationBonus(fresh.referrer_id, totalPV, user.id, 1);
         }
         if (fresh.package_type === 'customer') {
-          await tryActivateCustomer(user.id, (fresh.monthly_pv_purchased || 0) + totalPV, fresh.is_active, fresh.referrer_id);
+          await tryActivateCustomer(user.id, Number(fresh.monthly_pv_purchased || 0) + totalPV, fresh.is_active);
         }
 
         toast.success(`✅ অর্ডার সম্পন্ন! ${totalPV} PV যোগ হয়েছে।`);
