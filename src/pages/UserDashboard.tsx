@@ -6,7 +6,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import {
   Wallet, TrendingUp, Users, Gift, Shield, Crown, Award, Clock,
-  ArrowUpRight, ArrowDownRight, Send,
+  ArrowUpRight, ArrowDownRight, Send, Loader2, Copy,
   Package, Timer, ChevronDown, ChevronUp, User, BarChart3,
   Network, FileText, Share2, Target, Edit, Save, X, Smartphone, CheckCircle,
 } from 'lucide-react';
@@ -410,8 +410,9 @@ export default function UserDashboard() {
   const pvProgress = Math.min(100, ((user?.monthly_pv_purchased || 0) / MONTHLY_PV_TO_RENEW) * 100);
 
   if (authLoading) return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <Loader2 size={36} className="animate-spin text-indigo-600" />
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-3">
+      <Loader2 size={40} className="animate-spin text-indigo-600" />
+      <p className="text-sm text-gray-500">লোড হচ্ছে...</p>
     </div>
   );
   if (!user) return null;
