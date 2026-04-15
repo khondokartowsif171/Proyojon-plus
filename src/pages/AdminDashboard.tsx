@@ -362,19 +362,25 @@ export default function AdminDashboard() {
       return;
     }
 
-    const { updates: payload, pvPoints, psPoints, gpPoints } = buildPackageActivationPayload(packageType);
-    await supabase.from('mlm_users').update(payload).eq('id', pv.user_id);
+    // ✅ Read is_active BEFORE activation — prevents double commission if already activated via product purchase
+    const { data: preUser } = await supabase
+      .from('mlm_users').select('referrer_id, is_active').eq('id', pv.user_id).single();
+    const wasAlreadyActive = preUser?.is_active ?? false;
 
-    // Club pools only for customer package (PV = 1000)
-    if (packageType === 'customer' && pvPoints >= MONTHLY_PV_TO_RENEW) {
-      await addToClubPools(pvPoints);
+    const { updates: payload, pvPoints, psPoints, gpPoints } = buildPackageActivationPayload(packageType);
+
+    // For customer: skip re-activation if already active via product purchase (avoids overwriting PV points)
+    if (packageType !== 'customer' || !wasAlreadyActive) {
+      await supabase.from('mlm_users').update(payload).eq('id', pv.user_id);
+      if (packageType === 'customer' && pvPoints >= MONTHLY_PV_TO_RENEW) {
+        await addToClubPools(pvPoints);
+      }
     }
 
-    // ✅ Referrer commission immediately on package activation
-    const { data: newUser } = await supabase.from('mlm_users').select('referrer_id').eq('id', pv.user_id).single();
-    if (newUser?.referrer_id) {
+    // ✅ Referrer commission — only fires on FIRST activation (not if already active)
+    if (!wasAlreadyActive && preUser?.referrer_id) {
       const pointsForCommission = packageType === 'customer' ? pvPoints : packageType === 'shareholder' ? psPoints : gpPoints;
-      await processReferrerCommission(pv.user_id, newUser.referrer_id, packageType, pointsForCommission);
+      await processReferrerCommission(pv.user_id, preUser.referrer_id, packageType, pointsForCommission);
     }
 
     toast.success('✅ অনুমোদিত! আইডি সক্রিয় ও কমিশন বিতরণ হয়েছে।');
