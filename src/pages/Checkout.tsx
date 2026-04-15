@@ -143,15 +143,28 @@ export default function Checkout() {
           }))
         );
 
+        const wasActive   = fresh.is_active;
+        const newMonthlyPV = Number(fresh.monthly_pv_purchased || 0) + totalPV;
+
         if (totalPV > 0) await addToClubPools(totalPV);
+
         if (fresh.referrer_id && totalPV > 0) {
-          // ৫% রেফার কমিশন — প্রতিটি PV কেনায়
-          await processReferrerCommission(user.id, fresh.referrer_id, 'customer', totalPV);
-          // ১% জেনারেশন বোনাস — ৫ লেভেল
+          // ১% জেনারেশন বোনাস — প্রতিটি PV কেনায় ৫ লেভেল
           await distributeGenerationBonus(fresh.referrer_id, totalPV, user.id, 1);
         }
+
+        // ৫% রেফার কমিশন — শুধুমাত্র প্রথমবার activation এ (একবার)
+        if (
+          fresh.package_type === 'customer' &&
+          !wasActive &&
+          newMonthlyPV >= CUSTOMER_PV_TO_ACTIVATE &&
+          fresh.referrer_id
+        ) {
+          await processReferrerCommission(user.id, fresh.referrer_id, 'customer', CUSTOMER_PV_TO_ACTIVATE);
+        }
+
         if (fresh.package_type === 'customer') {
-          await tryActivateCustomer(user.id, Number(fresh.monthly_pv_purchased || 0) + totalPV, fresh.is_active);
+          await tryActivateCustomer(user.id, newMonthlyPV, wasActive);
         }
 
         toast.success(`✅ অর্ডার সম্পন্ন! ${totalPV} PV যোগ হয়েছে।`);
