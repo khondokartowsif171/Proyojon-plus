@@ -236,7 +236,7 @@ function BuyPackageTab({ user, loading, setLoading, onSuccess }: {
 }
 
 export default function UserDashboard() {
-  const { user, refreshUser } = useAuth();
+  const { user, loading: authLoading, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [generations, setGenerations] = useState<any[][]>([[], [], [], [], []]);
@@ -254,6 +254,7 @@ export default function UserDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) { navigate('/login'); return; }
     if (user.role === 'admin') { navigate('/admin'); return; }
     fetchData();
@@ -408,6 +409,11 @@ export default function UserDashboard() {
   const daysLeft   = user ? Math.max(0, Math.ceil((new Date(user.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : 0;
   const pvProgress = Math.min(100, ((user?.monthly_pv_purchased || 0) / MONTHLY_PV_TO_RENEW) * 100);
 
+  if (authLoading) return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <Loader2 size={36} className="animate-spin text-indigo-600" />
+    </div>
+  );
   if (!user) return null;
 
   const sidebarItems = [

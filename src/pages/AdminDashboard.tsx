@@ -31,7 +31,7 @@ const clubLabels: Record<string, string> = {
 };
 
 export default function AdminDashboard() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [users, setUsers] = useState<any[]>([]);
@@ -54,9 +54,10 @@ export default function AdminDashboard() {
   const [networkMembers, setNetworkMembers] = useState<any[]>([]);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user || user.role !== 'admin') { navigate('/login'); return; }
     fetchAll();
-  }, [user]);
+  }, [user, authLoading]);
 
   const fetchAll = async () => {
     const { data: usersData } = await supabase.from('mlm_users').select('*').order('created_at', { ascending: false });
@@ -388,6 +389,11 @@ export default function AdminDashboard() {
   const parentCategories = categories.filter(c => !c.parent_id);
   const getSubCategories = (pid: string) => categories.filter(c => c.parent_id === pid);
 
+  if (authLoading) return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <Loader2 size={36} className="animate-spin text-indigo-600" />
+    </div>
+  );
   if (!user || user.role !== 'admin') return null;
 
   const sidebarItems = [
