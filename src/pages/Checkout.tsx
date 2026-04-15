@@ -60,10 +60,7 @@ export default function Checkout() {
         expires_at: expiry.toISOString(), is_daily_club: true,
         monthly_pv_purchased: newMonthlyPv,
       }).eq('id', userId);
-      if (freshReferrerId) {
-        await processReferrerCommission(userId, freshReferrerId, 'customer', CUSTOMER_PV_TO_ACTIVATE);
-      }
-      toast.success('🎉 আইডি সক্রিয় হয়েছে! রেফার কমিশন পাঠানো হয়েছে।');
+      toast.success('🎉 আইডি সক্রিয় হয়েছে!');
     } else if (freshIsActive && newMonthlyPv >= MONTHLY_PV_TO_RENEW) {
       await supabase.from('mlm_users').update({
         is_active: true, expires_at: expiry.toISOString(),
@@ -150,6 +147,9 @@ export default function Checkout() {
 
         if (totalPV > 0) await addToClubPools(totalPV);
         if (fresh.referrer_id && totalPV > 0) {
+          // ৫% রেফার কমিশন — প্রতিটি PV কেনায়
+          await processReferrerCommission(user.id, fresh.referrer_id, 'customer', totalPV);
+          // ১% জেনারেশন বোনাস — ৫ লেভেল
           await distributeGenerationBonus(fresh.referrer_id, totalPV, user.id, 1);
         }
         if (fresh.package_type === 'customer') {
