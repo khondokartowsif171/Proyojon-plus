@@ -45,22 +45,26 @@ export default function Checkout() {
   }, [user]);
 
   // ── Customer activation ────────────────────────────────────────────────────
-  const tryActivateCustomer = async (userId: string, newMonthlyPv: number) => {
-    if (!user) return;
+  const tryActivateCustomer = async (
+    userId: string,
+    newMonthlyPv: number,
+    freshIsActive: boolean,
+    freshReferrerId: string | null,
+  ) => {
     const expiry = new Date();
     expiry.setDate(expiry.getDate() + 30);
 
-    if (!user.is_active && newMonthlyPv >= CUSTOMER_PV_TO_ACTIVATE) {
+    if (!freshIsActive && newMonthlyPv >= CUSTOMER_PV_TO_ACTIVATE) {
       await supabase.from('mlm_users').update({
         is_active: true, activated_at: new Date().toISOString(),
         expires_at: expiry.toISOString(), is_daily_club: true,
         monthly_pv_purchased: newMonthlyPv,
       }).eq('id', userId);
-      if (user.referrer_id) {
-        await processReferrerCommission(userId, user.referrer_id, 'customer', CUSTOMER_PV_TO_ACTIVATE);
+      if (freshReferrerId) {
+        await processReferrerCommission(userId, freshReferrerId, 'customer', CUSTOMER_PV_TO_ACTIVATE);
       }
       toast.success('🎉 আইডি সক্রিয় হয়েছে! রেফার কমিশন পাঠানো হয়েছে।');
-    } else if (user.is_active && newMonthlyPv >= MONTHLY_PV_TO_RENEW) {
+    } else if (freshIsActive && newMonthlyPv >= MONTHLY_PV_TO_RENEW) {
       await supabase.from('mlm_users').update({
         is_active: true, expires_at: expiry.toISOString(),
         monthly_pv_purchased: newMonthlyPv,
@@ -149,7 +153,7 @@ export default function Checkout() {
           await distributeGenerationBonus(fresh.referrer_id, totalPV, user.id, 1);
         }
         if (fresh.package_type === 'customer') {
-          await tryActivateCustomer(user.id, (fresh.monthly_pv_purchased || 0) + totalPV);
+          await tryActivateCustomer(user.id, (fresh.monthly_pv_purchased || 0) + totalPV, fresh.is_active, fresh.referrer_id);
         }
 
         toast.success(`✅ অর্ডার সম্পন্ন! ${totalPV} PV যোগ হয়েছে।`);

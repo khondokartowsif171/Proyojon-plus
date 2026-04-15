@@ -184,7 +184,7 @@ export const buildPackageActivationPayload = (
     expiry.setDate(expiry.getDate() + 30);
   } else if (packageType === 'shareholder') {
     psPoints = 5000;
-    expiry.setDate(expiry.getDate() + 30);
+    expiry.setFullYear(expiry.getFullYear() + 50); // আজীবন — রিনিউ লাগে না
   } else if (packageType === 'gold') {
     gpPoints  = 100000;
     goldStart = new Date().toISOString();

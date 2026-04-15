@@ -196,19 +196,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  async function processReferralCommission(referrerId: string, newUserId: string) {
-  const { data: referrer } = await supabase
-    .from('mlm_users')
-    .select('direct_referrals_count')
-    .eq('id', referrerId)
-    .single();
+  async function processReferralCommission(referrerId: string, _newUserId: string) {
+    // ✅ DB থেকে actual count recount করো — stale +1 increment এড়াতে
+    const { count } = await supabase
+      .from('mlm_users')
+      .select('id', { count: 'exact', head: true })
+      .eq('referrer_id', referrerId);
 
-  if (!referrer) return;
-
-  await supabase.from('mlm_users').update({
-    direct_referrals_count: (referrer.direct_referrals_count || 0) + 1,
-  }).eq('id', referrerId);
-};
+    await supabase.from('mlm_users').update({
+      direct_referrals_count: count || 0,
+    }).eq('id', referrerId);
+  }
 
   async function processGenerationBonus(userId: string, pvPoints: number, sourceUserId: string, generation: number) {
     if (generation > 5) return;
@@ -240,8 +238,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const pools = [
       { type: 'daily_club', amount: Math.floor(pvAmount * 0.30) },
       { type: 'weekly_club', amount: Math.floor(pvAmount * 0.025) },
-      { type: 'insurance_club', amount: Math.floor(pvAmount * 0.025) },
-      { type: 'pension_club', amount: Math.floor(pvAmount * 0.025) },
+      { type: 'insurance_club', amount: Math.floor(pvAmount * 0.0125) },
+      { type: 'pension_club', amount: Math.floor(pvAmount * 0.0125) },
       { type: 'shareholder_club', amount: Math.floor(pvAmount * 0.10) },
     ];
 
