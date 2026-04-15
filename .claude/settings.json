@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node setup.js)",
+      "Bash(npm run *)"
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(ls .vercel/)",
+      "Bash(cat .vercel/project.json)"
+    ]
+  }
+}
