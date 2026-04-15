@@ -173,7 +173,7 @@ export default function AppLayout() {
                 btnLabel: 'এখনই জয়েন করুন',
               },
             ].map((pkg, i) => (
-              <div key={i} className={`relative bg-white rounded-3xl p-8 border-2 ${pkg.popular ? 'border-purple-500 shadow-2xl ' + pkg.shadow : 'border-gray-100 shadow-lg'} hover:shadow-2xl transition-all duration-300 hover:-translate-y-2`}>
+              <div key={i} className={`relative bg-white rounded-3xl p-8 border-2 flex flex-col ${pkg.popular ? 'border-purple-500 shadow-2xl ' + pkg.shadow : 'border-gray-100 shadow-lg'} hover:shadow-2xl transition-all duration-300 hover:-translate-y-2`}>
                 {pkg.popular && (
                   <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold px-4 py-1.5 rounded-full">
                     সবচেয়ে জনপ্রিয়
@@ -196,7 +196,7 @@ export default function AppLayout() {
                   </div>
                 )}
 
-                <ul className="space-y-3 mb-8 mt-4">
+                <ul className="space-y-3 mt-4 flex-1">
                   {pkg.features.map((f, j) => (
                     <li key={j} className="flex items-start gap-2 text-sm text-gray-600">
                       <div className={`w-5 h-5 bg-gradient-to-br ${pkg.color} rounded-full flex items-center justify-center flex-shrink-0 mt-0.5`}>
@@ -208,7 +208,7 @@ export default function AppLayout() {
                     </li>
                   ))}
                 </ul>
-                <Link to="/register" className={`block text-center py-3 rounded-xl font-bold transition-all ${pkg.popular ? `bg-gradient-to-r ${pkg.color} text-white hover:shadow-lg` : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}>
+                <Link to="/register" className={`block text-center py-3 mt-8 rounded-xl font-bold transition-all ${pkg.popular ? `bg-gradient-to-r ${pkg.color} text-white hover:shadow-lg` : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}>
                   {pkg.btnLabel}
                 </Link>
               </div>
