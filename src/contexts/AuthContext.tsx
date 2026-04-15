@@ -219,8 +219,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const bonus = Math.floor(pvPoints * 0.01);
     if (bonus > 0) {
       await supabase.from('mlm_users').update({
-        current_balance: (u.current_balance || 0) + bonus,
-        total_income: (u.total_income || 0) + bonus,
+        current_balance: Number(u.current_balance || 0) + bonus,
+        total_income:    Number(u.total_income || 0) + bonus,
       }).eq('id', userId);
 
       await supabase.from('mlm_transactions').insert({
@@ -246,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     for (const pool of pools) {
       const { data: existing } = await supabase.from('mlm_club_pools').select('total_amount').eq('club_type', pool.type).single();
       if (existing) {
-        await supabase.from('mlm_club_pools').update({ total_amount: (existing.total_amount || 0) + pool.amount }).eq('club_type', pool.type);
+        await supabase.from('mlm_club_pools').update({ total_amount: Number(existing.total_amount || 0) + pool.amount }).eq('club_type', pool.type);
       }
     }
   };

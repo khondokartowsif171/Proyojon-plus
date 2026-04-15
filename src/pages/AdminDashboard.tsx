@@ -19,6 +19,7 @@ import {
   GOLD_DAILY_REFERRAL,
   GOLD_DAILY_BAKEYA,
   MONTHLY_PV_TO_RENEW,
+  CUSTOMER_PV_TO_ACTIVATE,
 } from '@/lib/mlm-business-logic';
 
 const clubLabels: Record<string, string> = {
@@ -123,9 +124,9 @@ export default function AdminDashboard() {
         const daily = Math.min(GOLD_DAILY_REFERRAL, u.gold_referral_pending);
         if (daily > 0) {
           await supabase.from('mlm_users').update({
-            current_balance:       (u.current_balance || 0) + daily,
-            total_income:          (u.total_income || 0) + daily,
-            gold_referral_pending: Math.max(0, u.gold_referral_pending - daily),
+            current_balance:       Number(u.current_balance || 0) + daily,
+            total_income:          Number(u.total_income || 0) + daily,
+            gold_referral_pending: Math.max(0, Number(u.gold_referral_pending || 0) - daily),
           }).eq('id', u.id);
           await supabase.from('mlm_transactions').insert({
             user_id: u.id, type: 'gold_daily', amount: daily,
@@ -140,7 +141,7 @@ export default function AdminDashboard() {
         .eq('package_type', 'gold').eq('is_active', true).neq('role', 'admin');
       for (const buyer of (goldBuyers || [])) {
         await supabase.from('mlm_users').update({
-          bakeya_amount: (buyer.bakeya_amount || 0) + GOLD_DAILY_BAKEYA,
+          bakeya_amount: Number(buyer.bakeya_amount || 0) + GOLD_DAILY_BAKEYA,
         }).eq('id', buyer.id);
       }
 
@@ -231,8 +232,8 @@ export default function AdminDashboard() {
 
     for (const member of members) {
       await supabase.from('mlm_users').update({
-        current_balance: (member.current_balance || 0) + perMember,
-        total_income:    (member.total_income || 0) + perMember,
+        current_balance: Number(member.current_balance || 0) + perMember,
+        total_income:    Number(member.total_income || 0) + perMember,
       }).eq('id', member.id);
       await supabase.from('mlm_transactions').insert({
         user_id: member.id, type: clubType, amount: perMember,
@@ -264,7 +265,7 @@ export default function AdminDashboard() {
       // Refund balance on rejection
       const { data: userData } = await supabase.from('mlm_users').select('current_balance').eq('id', wd.user_id).single();
       if (userData) {
-        await supabase.from('mlm_users').update({ current_balance: (userData.current_balance || 0) + (wd.amount || 0) }).eq('id', wd.user_id);
+        await supabase.from('mlm_users').update({ current_balance: Number(userData.current_balance || 0) + Number(wd.amount || 0) }).eq('id', wd.user_id);
       }
       await supabase.from('mlm_withdrawals').update({ status: 'rejected', processed_at: new Date().toISOString() }).eq('id', id);
       await supabase.from('mlm_transactions').insert({
@@ -299,10 +300,10 @@ export default function AdminDashboard() {
         .eq('id', pv.user_id).single();
 
       if (userData) {
-        const pvToAdd    = pv.pv_points || 0;
-        const newMonthly = (userData.monthly_pv_purchased || 0) + pvToAdd;
+        const pvToAdd    = Number(pv.pv_points || 0);
+        const newMonthly = Number(userData.monthly_pv_purchased || 0) + pvToAdd;
         const updates: any = {
-          pv_points:            (userData.pv_points || 0) + pvToAdd,
+          pv_points:            Number(userData.pv_points || 0) + pvToAdd,
           monthly_pv_purchased: newMonthly,
         };
 
