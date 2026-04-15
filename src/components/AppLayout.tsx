@@ -119,7 +119,7 @@ export default function AppLayout() {
                 name: 'কাস্টমার প্যাকেজ',
                 priceDisplay: null, // ✅ No cash price
                 pvLabel: '১,০০০ PV এর পণ্য কিনুন',
-                subtext: '১ PV = ১ টাকা মূল্যের পণ্য',
+                subtext: '',
                 unit: 'PV',
                 color: 'from-blue-500 to-cyan-600',
                 shadow: 'shadow-blue-500/20',
@@ -138,7 +138,7 @@ export default function AppLayout() {
                 name: 'শেয়ারহোল্ডার প্যাকেজ',
                 priceDisplay: '৳৫,০০০',
                 pvLabel: '৫,০০০ SP',
-                subtext: '১ SP = ১ টাকা',
+                subtext: '',
                 unit: 'SP',
                 color: 'from-purple-500 to-pink-600',
                 shadow: 'shadow-purple-500/20',
@@ -157,7 +157,7 @@ export default function AppLayout() {
                 name: 'গোল্ড প্যাকেজ',
                 priceDisplay: '৳১,০০,০০০',
                 pvLabel: '১,০০,০০০ GP',
-                subtext: '১ GP = ১ টাকা',
+                subtext: '',
                 unit: 'GP',
                 color: 'from-yellow-500 to-orange-600',
                 shadow: 'shadow-yellow-500/20',
@@ -181,7 +181,7 @@ export default function AppLayout() {
                 )}
                 <div className={`w-16 h-16 bg-gradient-to-br ${pkg.color} rounded-2xl flex items-center justify-center text-white mb-6`}>{pkg.icon}</div>
                 <h3 className="text-xl font-bold text-gray-900 mb-1">{pkg.name}</h3>
-                <p className="text-xs text-gray-400 mb-3">{pkg.subtext}</p>
+                {pkg.subtext && <p className="text-xs text-gray-400 mb-3">{pkg.subtext}</p>}
 
                 {/* ✅ Customer: no ৳ price, show PV purchase instruction */}
                 {pkg.priceDisplay ? (
