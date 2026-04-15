@@ -34,17 +34,16 @@ export default function Checkout() {
     name: '', phone: '', address: '', district: '', note: '',
   });
 
-  // ✅ cartTotal is in paisa → convert to taka
   const totalTaka = Math.round(cartTotal / 100);
   const totalPV   = totalPvPoints;
-  const canAfford = (user?.current_balance || 0) >= totalTaka;
+  const canAfford = Number(user?.current_balance || 0) >= totalTaka;
 
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
     setShippingInfo(prev => ({ ...prev, name: user.name || '', phone: user.phone || '' }));
   }, [user]);
 
-  // ── Customer activation ────────────────────────────────────────────────────
+  // ── Customer activation / renewal ─────────────────────────────────────────
   const tryActivateCustomer = async (
     userId: string,
     newMonthlyPv: number,
@@ -60,6 +59,9 @@ export default function Checkout() {
         expires_at: expiry.toISOString(), is_daily_club: true,
         monthly_pv_purchased: newMonthlyPv,
       }).eq('id', userId);
+      if (freshReferrerId) {
+        await processReferrerCommission(userId, freshReferrerId, 'customer', CUSTOMER_PV_TO_ACTIVATE);
+      }
       toast.success('🎉 আইডি সক্রিয় হয়েছে!');
     } else if (freshIsActive && newMonthlyPv >= MONTHLY_PV_TO_RENEW) {
       await supabase.from('mlm_users').update({
@@ -82,10 +84,10 @@ export default function Checkout() {
 
     setLoading(true);
     try {
-      // 1. Create order (store as paisa)
+      // 1. Create order
       const { data: order, error: oErr } = await supabase.from('ecom_orders').insert({
         user_id:          user.id,
-        total:            cartTotal,   // paisa
+        total:            cartTotal,
         subtotal:         cartTotal,
         status:           paymentMethod === 'balance' ? 'paid' : 'pending',
         payment_method:   paymentMethod,
@@ -180,7 +182,7 @@ export default function Checkout() {
 
   if (!user) return null;
 
-  // ── Success ────────────────────────────────────────────────────────────────
+  // ── Success screen ─────────────────────────────────────────────────────────
   if (orderDone) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -305,9 +307,9 @@ export default function Checkout() {
               </h2>
               <div className="grid grid-cols-3 gap-3 mb-4">
                 {[
-                  { key: 'mobile',  label: 'মোবাইল',    icon: <Smartphone size={18} />, sub: 'বিকাশ/নগদ/রকেট',                          color: 'from-pink-500 to-orange-400' },
+                  { key: 'mobile',  label: 'মোবাইল',    icon: <Smartphone size={18} />, sub: 'বিকাশ/নগদ/রকেট',                                color: 'from-pink-500 to-orange-400' },
                   { key: 'balance', label: 'ব্যালেন্স', icon: <Wallet size={18} />,     sub: `৳${(user.current_balance||0).toLocaleString()} আছে`, color: 'from-green-500 to-emerald-500' },
-                  { key: 'cod',     label: 'COD',        icon: <Package size={18} />,    sub: 'ডেলিভারিতে',                              color: 'from-blue-500 to-indigo-500' },
+                  { key: 'cod',     label: 'COD',        icon: <Package size={18} />,    sub: 'ডেলিভারিতে',                                    color: 'from-blue-500 to-indigo-500' },
                 ].map(pm => (
                   <button key={pm.key} type="button" onClick={() => setPaymentMethod(pm.key as any)}
                     className={`p-3.5 rounded-xl border-2 text-left transition-all ${paymentMethod === pm.key ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}>

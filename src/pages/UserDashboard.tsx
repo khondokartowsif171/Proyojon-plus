@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { users as usersApi, transactions as txApi, withdrawals as withdrawalsApi, transfers as transfersApi, payments as paymentsApi } from '@/lib/api';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import {
   Wallet, TrendingUp, Users, Gift, Shield, Crown, Award, Clock,
-  ArrowUpRight, ArrowDownRight, Copy, Send, CreditCard,
+  ArrowUpRight, ArrowDownRight, Send,
   Package, Timer, ChevronDown, ChevronUp, User, BarChart3,
   Network, FileText, Share2, Target, Edit, Save, X, Smartphone, CheckCircle,
 } from 'lucide-react';
@@ -15,7 +15,6 @@ import {
   addToClubPools,
   processReferrerCommission,
   buildPackageActivationPayload,
-  CUSTOMER_PV_TO_ACTIVATE,
   MONTHLY_PV_TO_RENEW,
   WITHDRAW_CHARGE_PCT,
   TRANSFER_MIN,
@@ -32,7 +31,7 @@ const PKG_LIST = [
     accentColor: '#a855f7',
     accentBg: '#faf5ff',
     club: 'শেয়ারহোল্ডার ক্লাব (PV এর ১০%)',
-    features: ['২.৫% রেফার কমিশন (৳১২৫) — সাথে সাথে', 'শেয়ারহোল্ডার ক্লাব income', 'কোনো PV নেই', '৩০ দিন মেয়াদ'],
+    features: ['২.৫% রেফার কমিশন (৳১২৫) — সাথে সাথে', 'শেয়ারহোল্ডার ক্লাব income', 'কোনো PV নেই', 'আজীবন মেয়াদ — রিনিউ লাগে না'],
   },
   {
     type: 'gold' as const,
@@ -60,7 +59,7 @@ function BuyPackageTab({ user, loading, setLoading, onSuccess }: {
   const [done, setDone]           = useState(false);
 
   const pkg        = PKG_LIST.find(p => p.type === selPkg)!;
-  const canAfford  = (user?.current_balance || 0) >= pkg.price;
+  const canAfford  = Number(user?.current_balance || 0) >= pkg.price;
 
   const reset = () => { setDone(false); setTrxId(''); setSenderNo(''); };
 
@@ -69,10 +68,10 @@ function BuyPackageTab({ user, loading, setLoading, onSuccess }: {
     if (!window.confirm(`৳${pkg.price.toLocaleString()} দিয়ে ${pkg.name} কিনবেন?`)) return;
     setLoading(true);
     const { updates, psPoints, gpPoints } = buildPackageActivationPayload(selPkg);
-    await supabase.from('mlm_users').update({
-      ...updates, current_balance: (user.current_balance || 0) - pkg.price,
-    }).eq('id', user.id);
-    await supabase.from('mlm_transactions').insert({
+    await usersApi.update(user.id, {
+      ...updates, current_balance: Number(user.current_balance || 0) - pkg.price,
+    });
+    await txApi.insert({
       user_id: user.id, type: 'package_purchase', amount: -pkg.price,
       description: `ব্যালেন্স থেকে ${pkg.name} ক্রয়`,
     });
@@ -87,7 +86,7 @@ function BuyPackageTab({ user, loading, setLoading, onSuccess }: {
   const handleMobile = async () => {
     if (!trxId.trim()) { toast.error('TRX ID দিন'); return; }
     setLoading(true);
-    await supabase.from('mlm_payment_verifications').insert({
+    await paymentsApi.insert({
       user_id: user.id, amount: pkg.price, method: mobileMth,
       trx_id: trxId.trim(), sender_number: senderNo.trim() || null,
       purpose: `${selPkg}_package`, status: 'pending',
@@ -121,7 +120,7 @@ function BuyPackageTab({ user, loading, setLoading, onSuccess }: {
     <div>
       <h2 className="text-lg font-bold text-gray-900 mb-1">প্যাকেজ কিনুন</h2>
       <p className="text-sm text-gray-500 mb-5">
-        ব্যালেন্স: <span className="font-bold text-green-600">৳{(user.current_balance || 0).toLocaleString()}</span>
+        ব্যালেন্স: <span className="font-bold text-green-600">৳{Number(user.current_balance || 0).toLocaleString()}</span>
       </p>
 
       {/* Package cards */}
@@ -237,10 +236,9 @@ function BuyPackageTab({ user, loading, setLoading, onSuccess }: {
 }
 
 export default function UserDashboard() {
-  const { user, refreshUser, logout } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [referrals, setReferrals] = useState<any[]>([]);
   const [generations, setGenerations] = useState<any[][]>([[], [], [], [], []]);
   const [networkMembers, setNetworkMembers] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
@@ -248,7 +246,6 @@ export default function UserDashboard() {
   const [transferForm, setTransferForm] = useState({ amount: '', toEmail: '' });
   const [goldCountdown, setGoldCountdown] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [loading, setLoading] = useState(false);
-  const [pvLogs, setPvLogs] = useState<any[]>([]);
   const [profileEdit, setProfileEdit] = useState(false);
   const [profileForm, setProfileForm] = useState({
     name: '', phone: '', address: '', nid_number: '', nominee_name: '', nominee_phone: '',
@@ -270,17 +267,11 @@ export default function UserDashboard() {
     });
   }, [user]);
 
-  // Realtime balance update
+  // Poll for balance updates every 30 seconds
   useEffect(() => {
     if (!user) return;
-    const sub = supabase
-      .channel(`user_balance_${user.id}`)
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'mlm_users',
-        filter: `id=eq.${user.id}`,
-      }, () => { refreshUser(); })
-      .subscribe();
-    return () => { supabase.removeChannel(sub); };
+    const interval = setInterval(() => { refreshUser(); }, 30000);
+    return () => clearInterval(interval);
   }, [user]);
 
   // Gold countdown timer
@@ -303,37 +294,30 @@ export default function UserDashboard() {
 
   const fetchData = async () => {
     if (!user) return;
-    const [txnsRes, refsRes, pvRes, wdsRes] = await Promise.all([
-      supabase.from('mlm_transactions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
-      supabase.from('mlm_users').select('id, name, email, phone, package_type, is_active, created_at, pv_points, current_balance, total_income').eq('referrer_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('mlm_pv_log').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
-      supabase.from('mlm_withdrawals').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20),
+    const [txData, wdData] = await Promise.all([
+      txApi.getByUser(user.id, 50),
+      withdrawalsApi.getByUser(user.id, 20),
     ]);
-    if (txnsRes.data) setTransactions(txnsRes.data);
-    if (refsRes.data) setReferrals(refsRes.data);
-    if (pvRes.data)   setPvLogs(pvRes.data);
-    if (wdsRes.data)  setWithdrawals(wdsRes.data);
+    setTransactions(txData || []);
+    setWithdrawals(wdData || []);
     await fetchGenerations(user.id);
   };
 
   const fetchGenerations = async (userId: string) => {
     const gens: any[][] = [[], [], [], [], []];
     const allMembers: any[] = [];
-    const { data: gen1 } = await supabase.from('mlm_users')
-      .select('id, name, email, phone, package_type, is_active, pv_points, created_at, current_balance, total_income, referrer_id')
-      .eq('referrer_id', userId);
+
+    const gen1 = await usersApi.getReferrals(userId);
     gens[0] = gen1 || [];
     for (const m of gens[0]) allMembers.push({ ...m, level: 1, upline: user?.name || '' });
 
     for (let i = 1; i < 5; i++) {
-      const parentIds = gens[i - 1].map(u => u.id);
+      const parentIds = gens[i - 1].map((u: any) => u.id);
       if (parentIds.length === 0) break;
-      const { data } = await supabase.from('mlm_users')
-        .select('id, name, email, phone, package_type, is_active, pv_points, created_at, current_balance, total_income, referrer_id')
-        .in('referrer_id', parentIds);
+      const data = await usersApi.getByReferrerIds(parentIds);
       gens[i] = data || [];
       for (const m of gens[i]) {
-        const parent = gens[i - 1].find(p => p.id === m.referrer_id);
+        const parent = gens[i - 1].find((p: any) => p.id === m.referrer_id);
         allMembers.push({ ...m, level: i + 1, upline: parent?.name || '' });
       }
     }
@@ -348,27 +332,26 @@ export default function UserDashboard() {
     const amount = parseInt(withdrawForm.amount);
     if (isNaN(amount) || amount <= 0)        { toast.error('সঠিক পরিমাণ লিখুন'); setLoading(false); return; }
     if (amount < 100)                         { toast.error('সর্বনিম্ন উইথড্রো ৳১০০'); setLoading(false); return; }
-    if (amount > (user.current_balance || 0)) { toast.error('পর্যাপ্ত ব্যালেন্স নেই'); setLoading(false); return; }
-    if (!withdrawForm.account.trim())         { toast.error('একাউন্ট নম্বর দিন'); setLoading(false); return; }
+    if (amount > Number(user.current_balance || 0)) { toast.error('পর্যাপ্ত ব্যালেন্স নেই'); setLoading(false); return; }
+    if (!withdrawForm.account.trim())               { toast.error('একাউন্ট নম্বর দিন'); setLoading(false); return; }
 
     const charge    = Math.floor(amount * WITHDRAW_CHARGE_PCT);
     const netAmount = amount - charge;
 
-    const { error } = await supabase.from('mlm_withdrawals').insert({
-      user_id: user.id, amount, charge, net_amount: netAmount,
-      method: withdrawForm.method, account_number: withdrawForm.account,
-    });
-
-    if (!error) {
-      await supabase.from('mlm_users').update({ current_balance: (user.current_balance || 0) - amount }).eq('id', user.id);
-      await supabase.from('mlm_transactions').insert({
+    try {
+      await withdrawalsApi.insert({
+        user_id: user.id, amount, charge, net_amount: netAmount,
+        method: withdrawForm.method, account_number: withdrawForm.account,
+      });
+      await usersApi.update(user.id, { current_balance: Number(user.current_balance || 0) - amount });
+      await txApi.insert({
         user_id: user.id, type: 'withdrawal', amount: -amount,
         description: `উইথড্রো অনুরোধ - ${withdrawForm.method} (${withdrawForm.account}) — চার্জ ৳${charge}`,
       });
       toast.success(`✅ উইথড্রো অনুরোধ সফল! নেট পাবেন: ৳${netAmount}`);
       setWithdrawForm({ amount: '', method: 'bkash', account: '' });
       await refreshUser(); fetchData();
-    } else {
+    } catch {
       toast.error('উইথড্রো করতে সমস্যা হয়েছে');
     }
     setLoading(false);
@@ -380,74 +363,33 @@ export default function UserDashboard() {
     setLoading(true);
     const amount = parseInt(transferForm.amount);
     if (isNaN(amount) || amount < TRANSFER_MIN) { toast.error(`সর্বনিম্ন ট্রান্সফার ৳${TRANSFER_MIN}`); setLoading(false); return; }
-    if (amount > (user.current_balance || 0))    { toast.error('পর্যাপ্ত ব্যালেন্স নেই'); setLoading(false); return; }
+    if (amount > Number(user.current_balance || 0)) { toast.error('পর্যাপ্ত ব্যালেন্স নেই'); setLoading(false); return; }
     if (!transferForm.toEmail.trim())            { toast.error('প্রাপকের ইমেইল দিন'); setLoading(false); return; }
     if (transferForm.toEmail === user.email)     { toast.error('নিজেকে ট্রান্সফার করা যাবে না'); setLoading(false); return; }
 
-    const { data: toUser } = await supabase.from('mlm_users')
-      .select('id, name, current_balance').eq('email', transferForm.toEmail).single();
+    const toUser = await usersApi.getByEmail(transferForm.toEmail);
     if (!toUser) { toast.error('প্রাপকের ইমেইল পাওয়া যায়নি'); setLoading(false); return; }
 
-    await supabase.from('mlm_users').update({ current_balance: (user.current_balance || 0) - amount }).eq('id', user.id);
-    await supabase.from('mlm_users').update({ current_balance: (toUser.current_balance || 0) + amount }).eq('id', toUser.id);
-    await supabase.from('mlm_transfers').insert({ from_user_id: user.id, to_user_id: toUser.id, amount });
-    await supabase.from('mlm_transactions').insert([
-      { user_id: user.id,   type: 'transfer_out', amount: -amount, description: `ট্রান্সফার → ${toUser.name}`,     related_user_id: toUser.id },
-      { user_id: toUser.id, type: 'transfer_in',  amount,          description: `ট্রান্সফার প্রাপ্ত ← ${user.name}`, related_user_id: user.id },
+    await usersApi.update(user.id, { current_balance: Number(user.current_balance || 0) - amount });
+    await usersApi.update(toUser.id, { current_balance: Number(toUser.current_balance || 0) + amount });
+    await transfersApi.insert({ from_user_id: user.id, to_user_id: toUser.id, amount });
+    await txApi.insert([
+      { user_id: user.id,   type: 'transfer_out', amount: -amount, description: `ট্রান্সফার → ${toUser.name}`,       related_user_id: toUser.id },
+      { user_id: toUser.id, type: 'transfer_in',  amount,          description: `ট্রান্সফার প্রাপ্ত ← ${user.name}`, related_user_id: user.id  },
     ]);
     toast.success(`✅ ৳${amount} সফলভাবে ${toUser.name} কে ট্রান্সফার হয়েছে`);
     setTransferForm({ amount: '', toEmail: '' });
     await refreshUser(); fetchData(); setLoading(false);
   };
 
-  // ── Balance দিয়ে package কেনা ────────────────────────────────────────────────
-  const handleBuyPackageWithBalance = async (packageType: 'customer' | 'shareholder' | 'gold', price: number) => {
-    if (!user) return;
-    if ((user.current_balance || 0) < price) { toast.error('পর্যাপ্ত ব্যালেন্স নেই'); return; }
-
-    const pkgNames: Record<string, string> = { customer: 'কাস্টমার', shareholder: 'শেয়ারহোল্ডার', gold: 'গোল্ড' };
-    const confirmed = window.confirm(`৳${price.toLocaleString()} দিয়ে ${pkgNames[packageType]} প্যাকেজ কিনবেন?`);
-    if (!confirmed) return;
-
-    setLoading(true);
-    const newBalance = (user.current_balance || 0) - price;
-    const { updates: payload, pvPoints, psPoints, gpPoints } = buildPackageActivationPayload(packageType);
-
-    await supabase.from('mlm_users').update({
-      ...payload,
-      current_balance: newBalance,
-    }).eq('id', user.id);
-
-    await supabase.from('mlm_transactions').insert({
-      user_id:     user.id,
-      type:        'package_purchase',
-      amount:      -price,
-      description: `ব্যালেন্স থেকে ${pkgNames[packageType]} প্যাকেজ ক্রয় (৳${price.toLocaleString()})`,
-    });
-
-    // Club pools only for customer (PV = 1000)
-    if (packageType === 'customer' && pvPoints >= MONTHLY_PV_TO_RENEW) {
-      await addToClubPools(pvPoints);
-    }
-
-    // ✅ Referrer commission immediately
-    if (user.referrer_id) {
-      const pointsForCommission = packageType === 'customer' ? pvPoints : packageType === 'shareholder' ? psPoints : gpPoints;
-      await processReferrerCommission(user.id, user.referrer_id, packageType, pointsForCommission);
-    }
-
-    toast.success(`✅ ${pkgNames[packageType]} প্যাকেজ সফলভাবে কেনা হয়েছে!`);
-    await refreshUser(); fetchData(); setLoading(false);
-  };
-
   const handleProfileSave = async () => {
     if (!user) return;
     setLoading(true);
-    await supabase.from('mlm_users').update({
+    await usersApi.update(user.id, {
       name: profileForm.name, phone: profileForm.phone, address: profileForm.address,
       nid_number: profileForm.nid_number, nominee_name: profileForm.nominee_name,
       nominee_phone: profileForm.nominee_phone,
-    }).eq('id', user.id);
+    });
     toast.success('প্রোফাইল আপডেট সফল');
     setProfileEdit(false); await refreshUser(); setLoading(false);
   };
@@ -606,7 +548,7 @@ export default function UserDashboard() {
           {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             {[
-              { label: 'কারেন্ট ব্যালেন্স', value: `৳${(user.current_balance || 0).toLocaleString()}`, icon: <Wallet size={22} />,    color: 'from-blue-500 to-cyan-500' },
+              { label: 'কারেন্ট ব্যালেন্স', value: `৳${Number(user.current_balance || 0).toLocaleString()}`, icon: <Wallet size={22} />,    color: 'from-blue-500 to-cyan-500' },
               { label: 'টোটাল ইনকাম',      value: `৳${(user.total_income || 0).toLocaleString()}`,   icon: <TrendingUp size={22} />, color: 'from-green-500 to-emerald-500' },
               { label: 'ডিরেক্ট রেফারাল',  value: user.direct_referrals_count || 0,                   icon: <Users size={22} />,     color: 'from-purple-500 to-pink-500' },
               { label: 'মোট টিম',          value: totalTeam,                                           icon: <Network size={22} />,   color: 'from-orange-500 to-red-500' },
@@ -647,7 +589,7 @@ export default function UserDashboard() {
                 <Award size={24} className="text-orange-600" />
                 <div>
                   <p className="font-semibold text-orange-800">বকেয়া হিসাব (দৈনিক জমা হচ্ছে)</p>
-                  <p className="text-2xl font-bold text-orange-600">৳{(user.bakeya_amount || 0).toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-orange-600">৳{Number(user.bakeya_amount || 0).toLocaleString()}</p>
                   <p className="text-xs text-orange-500 mt-1">মোট বকেয়া: ৳৩৬,০০০ | প্যাকেজ বাতিল করতে এই পরিমাণ পরিশোধ করতে হবে</p>
                 </div>
               </div>
@@ -681,7 +623,7 @@ export default function UserDashboard() {
                       { label: 'PS পয়েন্ট',           value: user.ps_points || 0 },
                       { label: 'GP পয়েন্ট',           value: user.gp_points || 0 },
                       { label: 'মাসিক PV ক্রয়',       value: `${user.monthly_pv_purchased || 0}/${MONTHLY_PV_TO_RENEW}` },
-                      { label: 'গোল্ড রেফার পেন্ডিং', value: `৳${(user.gold_referral_pending || 0).toLocaleString()}` },
+                      { label: 'গোল্ড রেফার পেন্ডিং', value: `৳${Number(user.gold_referral_pending || 0).toLocaleString()}` },
                     ].map((item, i) => (
                       <div key={i} className="flex justify-between py-2 border-b border-gray-100">
                         <span className="text-sm text-gray-500">{item.label}</span>
@@ -749,8 +691,8 @@ export default function UserDashboard() {
                                 L{m.level}
                               </span>
                             </td>
-                            <td className="py-3 px-4 text-right font-bold text-green-600">৳{(m.total_income||0).toLocaleString()}</td>
-                            <td className="py-3 px-4 text-right font-bold text-indigo-600">৳{(m.current_balance||0).toLocaleString()}</td>
+                            <td className="py-3 px-4 text-right font-bold text-green-600">৳{Number(m.total_income||0).toLocaleString()}</td>
+                            <td className="py-3 px-4 text-right font-bold text-indigo-600">৳{Number(m.current_balance||0).toLocaleString()}</td>
                           </tr>
                         ))
                       }
@@ -818,15 +760,15 @@ export default function UserDashboard() {
                     <div className="space-y-3 text-sm">
                       <div className="flex justify-between py-2 border-b border-blue-100">
                         <span className="text-gray-600">মোট রেফার ইনকাম</span>
-                        <span className="font-bold text-blue-700">৳{transactions.filter(t=>t.type==='referral_income'&&t.amount>0).reduce((s,t)=>s+t.amount,0).toLocaleString()}</span>
+                        <span className="font-bold text-blue-700">৳{transactions.filter(t=>t.type==='referral_income'&&t.amount>0).reduce((s,t)=>s+Number(t.amount),0).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between py-2 border-b border-blue-100">
                         <span className="text-gray-600">গোল্ড রেফার মোট</span>
-                        <span className="font-bold text-yellow-600">৳{(user.gold_referral_income||0).toLocaleString()}</span>
+                        <span className="font-bold text-yellow-600">৳{Number(user.gold_referral_income||0).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between py-2">
                         <span className="text-gray-600">গোল্ড রেফার পেন্ডিং</span>
-                        <span className="font-bold text-orange-600">৳{(user.gold_referral_pending||0).toLocaleString()}</span>
+                        <span className="font-bold text-orange-600">৳{Number(user.gold_referral_pending||0).toLocaleString()}</span>
                       </div>
                     </div>
                   </div>
@@ -835,7 +777,7 @@ export default function UserDashboard() {
                     <p className="text-xs text-green-600 mb-3">১% × ৫ লেভেল — শুধু PV product sales এ</p>
                     <div className="space-y-2 text-sm">
                       {[1,2,3,4,5].map(level => {
-                        const genBonus = transactions.filter(t=>t.type==='generation_bonus'&&t.description?.includes(`জেনারেশন ${level}`)).reduce((s,t)=>s+Math.max(0,t.amount),0);
+                        const genBonus = transactions.filter(t=>t.type==='generation_bonus'&&t.description?.includes(`জেনারেশন ${level}`)).reduce((s,t)=>s+Math.max(0,Number(t.amount)),0);
                         return (
                           <div key={level} className="flex justify-between py-1 border-b border-green-100">
                             <span className="text-gray-600">জেনারেশন {level}</span>
@@ -850,7 +792,7 @@ export default function UserDashboard() {
                   <h3 className="font-bold text-purple-800 mb-3">ক্লাব বোনাস</h3>
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
                     {['daily_club','weekly_club','insurance_club','pension_club','shareholder_club'].map(club => {
-                      const clubBonus = transactions.filter(t=>t.type===club&&t.amount>0).reduce((s,t)=>s+t.amount,0);
+                      const clubBonus = transactions.filter(t=>t.type===club&&Number(t.amount)>0).reduce((s,t)=>s+Number(t.amount),0);
                       const labels: Record<string,string> = { daily_club:'ডেইলি', weekly_club:'উইকলি', insurance_club:'ইনসুরেন্স', pension_club:'পেনশন', shareholder_club:'শেয়ারহোল্ডার' };
                       return (
                         <div key={club} className="text-center bg-white rounded-lg p-3 shadow-sm">
@@ -896,7 +838,7 @@ export default function UserDashboard() {
             {activeTab === 'withdraw' && (
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-1">উইথড্রো</h2>
-                <p className="text-sm text-gray-500 mb-4">চার্জ: ৫% | সর্বনিম্ন: ৳১০০ | উপলব্ধ: <span className="font-bold text-green-600">৳{(user.current_balance || 0).toLocaleString()}</span></p>
+                <p className="text-sm text-gray-500 mb-4">চার্জ: ৫% | সর্বনিম্ন: ৳১০০ | উপলব্ধ: <span className="font-bold text-green-600">৳{Number(user.current_balance || 0).toLocaleString()}</span></p>
                 <div className="grid lg:grid-cols-2 gap-8">
                   <form onSubmit={handleWithdraw} className="space-y-4">
                     <div>
