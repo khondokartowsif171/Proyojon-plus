@@ -6,9 +6,9 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import {
   Wallet, TrendingUp, Users, Gift, Shield, Crown, Award, Clock,
-  ArrowUpRight, ArrowDownRight, Copy, RefreshCw, Send, CreditCard,
+  ArrowUpRight, ArrowDownRight, Copy, Send, CreditCard,
   Package, Timer, ChevronDown, ChevronUp, User, BarChart3,
-  Network, FileText, Share2, Target, Eye, EyeOff, Edit, Save, X
+  Network, FileText, Share2, Target, Edit, Save, X, Smartphone, CheckCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -20,6 +20,221 @@ import {
   WITHDRAW_CHARGE_PCT,
   TRANSFER_MIN,
 } from '@/lib/mlm-business-logic';
+
+// ── Buy Package Tab — Shareholder & Gold only ────────────────────────────────
+const PKG_LIST = [
+  {
+    type: 'shareholder' as const,
+    name: 'শেয়ারহোল্ডার প্যাকেজ',
+    price: 5000,
+    points: '৫,০০০ SP',
+    color: 'from-purple-500 to-pink-600',
+    accentColor: '#a855f7',
+    accentBg: '#faf5ff',
+    club: 'শেয়ারহোল্ডার ক্লাব (PV এর ১০%)',
+    features: ['২.৫% রেফার কমিশন (৳১২৫) — সাথে সাথে', 'শেয়ারহোল্ডার ক্লাব income', 'কোনো PV নেই', '৩০ দিন মেয়াদ'],
+  },
+  {
+    type: 'gold' as const,
+    name: 'গোল্ড প্যাকেজ',
+    price: 100000,
+    points: '১,০০,০০০ GP',
+    color: 'from-yellow-500 to-orange-600',
+    accentColor: '#f59e0b',
+    accentBg: '#fffbeb',
+    club: null,
+    features: ['রেফারার পায় ৳৪.৯৩/দিন × ৩৬৫ দিন', 'বায়ার বকেয়া ৳৩৬,০০০ accumulate', 'কোনো ক্লাব নেই', '৩৬৫ দিন মেয়াদ'],
+  },
+] as const;
+
+function BuyPackageTab({ user, loading, setLoading, onSuccess }: {
+  user: any; loading: boolean;
+  setLoading: (v: boolean) => void;
+  onSuccess: () => void;
+}) {
+  const [selPkg, setSelPkg]       = useState<'shareholder' | 'gold'>('shareholder');
+  const [payMode, setPayMode]     = useState<'balance' | 'mobile'>('balance');
+  const [mobileMth, setMobileMth] = useState('bkash');
+  const [trxId, setTrxId]         = useState('');
+  const [senderNo, setSenderNo]   = useState('');
+  const [done, setDone]           = useState(false);
+
+  const pkg        = PKG_LIST.find(p => p.type === selPkg)!;
+  const canAfford  = (user?.current_balance || 0) >= pkg.price;
+
+  const reset = () => { setDone(false); setTrxId(''); setSenderNo(''); };
+
+  const handleBalance = async () => {
+    if (!canAfford) { toast.error('পর্যাপ্ত ব্যালেন্স নেই'); return; }
+    if (!window.confirm(`৳${pkg.price.toLocaleString()} দিয়ে ${pkg.name} কিনবেন?`)) return;
+    setLoading(true);
+    const { updates, psPoints, gpPoints } = buildPackageActivationPayload(selPkg);
+    await supabase.from('mlm_users').update({
+      ...updates, current_balance: (user.current_balance || 0) - pkg.price,
+    }).eq('id', user.id);
+    await supabase.from('mlm_transactions').insert({
+      user_id: user.id, type: 'package_purchase', amount: -pkg.price,
+      description: `ব্যালেন্স থেকে ${pkg.name} ক্রয়`,
+    });
+    if (user.referrer_id) {
+      const pts = selPkg === 'shareholder' ? psPoints : gpPoints;
+      await processReferrerCommission(user.id, user.referrer_id, selPkg, pts);
+    }
+    toast.success(`✅ ${pkg.name} কেনা হয়েছে! কমিশন পাঠানো হয়েছে।`);
+    setDone(true); onSuccess(); setLoading(false);
+  };
+
+  const handleMobile = async () => {
+    if (!trxId.trim()) { toast.error('TRX ID দিন'); return; }
+    setLoading(true);
+    await supabase.from('mlm_payment_verifications').insert({
+      user_id: user.id, amount: pkg.price, method: mobileMth,
+      trx_id: trxId.trim(), sender_number: senderNo.trim() || null,
+      purpose: `${selPkg}_package`, status: 'pending',
+    });
+    toast.success('✅ পেমেন্ট জমা! Admin verify করলে আইডি সক্রিয় ও কমিশন যাবে।');
+    setDone(true); setLoading(false);
+  };
+
+  if (done) return (
+    <div className="text-center py-12">
+      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <CheckCircle size={32} className="text-green-600" />
+      </div>
+      <h3 className="text-lg font-bold text-gray-900 mb-2">সফল!</h3>
+      <p className="text-gray-500 text-sm mb-6">
+        {payMode === 'balance' ? `${pkg.name} কেনা সম্পন্ন।` : 'পেমেন্ট জমা হয়েছে — Admin verify করবেন।'}
+      </p>
+      <button onClick={reset} className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700">
+        আবার কিনুন
+      </button>
+    </div>
+  );
+
+  const mobileMethods = [
+    { key: 'bkash',  label: 'বিকাশ', color: '#E2136E', bg: 'from-pink-500 to-pink-600' },
+    { key: 'nagad',  label: 'নগদ',   color: '#F6921E', bg: 'from-orange-400 to-orange-500' },
+    { key: 'rocket', label: 'রকেট',  color: '#8B2F8B', bg: 'from-purple-600 to-purple-700' },
+  ];
+
+  return (
+    <div>
+      <h2 className="text-lg font-bold text-gray-900 mb-1">প্যাকেজ কিনুন</h2>
+      <p className="text-sm text-gray-500 mb-5">
+        ব্যালেন্স: <span className="font-bold text-green-600">৳{(user.current_balance || 0).toLocaleString()}</span>
+      </p>
+
+      {/* Package cards */}
+      <div className="grid md:grid-cols-2 gap-4 mb-6">
+        {PKG_LIST.map(p => (
+          <button key={p.type} onClick={() => setSelPkg(p.type)}
+            className={`p-5 rounded-2xl border-2 text-left transition-all ${selPkg === p.type ? 'shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+            style={selPkg === p.type ? { borderColor: p.accentColor, backgroundColor: p.accentBg } : {}}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={`w-11 h-11 bg-gradient-to-br ${p.color} rounded-xl flex items-center justify-center text-white shadow-sm`}>
+                <Package size={20} />
+              </div>
+              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${selPkg === p.type ? 'border-indigo-500 bg-indigo-500' : 'border-gray-300'}`}>
+                {selPkg === p.type && <div className="w-2 h-2 bg-white rounded-full" />}
+              </div>
+            </div>
+            <h3 className="font-bold text-gray-900 mb-1">{p.name}</h3>
+            <p className="text-xs text-gray-500 mb-2">{p.points}</p>
+            {p.club
+              ? <span className="text-[10px] px-2 py-0.5 bg-green-100 text-green-700 rounded-full">{p.club}</span>
+              : <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">কোনো ক্লাব নেই</span>
+            }
+            <p className="text-2xl font-extrabold text-gray-900 mt-3">৳{p.price.toLocaleString()}</p>
+          </button>
+        ))}
+      </div>
+
+      {/* Features */}
+      <div className="bg-gray-50 rounded-xl p-4 mb-5">
+        <p className="text-xs font-semibold text-gray-600 mb-2">{pkg.name} — সুবিধা:</p>
+        <ul className="space-y-1.5">
+          {pkg.features.map((f, i) => (
+            <li key={i} className="flex items-center gap-2 text-xs text-gray-600">
+              <div className={`w-4 h-4 bg-gradient-to-br ${pkg.color} rounded-full flex items-center justify-center flex-shrink-0`}>
+                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+              </div>
+              {f}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Payment method */}
+      <div className="bg-white border border-gray-100 rounded-2xl p-5">
+        <p className="text-sm font-semibold text-gray-700 mb-3">পেমেন্ট পদ্ধতি</p>
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {[
+            { key: 'balance', label: 'ব্যালেন্স থেকে', icon: <Wallet size={18} />, sub: `৳${(user.current_balance||0).toLocaleString()} আছে`, color: 'from-green-500 to-emerald-500' },
+            { key: 'mobile',  label: 'মোবাইল পেমেন্ট', icon: <Smartphone size={18} />, sub: 'বিকাশ / নগদ / রকেট', color: 'from-pink-500 to-orange-400' },
+          ].map(m => (
+            <button key={m.key} onClick={() => setPayMode(m.key as any)}
+              className={`p-3.5 rounded-xl border-2 text-left transition-all ${payMode===m.key?'border-indigo-500 bg-indigo-50 shadow-sm':'border-gray-200 hover:border-gray-300'}`}>
+              <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${m.color} flex items-center justify-center text-white mb-2`}>{m.icon}</div>
+              <p className={`font-semibold text-xs mb-0.5 ${payMode===m.key?'text-indigo-700':'text-gray-800'}`}>{m.label}</p>
+              <p className="text-[10px] text-gray-400">{m.sub}</p>
+            </button>
+          ))}
+        </div>
+
+        {payMode === 'balance' && (
+          <div>
+            <div className={`rounded-xl p-3 text-xs border mb-3 ${canAfford?'bg-green-50 border-green-200 text-green-800':'bg-red-50 border-red-200 text-red-800'}`}>
+              {canAfford
+                ? `✅ ব্যালেন্স থেকে ৳${pkg.price.toLocaleString()} কাটা হবে এবং আইডি সাথে সাথে সক্রিয় হবে।`
+                : `❌ ব্যালেন্স কম। আরও ৳${(pkg.price-(user.current_balance||0)).toLocaleString()} প্রয়োজন।`
+              }
+            </div>
+            <button onClick={handleBalance} disabled={loading || !canAfford}
+              className={`w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r ${pkg.color} hover:opacity-90 disabled:opacity-40 transition-all`}>
+              {loading ? 'প্রসেসিং...' : `৳${pkg.price.toLocaleString()} — ব্যালেন্স দিয়ে কিনুন`}
+            </button>
+          </div>
+        )}
+
+        {payMode === 'mobile' && (
+          <div>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {mobileMethods.map(m => (
+                <button key={m.key} onClick={() => setMobileMth(m.key)}
+                  className={`p-2.5 rounded-xl border-2 text-center transition-all ${mobileMth===m.key?'shadow-md':'border-gray-200'}`}
+                  style={mobileMth===m.key?{borderColor:m.color,backgroundColor:m.color+'18'}:{}}>
+                  <div className={`w-9 h-9 mx-auto mb-1 rounded-lg bg-gradient-to-br ${m.bg} flex items-center justify-center`}>
+                    <span className="text-white font-bold text-xs">{m.label[0]}</span>
+                  </div>
+                  <p className="font-bold text-[11px]" style={{color:m.color}}>{m.label}</p>
+                </button>
+              ))}
+            </div>
+            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 mb-3 text-xs text-indigo-700">
+              <ol className="list-decimal pl-4 space-y-0.5">
+                <li>{mobileMethods.find(m=>m.key===mobileMth)?.label} নম্বরে <strong>৳{pkg.price.toLocaleString()}</strong> পাঠান</li>
+                <li>TRX ID নিচে দিন এবং জমা দিন</li>
+                <li>Admin verify করলে আইডি সক্রিয় ও কমিশন যাবে</li>
+              </ol>
+            </div>
+            <div className="space-y-2 mb-3">
+              <input value={trxId} onChange={e=>setTrxId(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-mono focus:border-indigo-500 outline-none"
+                placeholder="TRX ID *" />
+              <input value={senderNo} onChange={e=>setSenderNo(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none"
+                placeholder="সেন্ডার নম্বর (ঐচ্ছিক)" />
+            </div>
+            <button onClick={handleMobile} disabled={loading || !trxId.trim()}
+              className={`w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r ${pkg.color} hover:opacity-90 disabled:opacity-40 transition-all`}>
+              {loading ? 'প্রসেসিং...' : 'পেমেন্ট জমা দিন'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function UserDashboard() {
   const { user, refreshUser, logout } = useAuth();
@@ -778,65 +993,7 @@ export default function UserDashboard() {
             )}
 
             {activeTab === 'buy_package' && (
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-1">ব্যালেন্স দিয়ে প্যাকেজ কিনুন</h2>
-                <p className="text-sm text-gray-500 mb-6">
-                  উপলব্ধ ব্যালেন্স: <span className="font-bold text-green-600">৳{(user.current_balance || 0).toLocaleString()}</span>
-                </p>
-                <div className="grid md:grid-cols-3 gap-6">
-                  {([
-                    {
-                      type: 'customer' as const,
-                      name: 'কাস্টমার প্যাকেজ', price: 1000,
-                      points: '১,০০০ PV', color: 'from-blue-500 to-cyan-600',
-                      clubs: ['ডেইলি ক্লাব (PV এর ৩০%)'],
-                      note: 'মাসে ১০০ PV কিনলে রিনিউ | ৫% রেফার কমিশন',
-                    },
-                    {
-                      type: 'shareholder' as const,
-                      name: 'শেয়ারহোল্ডার প্যাকেজ', price: 5000,
-                      points: '৫,০০০ SP', color: 'from-purple-500 to-pink-600',
-                      clubs: ['শেয়ারহোল্ডার ক্লাব (PV এর ১০%)'],
-                      note: 'কোনো PV নেই | ২.৫% রেফার কমিশন',
-                    },
-                    {
-                      type: 'gold' as const,
-                      name: 'গোল্ড প্যাকেজ', price: 100000,
-                      points: '১,০০,০০০ GP', color: 'from-yellow-500 to-orange-600',
-                      clubs: [],
-                      note: 'রেফারার পায় ৳১,৮০০ | বায়ার বকেয়া ৳৩৬,০০০',
-                    },
-                  ] as const).map(pkg => {
-                    const canAfford = (user.current_balance || 0) >= pkg.price;
-                    return (
-                      <div key={pkg.type} className={`bg-white rounded-2xl border-2 p-6 shadow-sm hover:shadow-md transition-all ${canAfford ? 'border-gray-100' : 'border-gray-50 opacity-75'}`}>
-                        <div className={`w-12 h-12 bg-gradient-to-br ${pkg.color} rounded-xl flex items-center justify-center text-white mb-4`}>
-                          <Package size={22} />
-                        </div>
-                        <h3 className="font-bold text-gray-900 mb-1">{pkg.name}</h3>
-                        <p className="text-sm text-gray-500 mb-2">{pkg.points}</p>
-                        <div className="flex flex-wrap gap-1 mb-2">
-                          {pkg.clubs.length > 0
-                            ? pkg.clubs.map((c, idx) => <span key={idx} className="text-[10px] px-2 py-0.5 bg-green-100 text-green-700 rounded-full">{c}</span>)
-                            : <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">কোনো ক্লাব নেই</span>
-                          }
-                        </div>
-                        <p className="text-xs text-gray-400 mb-3">{pkg.note}</p>
-                        <p className="text-2xl font-bold text-gray-900 mb-4">৳{pkg.price.toLocaleString()}</p>
-                        {!canAfford && (
-                          <p className="text-xs text-red-500 mb-2">আরও ৳{(pkg.price-(user.current_balance||0)).toLocaleString()} প্রয়োজন</p>
-                        )}
-                        <button
-                          onClick={() => handleBuyPackageWithBalance(pkg.type, pkg.price)}
-                          disabled={loading || !canAfford}
-                          className={`w-full py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r ${pkg.color} hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all`}>
-                          {loading ? 'প্রসেসিং...' : !canAfford ? 'ব্যালেন্স কম' : 'ব্যালেন্স দিয়ে কিনুন'}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <BuyPackageTab user={user} loading={loading} setLoading={setLoading} onSuccess={() => { refreshUser(); fetchData(); }} />
             )}
 
             {activeTab === 'profile' && (
