@@ -92,7 +92,8 @@ export default function AdminDashboard() {
     if (txns) setTransactions(txns);
 
     const { data: ordersData } = await supabase.from('ecom_orders')
-      .select('*, customer:ecom_customers(name, email)').order('created_at', { ascending: false }).limit(50);
+      .select('*, user:mlm_users(name, email, phone), items:ecom_order_items(product_name, quantity, unit_price)')
+      .order('created_at', { ascending: false }).limit(50);
     if (ordersData) setOrders(ordersData);
 
     const { data: catsData } = await supabase.from('mlm_categories').select('*').order('sort_order');
@@ -863,25 +864,44 @@ export default function AdminDashboard() {
                     <p className="text-sm">কোনো অর্ডার নেই</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead><tr className="bg-gray-50">
-                        {['অর্ডার ID','কাস্টমার','মোট','স্ট্যাটাস','তারিখ'].map(h => (
-                          <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-500">{h}</th>
-                        ))}
-                      </tr></thead>
-                      <tbody>
-                        {orders.map(order => (
-                          <tr key={order.id} className="border-b border-gray-50">
-                            <td className="py-2 px-3 font-mono text-xs">{order.id.slice(0,8)}...</td>
-                            <td className="py-2 px-3 text-xs">{order.customer?.name||order.shipping_address?.name||'N/A'}</td>
-                            <td className="py-2 px-3 font-bold text-xs">৳{((order.total||0)/100).toLocaleString()}</td>
-                            <td className="py-2 px-3"><span className={`text-xs px-2 py-0.5 rounded-full ${order.status==='paid'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>{order.status==='paid'?'পেইড':'পেন্ডিং'}</span></td>
-                            <td className="py-2 px-3 text-xs">{new Date(order.created_at).toLocaleDateString('bn-BD')}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-3">
+                    {orders.map(order => {
+                      const addr = order.shipping_address || {};
+                      const buyerName = addr.name || order.user?.name || 'N/A';
+                      const buyerPhone = addr.phone || order.user?.phone || '';
+                      const buyerAddress = [addr.address, addr.district].filter(Boolean).join(', ');
+                      return (
+                        <div key={order.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+                          <div className="flex items-start justify-between gap-4 flex-wrap">
+                            <div>
+                              <p className="font-mono text-xs text-gray-400 mb-1">#{order.id.slice(0,8).toUpperCase()}</p>
+                              <p className="font-bold text-sm">{buyerName}</p>
+                              {buyerPhone && <p className="text-xs text-gray-500">{buyerPhone}</p>}
+                              {buyerAddress && <p className="text-xs text-gray-500">{buyerAddress}</p>}
+                              {addr.note && <p className="text-xs text-indigo-600 mt-0.5">নোট: {addr.note}</p>}
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-base">৳{((order.total||0)/100).toLocaleString()}</p>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${order.status==='paid'?'bg-green-100 text-green-700':order.status==='pending'?'bg-yellow-100 text-yellow-700':'bg-gray-100 text-gray-600'}`}>
+                                {order.status==='paid'?'পেইড':order.status==='pending'?'পেন্ডিং':order.status}
+                              </span>
+                              <p className="text-[10px] text-gray-400 mt-1">{new Date(order.created_at).toLocaleString('bn-BD')}</p>
+                            </div>
+                          </div>
+                          {order.items?.length > 0 && (
+                            <div className="mt-3 border-t border-gray-200 pt-2 space-y-1">
+                              {order.items.map((item: any, j: number) => (
+                                <div key={j} className="flex justify-between text-xs text-gray-600">
+                                  <span>{item.product_name} ×{item.quantity}</span>
+                                  <span>৳{((item.unit_price * item.quantity)/100).toLocaleString()}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="mt-2 text-xs text-gray-400">পেমেন্ট: {order.payment_method}</div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
