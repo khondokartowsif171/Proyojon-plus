@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { users as usersApi, transactions as txApi, withdrawals as withdrawalsApi, transfers as transfersApi, payments as paymentsApi } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import {
@@ -68,10 +68,10 @@ function BuyPackageTab({ user, loading, setLoading, onSuccess }: {
     if (!window.confirm(`৳${pkg.price.toLocaleString()} দিয়ে ${pkg.name} কিনবেন?`)) return;
     setLoading(true);
     const { updates, psPoints, gpPoints } = buildPackageActivationPayload(selPkg);
-    await usersApi.update(user.id, {
+    await supabase.from('mlm_users').update({
       ...updates, current_balance: Number(user.current_balance || 0) - pkg.price,
-    });
-    await txApi.insert({
+    }).eq('id', user.id);
+    await supabase.from('mlm_transactions').insert({
       user_id: user.id, type: 'package_purchase', amount: -pkg.price,
       description: `ব্যালেন্স থেকে ${pkg.name} ক্রয়`,
     });
@@ -86,7 +86,7 @@ function BuyPackageTab({ user, loading, setLoading, onSuccess }: {
   const handleMobile = async () => {
     if (!trxId.trim()) { toast.error('TRX ID দিন'); return; }
     setLoading(true);
-    await paymentsApi.insert({
+    await supabase.from('mlm_payment_verifications').insert({
       user_id: user.id, amount: pkg.price, method: mobileMth,
       trx_id: trxId.trim(), sender_number: senderNo.trim() || null,
       purpose: `${selPkg}_package`, status: 'pending',
@@ -294,12 +294,12 @@ export default function UserDashboard() {
 
   const fetchData = async () => {
     if (!user) return;
-    const [txData, wdData] = await Promise.all([
-      txApi.getByUser(user.id, 50),
-      withdrawalsApi.getByUser(user.id, 20),
+    const [txRes, wdRes] = await Promise.all([
+      supabase.from('mlm_transactions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
+      supabase.from('mlm_withdrawals').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20),
     ]);
-    setTransactions(txData || []);
-    setWithdrawals(wdData || []);
+    if (txRes.data) setTransactions(txRes.data);
+    if (wdRes.data) setWithdrawals(wdRes.data);
     await fetchGenerations(user.id);
   };
 
@@ -307,14 +307,18 @@ export default function UserDashboard() {
     const gens: any[][] = [[], [], [], [], []];
     const allMembers: any[] = [];
 
-    const gen1 = await usersApi.getReferrals(userId);
+    const { data: gen1 } = await supabase.from('mlm_users')
+      .select('id, name, email, phone, package_type, is_active, pv_points, current_balance, total_income, referrer_id, created_at')
+      .eq('referrer_id', userId).order('created_at', { ascending: false });
     gens[0] = gen1 || [];
     for (const m of gens[0]) allMembers.push({ ...m, level: 1, upline: user?.name || '' });
 
     for (let i = 1; i < 5; i++) {
       const parentIds = gens[i - 1].map((u: any) => u.id);
       if (parentIds.length === 0) break;
-      const data = await usersApi.getByReferrerIds(parentIds);
+      const { data } = await supabase.from('mlm_users')
+        .select('id, name, email, phone, package_type, is_active, pv_points, current_balance, total_income, referrer_id, created_at')
+        .in('referrer_id', parentIds);
       gens[i] = data || [];
       for (const m of gens[i]) {
         const parent = gens[i - 1].find((p: any) => p.id === m.referrer_id);
@@ -339,12 +343,12 @@ export default function UserDashboard() {
     const netAmount = amount - charge;
 
     try {
-      await withdrawalsApi.insert({
+      await supabase.from('mlm_withdrawals').insert({
         user_id: user.id, amount, charge, net_amount: netAmount,
         method: withdrawForm.method, account_number: withdrawForm.account,
       });
-      await usersApi.update(user.id, { current_balance: Number(user.current_balance || 0) - amount });
-      await txApi.insert({
+      await supabase.from('mlm_users').update({ current_balance: Number(user.current_balance || 0) - amount }).eq('id', user.id);
+      await supabase.from('mlm_transactions').insert({
         user_id: user.id, type: 'withdrawal', amount: -amount,
         description: `উইথড্রো অনুরোধ - ${withdrawForm.method} (${withdrawForm.account}) — চার্জ ৳${charge}`,
       });
@@ -367,13 +371,13 @@ export default function UserDashboard() {
     if (!transferForm.toEmail.trim())            { toast.error('প্রাপকের ইমেইল দিন'); setLoading(false); return; }
     if (transferForm.toEmail === user.email)     { toast.error('নিজেকে ট্রান্সফার করা যাবে না'); setLoading(false); return; }
 
-    const toUser = await usersApi.getByEmail(transferForm.toEmail);
+    const { data: toUser } = await supabase.from('mlm_users').select('id, name, current_balance').eq('email', transferForm.toEmail).single();
     if (!toUser) { toast.error('প্রাপকের ইমেইল পাওয়া যায়নি'); setLoading(false); return; }
 
-    await usersApi.update(user.id, { current_balance: Number(user.current_balance || 0) - amount });
-    await usersApi.update(toUser.id, { current_balance: Number(toUser.current_balance || 0) + amount });
-    await transfersApi.insert({ from_user_id: user.id, to_user_id: toUser.id, amount });
-    await txApi.insert([
+    await supabase.from('mlm_users').update({ current_balance: Number(user.current_balance || 0) - amount }).eq('id', user.id);
+    await supabase.from('mlm_users').update({ current_balance: Number(toUser.current_balance || 0) + amount }).eq('id', toUser.id);
+    await supabase.from('mlm_transfers').insert({ from_user_id: user.id, to_user_id: toUser.id, amount });
+    await supabase.from('mlm_transactions').insert([
       { user_id: user.id,   type: 'transfer_out', amount: -amount, description: `ট্রান্সফার → ${toUser.name}`,       related_user_id: toUser.id },
       { user_id: toUser.id, type: 'transfer_in',  amount,          description: `ট্রান্সফার প্রাপ্ত ← ${user.name}`, related_user_id: user.id  },
     ]);
@@ -385,11 +389,11 @@ export default function UserDashboard() {
   const handleProfileSave = async () => {
     if (!user) return;
     setLoading(true);
-    await usersApi.update(user.id, {
+    await supabase.from('mlm_users').update({
       name: profileForm.name, phone: profileForm.phone, address: profileForm.address,
       nid_number: profileForm.nid_number, nominee_name: profileForm.nominee_name,
       nominee_phone: profileForm.nominee_phone,
-    });
+    }).eq('id', user.id);
     toast.success('প্রোফাইল আপডেট সফল');
     setProfileEdit(false); await refreshUser(); setLoading(false);
   };
