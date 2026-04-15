@@ -134,12 +134,17 @@ export const processReferrerCommission = async (
   }
 
   // ── Update direct_referrals_count + club upgrade ─────────────────────────
+  // ✅ FIXED: DB থেকে actual count recount করো — stale value এড়াতে
+  const { count: actualCount } = await supabase.from('mlm_users')
+    .select('id', { count: 'exact', head: true })
+    .eq('referrer_id', referrerId);
+
+  const newCount = (actualCount || 0);
+
   const { data: freshRef } = await supabase.from('mlm_users')
-    .select('direct_referrals_count, is_weekly_club, is_insurance_club, is_pension_club')
+    .select('is_weekly_club, is_insurance_club, is_pension_club')
     .eq('id', referrerId).single();
 
-  const currentCount = freshRef?.direct_referrals_count || 0;
-  const newCount     = currentCount + 1;
   const refUpdates: any = { direct_referrals_count: newCount };
 
   // Weekly club: 15+ direct customer referrals
