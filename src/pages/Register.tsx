@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import Header from '@/components/Header';
@@ -9,7 +9,6 @@ import { toast } from 'sonner';
 
 export default function Register() {
   const { register } = useAuth();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [step, setStep] = useState(1); // 1: form, 2: payment, 3: success
   const [form, setForm] = useState({
@@ -88,7 +87,7 @@ export default function Register() {
           amount: 0,
           method: 'product',
           trx_id: 'PRODUCT_PURCHASE_PENDING',
-          purpose: 'customer_package',
+          purpose: 'customer_registration',
           status: 'pending',
         });
         setStep(3);

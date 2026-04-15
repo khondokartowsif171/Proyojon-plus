@@ -294,6 +294,13 @@ export default function AdminDashboard() {
     // ── Mark as approved first ──────────────────────────────────────────────
     await supabase.from('mlm_payment_verifications').update({ status: 'approved', processed_at: new Date().toISOString() }).eq('id', id);
 
+    // ══ CASE 0: Customer registration placeholder (no PV / no commission) ═════
+    if (pv.purpose === 'customer_registration') {
+      toast.success('✅ কাস্টমার রেজিস্ট্রেশন নিশ্চিত হয়েছে। পণ্য কেনার পরে আইডি সক্রিয় হবে।');
+      fetchAll(); setLoading(false);
+      return;
+    }
+
     // ══ CASE 1: Product purchase (from Checkout) ══════════════════════════════
     if (pv.purpose === 'product_purchase') {
       const { data: userData } = await supabase.from('mlm_users')
@@ -745,7 +752,7 @@ export default function AdminDashboard() {
                           <td className="py-2 px-3 text-xs">{pv.sender_number||'-'}</td>
                           <td className="py-2 px-3 text-xs">
                             <span className={`px-2 py-0.5 rounded-full text-xs ${pv.purpose==='product_purchase'?'bg-teal-100 text-teal-700':pv.purpose==='gold_package'?'bg-yellow-100 text-yellow-700':pv.purpose==='shareholder_package'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>
-                              {pv.purpose==='customer_package'?'কাস্টমার':pv.purpose==='shareholder_package'?'শেয়ারহোল্ডার':pv.purpose==='gold_package'?'গোল্ড':pv.purpose==='product_purchase'?'পণ্য ক্রয়':pv.purpose}
+                              {pv.purpose==='customer_registration'?'রেজিস্ট্রেশন':pv.purpose==='customer_package'?'কাস্টমার':pv.purpose==='shareholder_package'?'শেয়ারহোল্ডার':pv.purpose==='gold_package'?'গোল্ড':pv.purpose==='product_purchase'?'পণ্য ক্রয়':pv.purpose}
                             </span>
                           </td>
                           <td className="py-2 px-3">
