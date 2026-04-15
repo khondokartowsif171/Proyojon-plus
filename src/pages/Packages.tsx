@@ -7,10 +7,9 @@ import { ShoppingBag, Crown, Award, Check, Users, Gift, Shield, Star, Zap, Trend
 const packages = [
   {
     name: 'কাস্টমার প্যাকেজ',
-    // ✅ No cash price — product purchase activates
     priceDisplay: null,
     pvLabel: '১,০০০ PV এর পণ্য কিনুন',
-    pvSub: '১ PV = ১ টাকা মূল্যের পণ্য',
+    pvSub: '',
     points: '১,০০০ PV',
     type: 'customer',
     icon: <ShoppingBag size={32} />,
@@ -32,7 +31,7 @@ const packages = [
     name: 'শেয়ারহোল্ডার প্যাকেজ',
     priceDisplay: '৳৫,০০০',
     pvLabel: '৫,০০০ SP',
-    pvSub: '১ SP = ১ টাকা',
+    pvSub: '',
     points: '৫,০০০ SP',
     type: 'shareholder',
     icon: <Crown size={32} />,
@@ -43,7 +42,6 @@ const packages = [
       { text: '২.৫% রেফার কমিশন — আইডি সক্রিয় হলেই সাথে সাথে (৳১২৫)', ok: true },
       { text: 'শেয়ারহোল্ডার ক্লাব সদস্যপদ (PV এর ১০%)', ok: true },
       { text: '১% জেনারেশন বোনাস (৫ লেভেল) — PV sales এ', ok: true },
-      { text: '৩০ দিনের মেয়াদ — মাসে ১০০ PV কিনলে রিনিউ', ok: true },
       { text: 'কোনো PV নেই — শুধু Shareholder club income', ok: true },
       { text: 'ডেইলি/উইকলি ক্লাব নেই', ok: false },
     ],
@@ -53,7 +51,7 @@ const packages = [
     name: 'গোল্ড প্যাকেজ',
     priceDisplay: '৳১,০০,০০০',
     pvLabel: '১,০০,০০০ GP',
-    pvSub: '১ GP = ১ টাকা',
+    pvSub: '',
     points: '১,০০,০০০ GP',
     type: 'gold',
     icon: <Award size={32} />,
@@ -81,8 +79,8 @@ const commissionRows = [
   { label: 'ইনসুরেন্স ক্লাব (১.২৫%)', customer: '১৫ weekly refs', shareholder: '✗', gold: '✗' },
   { label: 'পেনশন ক্লাব (১.২৫%)', customer: '১৫ weekly refs', shareholder: '✗', gold: '✗' },
   { label: 'শেয়ারহোল্ডার ক্লাব (১০%)', customer: '✗', shareholder: '✓', gold: '✗' },
-  { label: 'মেয়াদ', customer: '৩০ দিন', shareholder: '৩০ দিন', gold: '৩৬৫ দিন' },
-  { label: 'রিনিউ শর্ত', customer: 'মাসে ১০০ PV', shareholder: 'মাসে ১০০ PV', gold: 'N/A' },
+  { label: 'মেয়াদ', customer: '৩০ দিন', shareholder: 'আজীবন', gold: '৩৬৫ দিন' },
+  { label: 'রিনিউ শর্ত', customer: 'মাসে ১০০ PV', shareholder: 'রিনিউ লাগে না', gold: 'N/A' },
 ];
 
 const clubInfo = [
@@ -209,7 +207,7 @@ export default function Packages() {
 
                 {/* Name */}
                 <h3 className="text-xl font-bold text-gray-900 mb-1">{pkg.name}</h3>
-                <p className="text-xs text-gray-400 mb-4">{pkg.pvSub}</p>
+                {pkg.pvSub && <p className="text-xs text-gray-400 mb-4">{pkg.pvSub}</p>}
 
                 {/* ✅ Customer: no cash price */}
                 {pkg.priceDisplay ? (
@@ -267,7 +265,7 @@ export default function Packages() {
             <p className="font-bold text-blue-800 mb-1">কাস্টমার প্যাকেজ সম্পর্কে বিস্তারিত</p>
             <p className="text-sm text-blue-700">
               কাস্টমার প্যাকেজে রেজিস্ট্রেশন <strong>বিনামূল্যে</strong>। শপ থেকে ১,০০০ PV মূল্যের পণ্য কিনলেই আইডি স্বয়ংক্রিয়ভাবে সক্রিয় হবে।
-              মাসে মাসে ১০০ PV এর পণ্য কিনলে আইডি রিনিউ হবে (৩০ দিন)। <strong>১ ,০০০ PV এর জন্য আপনার পছন্দের পন্য ক্রয় করুন</strong> মূল্যের পণ্য।
+              মাসে মাসে ১০০ PV এর পণ্য কিনলে আইডি রিনিউ হবে (৩০ দিন)। <strong>১ PV = ১ টাকা</strong> মূল্যের পণ্য।
             </p>
           </div>
         </div>
