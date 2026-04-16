@@ -302,22 +302,55 @@ export default function AdminDashboard() {
             monthly_pv_purchased: newMonthly,
           };
 
-          // First activation: 1000 PV, re-activation: 100 PV
+          // First activation: 1000 PV → active + daily club; re-activation: 100 PV → renew
+          let justActivated = false;
           if (userData.package_type === 'customer') {
             const isFirstTime = !userData.activated_at;
             const pvThreshold = isFirstTime ? 1000 : 100;
             if (!userData.is_active && newMonthly >= pvThreshold) {
               const expiry = new Date();
               expiry.setDate(expiry.getDate() + 30);
-              updates.is_active    = true;
-              updates.expires_at   = expiry.toISOString();
-              updates.activated_at = new Date().toISOString();
+              updates.is_active     = true;
+              updates.expires_at    = expiry.toISOString();
+              updates.activated_at  = new Date().toISOString();
+              updates.is_daily_club = true; // auto-join daily club on activation
+              justActivated = true;
+            } else if (userData.is_active && newMonthly >= 100) {
+              // renew expiry, keep daily club
+              const expiry = new Date();
+              expiry.setDate(expiry.getDate() + 30);
+              updates.expires_at    = expiry.toISOString();
+              updates.is_daily_club = true;
             }
           }
 
           await supabase.from('mlm_users').update(updates).eq('id', pv.user_id);
 
-          // ✅ Fix 4: Generation bonus — শুধু customer package
+          // Referrer 5% commission on first activation
+          if (justActivated && userData.referrer_id && pvToAdd > 0) {
+            const commission = Math.floor(pvToAdd * 0.05);
+            if (commission > 0) {
+              const { data: ref } = await supabase.from('mlm_users')
+                .select('id, current_balance, total_income, is_active, direct_referrals_count')
+                .eq('id', userData.referrer_id).single();
+              if (ref && ref.is_active) {
+                await supabase.from('mlm_users').update({
+                  current_balance:        Number(ref.current_balance || 0) + commission,
+                  total_income:           Number(ref.total_income    || 0) + commission,
+                  direct_referrals_count: Number(ref.direct_referrals_count || 0) + 1,
+                }).eq('id', ref.id);
+                await supabase.from('mlm_transactions').insert({
+                  user_id:         ref.id,
+                  type:            'referral_income',
+                  amount:          commission,
+                  description:     `কাস্টমার রেফার কমিশন ৫% (PV: ${pvToAdd})`,
+                  related_user_id: pv.user_id,
+                });
+              }
+            }
+          }
+
+          // Generation bonus — customer package only
           if (userData.package_type === 'customer' && userData.referrer_id && pvToAdd > 0) {
             await distributeGenerationBonus(userData.referrer_id, pvToAdd, pv.user_id, 1);
           }

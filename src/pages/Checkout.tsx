@@ -179,13 +179,16 @@ export default function Checkout() {
       updates.is_active    = true;
       updates.expires_at   = newExpiry.toISOString();
       updates.activated_at = new Date().toISOString();
+      updates.is_daily_club = true; // 1000 PV activation → auto Daily club
     } else if (user.is_active && newMonthly >= 100) {
-      // Already active — extend expiry
+      // Already active — extend expiry, ensure daily club stays on
       const newExpiry = new Date();
       newExpiry.setDate(newExpiry.getDate() + 30);
-      updates.expires_at = newExpiry.toISOString();
+      updates.expires_at   = newExpiry.toISOString();
+      updates.is_daily_club = true;
     }
 
+    const wasInactive = !user.is_active;
     await supabase.from('mlm_users').update(updates).eq('id', user.id);
 
     // PV log
@@ -193,9 +196,32 @@ export default function Checkout() {
       user_id: user.id,
       amount:  pvToAdd,
       source:  'product_purchase',
-    }).catch(() => {}); // PV log table নাও থাকতে পারে
+    }).catch(() => {});
 
-    // ✅ Fix 4: Generation bonus — শুধু customer package
+    // ✅ First activation → referrer gets 5% commission immediately
+    if (wasInactive && isFirstTime && (updates.is_active === true) && user.referrer_id) {
+      const commission = Math.floor(pvToAdd * 0.05);
+      if (commission > 0) {
+        const { data: referrer } = await supabase.from('mlm_users')
+          .select('id, current_balance, total_income, is_active')
+          .eq('id', user.referrer_id).single();
+        if (referrer && referrer.is_active) {
+          await supabase.from('mlm_users').update({
+            current_balance: Number(referrer.current_balance || 0) + commission,
+            total_income:    Number(referrer.total_income    || 0) + commission,
+          }).eq('id', referrer.id);
+          await supabase.from('mlm_transactions').insert({
+            user_id:         referrer.id,
+            type:            'referral_income',
+            amount:          commission,
+            description:     `কাস্টমার রেফার কমিশন ৫% — ${user.name || ''} (PV: ${pvToAdd})`,
+            related_user_id: user.id,
+          });
+        }
+      }
+    }
+
+    // Generation bonus — শুধু customer package
     if (user.referrer_id && pvToAdd > 0) {
       await processGenerationBonusChain(user.referrer_id, pvToAdd, user.id, 1);
     }

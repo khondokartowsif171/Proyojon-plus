@@ -4,11 +4,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import { ShoppingBag, Crown, Award, Eye, EyeOff, Smartphone, CheckCircle, ArrowRight } from 'lucide-react';
+import { ShoppingBag, Crown, Award, Eye, EyeOff, Smartphone, CheckCircle, ArrowRight, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Register() {
-  const { register } = useAuth();
+  const { register, user: loggedInUser } = useAuth();
   const [searchParams] = useSearchParams();
   const [step, setStep] = useState(1); // 1: form, 2: payment, 3: success
   const [form, setForm] = useState({
@@ -103,10 +103,123 @@ export default function Register() {
   // ── Step 2: Payment submit ─────────────────────────────────────────────────
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!trxId.trim()) { toast.error('TRX ID দিন'); return; }
     if (!registeredUserId) { toast.error('রেজিস্ট্রেশন সমস্যা, আবার চেষ্টা করুন'); return; }
 
     setLoading(true);
+
+    // ── Balance payment: auto-approve immediately ────────────────────────────
+    if (paymentMethod === 'balance') {
+      if (!loggedInUser) { toast.error('ব্যালেন্স পেমেন্টের জন্য লগইন করুন'); setLoading(false); return; }
+      const required = selectedPkg?.amount || 0;
+      if ((loggedInUser.current_balance || 0) < required) {
+        toast.error(`অপর্যাপ্ত ব্যালেন্স। প্রয়োজন ৳${required.toLocaleString()}, আপনার ব্যালেন্স ৳${loggedInUser.current_balance.toLocaleString()}`);
+        setLoading(false);
+        return;
+      }
+
+      // Deduct from payer's balance
+      const { error: deductErr } = await supabase.from('mlm_users').update({
+        current_balance: (loggedInUser.current_balance || 0) - required,
+      }).eq('id', loggedInUser.id);
+      if (deductErr) { toast.error('ব্যালেন্স কাটতে সমস্যা: ' + deductErr.message); setLoading(false); return; }
+
+      await supabase.from('mlm_transactions').insert({
+        user_id: loggedInUser.id, type: 'transfer', amount: -required,
+        description: `${selectedPkg?.label} ক্রয় (ব্যালেন্স পেমেন্ট) — নতুন আইডি: ${registeredUserId}`,
+        related_user_id: registeredUserId,
+      });
+
+      // Activate registered user's package
+      const isShareholder = form.package_type === 'shareholder';
+      const isGold        = form.package_type === 'gold';
+      const psPoints      = isShareholder ? 5000 : 0;
+      const gpPoints      = isGold ? 100000 : 0;
+      const pvPoints      = 1000;
+      const now           = new Date().toISOString();
+      const activatePayload: any = {
+        is_active:        true,
+        activated_at:     now,
+        pv_points:        pvPoints,
+        ps_points:        psPoints,
+        gp_points:        gpPoints,
+        is_daily_club:    false,
+        is_shareholder_club: isShareholder,
+        is_weekly_club:   false,
+        is_insurance_club: false,
+        is_pension_club:  false,
+      };
+      if (isGold) {
+        activatePayload.gold_package_start = now;
+        const dailyBakeya = Math.round((100000 * 0.36) / 365);
+        activatePayload.bakeya_amount = dailyBakeya;
+      }
+
+      await supabase.from('mlm_users').update(activatePayload).eq('id', registeredUserId);
+
+      // Referrer commission
+      const { data: newUser } = await supabase.from('mlm_users').select('referrer_id').eq('id', registeredUserId).single();
+      if (newUser?.referrer_id) {
+        const { data: referrer } = await supabase.from('mlm_users').select('*').eq('id', newUser.referrer_id).single();
+        if (referrer && referrer.is_active) {
+          if (isShareholder) {
+            const commission = Math.floor(psPoints * 0.025);
+            if (commission > 0) {
+              await supabase.from('mlm_users').update({
+                current_balance: (referrer.current_balance || 0) + commission,
+                total_income:    (referrer.total_income || 0) + commission,
+              }).eq('id', referrer.id);
+              await supabase.from('mlm_transactions').insert({
+                user_id: referrer.id, type: 'referral_income', amount: commission,
+                description: 'শেয়ারহোল্ডার রেফার কমিশন (২.৫%) — ব্যালেন্স পেমেন্ট', related_user_id: registeredUserId,
+              });
+            }
+          } else if (isGold) {
+            const totalGold = 1800;
+            await supabase.from('mlm_users').update({
+              gold_referral_income:  (referrer.gold_referral_income || 0) + totalGold,
+              gold_referral_pending: (referrer.gold_referral_pending || 0) + totalGold,
+            }).eq('id', referrer.id);
+            await supabase.from('mlm_transactions').insert({
+              user_id: referrer.id, type: 'referral_income', amount: totalGold,
+              description: 'গোল্ড রেফার ইনকাম (৳১৮০০, ৩৬৫ দিনে বন্টন) — ব্যালেন্স পেমেন্ট', related_user_id: registeredUserId,
+            });
+          }
+
+          // direct_referrals_count + weekly/insurance/pension promotion
+          const { data: freshRef } = await supabase.from('mlm_users')
+            .select('direct_referrals_count, is_weekly_club, is_insurance_club')
+            .eq('id', referrer.id).single();
+          const newCount = (freshRef?.direct_referrals_count || 0) + 1;
+          const refUpdates: any = { direct_referrals_count: newCount };
+          if (newCount >= 15 && !freshRef?.is_weekly_club) refUpdates.is_weekly_club = true;
+          if (!freshRef?.is_insurance_club) {
+            const { data: directRefs } = await supabase.from('mlm_users')
+              .select('id, is_weekly_club').eq('referrer_id', referrer.id).eq('is_active', true);
+            const weeklyCount = (directRefs || []).filter(r => r.is_weekly_club).length;
+            if (weeklyCount >= 15) {
+              refUpdates.is_insurance_club = true;
+              refUpdates.is_pension_club   = true;
+            }
+          }
+          await supabase.from('mlm_users').update(refUpdates).eq('id', referrer.id);
+        }
+      }
+
+      // Save approved payment record
+      await supabase.from('mlm_payment_verifications').insert({
+        user_id: registeredUserId, amount: required, method: 'balance',
+        trx_id: `BAL-${Date.now()}`, purpose: `${form.package_type}_package`,
+        status: 'approved', processed_at: new Date().toISOString(),
+      });
+
+      toast.success('✅ ব্যালেন্স পেমেন্ট সফল! আইডি সক্রিয় হয়েছে।');
+      setStep(3);
+      setLoading(false);
+      return;
+    }
+
+    // ── Mobile payment: pending admin approval ───────────────────────────────
+    if (!trxId.trim()) { toast.error('TRX ID দিন'); setLoading(false); return; }
 
     const { error } = await supabase.from('mlm_payment_verifications').insert({
       user_id: registeredUserId,
@@ -133,6 +246,7 @@ export default function Register() {
     { key: 'nagad',  label: 'নগদ',   color: '#F6921E', number: '01XXXXXXXXX', bg: 'from-orange-400 to-orange-500' },
     { key: 'rocket', label: 'রকেট',  color: '#8B2F8B', number: '01XXXXXXXXX', bg: 'from-purple-600 to-purple-700' },
   ];
+  const isBalanceSufficient = loggedInUser && (loggedInUser.current_balance || 0) >= (selectedPkg?.amount || 0);
 
   // ── Step 3: Success ────────────────────────────────────────────────────────
   if (step === 3) {
@@ -152,6 +266,13 @@ export default function Register() {
                   <p className="text-blue-800 font-semibold text-sm">শপ থেকে ১,০০০ PV মূল্যের পণ্য কিনুন</p>
                   <p className="text-blue-600 text-xs mt-1">পণ্য কিনলেই আপনার আইডি স্বয়ংক্রিয়ভাবে সক্রিয় হবে (১ PV = ১ টাকা)</p>
                   <p className="text-blue-500 text-xs mt-1">মেয়াদ: ৩০ দিন | রিনিউ: মাসে ১০০ PV কিনলে</p>
+                </div>
+              </div>
+            ) : paymentMethod === 'balance' ? (
+              <div>
+                <div className="bg-green-50 rounded-xl p-4 mb-6 border border-green-200">
+                  <p className="text-green-800 font-semibold text-sm">আইডি তাৎক্ষণিক সক্রিয় হয়েছে!</p>
+                  <p className="text-green-600 text-xs mt-1">ব্যালেন্স থেকে ৳{(selectedPkg?.amount || 0).toLocaleString()} কাটা হয়েছে। রেফারারের কমিশন প্রদান করা হয়েছে।</p>
                 </div>
               </div>
             ) : (
@@ -193,7 +314,8 @@ export default function Register() {
                 <p className="text-gray-500 text-sm mt-1">{selectedPkg?.label} — {selectedPkg?.subtitle}</p>
               </div>
 
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              {/* Payment method tabs */}
+              <div className={`grid gap-3 mb-4 ${loggedInUser ? 'grid-cols-4' : 'grid-cols-3'}`}>
                 {mobilePaymentMethods.map(m => (
                   <button key={m.key} type="button" onClick={() => setPaymentMethod(m.key)}
                     className={`p-3 rounded-xl border-2 text-center transition-all ${paymentMethod === m.key ? 'shadow-lg' : 'border-gray-200'}`}
@@ -204,34 +326,67 @@ export default function Register() {
                     <p className="font-bold text-[11px]" style={{ color: m.color }}>{m.label}</p>
                   </button>
                 ))}
+                {loggedInUser && (
+                  <button type="button" onClick={() => setPaymentMethod('balance')}
+                    className={`p-3 rounded-xl border-2 text-center transition-all ${paymentMethod === 'balance' ? 'border-green-500 bg-green-50 shadow-lg' : 'border-gray-200'}`}>
+                    <div className="w-10 h-10 mx-auto mb-1 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
+                      <Wallet size={16} className="text-white" />
+                    </div>
+                    <p className="font-bold text-[11px] text-green-700">ব্যালেন্স</p>
+                  </button>
+                )}
               </div>
 
-              <div className="bg-indigo-50 rounded-xl p-4 mb-4 border border-indigo-100">
-                <p className="text-xs font-semibold text-indigo-800 mb-2">পেমেন্ট নির্দেশনা:</p>
-                <ol className="text-xs text-indigo-700 space-y-1 list-decimal pl-4">
-                  <li>{mobilePaymentMethods.find(m => m.key === paymentMethod)?.label} নম্বর: <span className="font-mono font-bold">{mobilePaymentMethods.find(m => m.key === paymentMethod)?.number}</span></li>
-                  <li><span className="font-bold">{selectedPkg?.subtitle}</span> পাঠান</li>
-                  <li>TRX ID নিচে দিন</li>
-                  <li>Admin approve করলে আইডি সক্রিয় হবে ও কমিশন যাবে</li>
-                </ol>
-              </div>
+              {paymentMethod === 'balance' ? (
+                <div className="mb-4">
+                  <div className={`rounded-xl p-4 border ${isBalanceSufficient ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-gray-700">আপনার বর্তমান ব্যালেন্স</span>
+                      <span className={`text-lg font-bold ${isBalanceSufficient ? 'text-green-700' : 'text-red-600'}`}>
+                        ৳{(loggedInUser?.current_balance || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">প্রয়োজন</span>
+                      <span className="text-sm font-semibold text-gray-700">৳{(selectedPkg?.amount || 0).toLocaleString()}</span>
+                    </div>
+                    {!isBalanceSufficient && (
+                      <p className="text-xs text-red-600 mt-2 font-medium">অপর্যাপ্ত ব্যালেন্স। মোবাইল ব্যাংকিং ব্যবহার করুন।</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-indigo-50 rounded-xl p-4 mb-4 border border-indigo-100">
+                  <p className="text-xs font-semibold text-indigo-800 mb-2">পেমেন্ট নির্দেশনা:</p>
+                  <ol className="text-xs text-indigo-700 space-y-1 list-decimal pl-4">
+                    <li>{mobilePaymentMethods.find(m => m.key === paymentMethod)?.label} নম্বর: <span className="font-mono font-bold">{mobilePaymentMethods.find(m => m.key === paymentMethod)?.number}</span></li>
+                    <li><span className="font-bold">{selectedPkg?.subtitle}</span> পাঠান</li>
+                    <li>TRX ID নিচে দিন</li>
+                    <li>Admin approve করলে আইডি সক্রিয় হবে ও কমিশন যাবে</li>
+                  </ol>
+                </div>
+              )}
 
               <form onSubmit={handlePaymentSubmit} className="space-y-3">
-                <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">TRX ID *</label>
-                  <input value={trxId} onChange={e => setTrxId(e.target.value)} required
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none font-mono"
-                    placeholder="TXN123456789" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">সেন্ডার নম্বর (ঐচ্ছিক)</label>
-                  <input value={senderNumber} onChange={e => setSenderNumber(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none"
-                    placeholder="০১XXXXXXXXX" />
-                </div>
-                <button type="submit" disabled={loading || !trxId}
+                {paymentMethod !== 'balance' && (
+                  <>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">TRX ID *</label>
+                      <input value={trxId} onChange={e => setTrxId(e.target.value)} required
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none font-mono"
+                        placeholder="TXN123456789" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">সেন্ডার নম্বর (ঐচ্ছিক)</label>
+                      <input value={senderNumber} onChange={e => setSenderNumber(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none"
+                        placeholder="০১XXXXXXXXX" />
+                    </div>
+                  </>
+                )}
+                <button type="submit" disabled={loading || (paymentMethod !== 'balance' && !trxId) || (paymentMethod === 'balance' && !isBalanceSufficient)}
                   className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg">
-                  {loading ? 'প্রসেসিং...' : 'পেমেন্ট জমা দিন'}
+                  {loading ? 'প্রসেসিং...' : paymentMethod === 'balance' ? `৳${(selectedPkg?.amount || 0).toLocaleString()} ব্যালেন্স থেকে পেমেন্ট করুন` : 'পেমেন্ট জমা দিন'}
                 </button>
               </form>
 
