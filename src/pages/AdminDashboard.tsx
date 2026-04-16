@@ -291,34 +291,44 @@ export default function AdminDashboard() {
       // ══ CASE 1: Product purchase ══════════════════════════════════════════
       if (pv.purpose === 'product_purchase') {
         const { data: userData } = await supabase.from('mlm_users')
-          .select('pv_points, monthly_pv_purchased, referrer_id, package_type, is_active, activated_at')
+          .select('pv_points, monthly_pv_purchased, referrer_id, package_type, is_active')
           .eq('id', pv.user_id).single();
 
         if (userData) {
-          const pvToAdd    = pv.pv_points || 0;
-          const newMonthly = (userData.monthly_pv_purchased || 0) + pvToAdd;
+          const pvToAdd      = pv.pv_points || 0;
+          const priorPvTotal = userData.pv_points || 0;
+          const newTotalPv   = priorPvTotal + pvToAdd;
+          const newMonthly   = (userData.monthly_pv_purchased || 0) + pvToAdd;
+
           const updates: any = {
-            pv_points:            (userData.pv_points || 0) + pvToAdd,
+            pv_points:            newTotalPv,
             monthly_pv_purchased: newMonthly,
           };
 
-          // First activation: 1000 PV → active + daily club; re-activation: 100 PV → renew
-          let justActivated = false;
+          // discriminator: pv_points < 1000 = প্রথমবার, >= 1000 = নবায়ন
+          const isFirstTime   = priorPvTotal < 1000;
+          let justFirstActivated = false;
+
           if (userData.package_type === 'customer') {
-            const isFirstTime = !userData.activated_at;
-            const pvThreshold = isFirstTime ? 1000 : 100;
-            if (!userData.is_active && newMonthly >= pvThreshold) {
-              const expiry = new Date();
-              expiry.setDate(expiry.getDate() + 30);
-              updates.is_active     = true;
-              updates.expires_at    = expiry.toISOString();
-              updates.activated_at  = new Date().toISOString();
-              updates.is_daily_club = true; // auto-join daily club on activation
-              justActivated = true;
+            const expiry = new Date();
+            expiry.setDate(expiry.getDate() + 30);
+
+            if (!userData.is_active) {
+              if (isFirstTime && newTotalPv >= 1000) {
+                // প্রথম activation: মোট ১০০০ PV পূর্ণ হলে
+                updates.is_active          = true;
+                updates.expires_at         = expiry.toISOString();
+                updates.activated_at       = new Date().toISOString();
+                updates.is_daily_club      = true;
+                justFirstActivated         = true;
+              } else if (!isFirstTime && newMonthly >= 100) {
+                // মেয়াদ শেষে re-activation: এই মাসে ১০০ PV হলে
+                updates.is_active     = true;
+                updates.expires_at    = expiry.toISOString();
+                updates.is_daily_club = true;
+              }
             } else if (userData.is_active && newMonthly >= 100) {
-              // renew expiry, keep daily club
-              const expiry = new Date();
-              expiry.setDate(expiry.getDate() + 30);
+              // active থাকা অবস্থায় renewal
               updates.expires_at    = expiry.toISOString();
               updates.is_daily_club = true;
             }
@@ -326,33 +336,30 @@ export default function AdminDashboard() {
 
           await supabase.from('mlm_users').update(updates).eq('id', pv.user_id);
 
-          // Referrer 5% commission + direct count + club promotions on first activation
-          if (justActivated && userData.referrer_id) {
-            const commission = Math.floor(pvToAdd * 0.05);
+          // প্রথম activation এ referrer কমিশন + count + club promotion
+          if (justFirstActivated && userData.referrer_id) {
+            const commission = Math.floor(1000 * 0.05); // সবসময় ৳৫০
             const { data: ref } = await supabase.from('mlm_users')
-              .select('id, current_balance, total_income, is_active, direct_referrals_count, is_weekly_club, is_insurance_club')
+              .select('id, current_balance, total_income, is_active, direct_referrals_count, is_weekly_club, is_insurance_club, name')
               .eq('id', userData.referrer_id).single();
 
             if (ref && ref.is_active) {
               const newCount   = Number(ref.direct_referrals_count || 0) + 1;
-              const refUpdates: any = { direct_referrals_count: newCount };
+              const refUpdates: any = {
+                direct_referrals_count: newCount,
+                current_balance: Number(ref.current_balance || 0) + commission,
+                total_income:    Number(ref.total_income    || 0) + commission,
+              };
 
-              if (commission > 0) {
-                refUpdates.current_balance = Number(ref.current_balance || 0) + commission;
-                refUpdates.total_income    = Number(ref.total_income    || 0) + commission;
-                await supabase.from('mlm_transactions').insert({
-                  user_id:         ref.id,
-                  type:            'referral_income',
-                  amount:          commission,
-                  description:     `কাস্টমার রেফার কমিশন ৫% (PV: ${pvToAdd})`,
-                  related_user_id: pv.user_id,
-                });
-              }
+              await supabase.from('mlm_transactions').insert({
+                user_id: ref.id, type: 'referral_income', amount: commission,
+                description: `কাস্টমার রেফার কমিশন ৫% (৳৫০)`, related_user_id: pv.user_id,
+              });
 
               // Weekly club: ১৫ সক্রিয় রেফারাল হলে
               if (newCount >= 15 && !ref.is_weekly_club) {
                 refUpdates.is_weekly_club = true;
-                toast.success(`🎉 ${ref.id} উইকলি ক্লাবে যোগ হয়েছে!`);
+                toast.success(`🎉 ${ref.name} উইকলি ক্লাবে যোগ হয়েছে!`);
               }
 
               // Insurance + Pension: ১৫ জন weekly club direct হলে
@@ -363,7 +370,7 @@ export default function AdminDashboard() {
                 if (weeklyCount >= 15) {
                   refUpdates.is_insurance_club = true;
                   refUpdates.is_pension_club   = true;
-                  toast.success(`🎉 ${ref.id} ইনসুরেন্স ও পেনশন ক্লাবে যোগ হয়েছে!`);
+                  toast.success(`🎉 ${ref.name} ইনসুরেন্স ও পেনশন ক্লাবে যোগ হয়েছে!`);
                 }
               }
 

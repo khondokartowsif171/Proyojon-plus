@@ -160,74 +160,75 @@ export default function Checkout() {
   const processPvForCustomer = async (pvToAdd: number) => {
     if (!user || user.package_type !== 'customer') return;
 
-    const currentMonthly = user.monthly_pv_purchased || 0;
-    const newMonthly     = currentMonthly + pvToAdd;
+    const priorPvTotal   = user.pv_points || 0;
+    const newTotalPv     = priorPvTotal + pvToAdd;
+    const newMonthly     = (user.monthly_pv_purchased || 0) + pvToAdd;
+
+    // ── discriminator: pv_points < 1000 = প্রথমবার, >= 1000 = নবায়ন ──────────
+    // (activated_at ব্যবহার করা হয় না — admin approval ভুল করে set করে দিতে পারে)
+    const isFirstTime = priorPvTotal < 1000;
 
     const updates: any = {
-      pv_points:            (user.pv_points || 0) + pvToAdd,
+      pv_points:            newTotalPv,
       monthly_pv_purchased: newMonthly,
     };
 
-    // First activation: 1000 PV required (activated_at is null)
-    // Re-activation after expiry: 100 PV per month (activated_at is set)
-    const isFirstTime = !user.activated_at;
-    const pvThreshold = isFirstTime ? 1000 : 100;
+    const wasInactive = !user.is_active;
+    const expiry = new Date();
+    expiry.setDate(expiry.getDate() + 30);
 
-    if (!user.is_active && newMonthly >= pvThreshold) {
-      const newExpiry = new Date();
-      newExpiry.setDate(newExpiry.getDate() + 30);
-      updates.is_active    = true;
-      updates.expires_at   = newExpiry.toISOString();
-      updates.activated_at = new Date().toISOString();
-      updates.is_daily_club = true; // 1000 PV activation → auto Daily club
+    if (!user.is_active) {
+      if (isFirstTime && newTotalPv >= 1000) {
+        // ── প্রথম activation: মোট ১০০০ PV পূর্ণ হলে ────────────────────────
+        updates.is_active     = true;
+        updates.expires_at    = expiry.toISOString();
+        updates.activated_at  = new Date().toISOString();
+        updates.is_daily_club = true;
+      } else if (!isFirstTime && newMonthly >= 100) {
+        // ── মেয়াদ শেষে re-activation: এই মাসে ১০০ PV হলে ──────────────────
+        updates.is_active     = true;
+        updates.expires_at    = expiry.toISOString();
+        updates.is_daily_club = true;
+      }
     } else if (user.is_active && newMonthly >= 100) {
-      // Already active — extend expiry, ensure daily club stays on
-      const newExpiry = new Date();
-      newExpiry.setDate(newExpiry.getDate() + 30);
-      updates.expires_at   = newExpiry.toISOString();
+      // ── active থাকা অবস্থায় renewal: মেয়াদ বাড়ানো ─────────────────────
+      updates.expires_at    = expiry.toISOString();
       updates.is_daily_club = true;
     }
 
-    const wasInactive = !user.is_active;
     await supabase.from('mlm_users').update(updates).eq('id', user.id);
 
     // PV log
     await supabase.from('mlm_pv_log').insert({
-      user_id: user.id,
-      amount:  pvToAdd,
-      source:  'product_purchase',
+      user_id: user.id, amount: pvToAdd, source: 'product_purchase',
     }).catch(() => {});
 
-    // ── First activation: 5% referral commission + direct count + club promotions ──
-    const justActivated = wasInactive && isFirstTime && updates.is_active === true;
-    if (justActivated && user.referrer_id) {
-      const commission = Math.floor(pvToAdd * 0.05);
+    // ── প্রথম activation এ referrer এর commission + count + club promotion ──
+    const justFirstActivated = wasInactive && isFirstTime && updates.is_active === true;
+    if (justFirstActivated && user.referrer_id) {
+      const commission = Math.floor(1000 * 0.05); // সবসময় ৳৫০ — ১০০০ PV এর ৫%
       const { data: referrer } = await supabase.from('mlm_users')
         .select('id, current_balance, total_income, is_active, direct_referrals_count, is_weekly_club, is_insurance_club')
         .eq('id', user.referrer_id).single();
 
       if (referrer && referrer.is_active) {
-        const newCount = (referrer.direct_referrals_count || 0) + 1;
-        const refUpdates: any = { direct_referrals_count: newCount };
+        const newCount    = (referrer.direct_referrals_count || 0) + 1;
+        const refUpdates: any = {
+          direct_referrals_count: newCount,
+          current_balance: Number(referrer.current_balance || 0) + commission,
+          total_income:    Number(referrer.total_income    || 0) + commission,
+        };
 
-        if (commission > 0) {
-          refUpdates.current_balance = Number(referrer.current_balance || 0) + commission;
-          refUpdates.total_income    = Number(referrer.total_income    || 0) + commission;
-          await supabase.from('mlm_transactions').insert({
-            user_id:         referrer.id,
-            type:            'referral_income',
-            amount:          commission,
-            description:     `কাস্টমার রেফার কমিশন ৫% — ${user.name || ''} (PV: ${pvToAdd})`,
-            related_user_id: user.id,
-          });
-        }
+        await supabase.from('mlm_transactions').insert({
+          user_id: referrer.id, type: 'referral_income', amount: commission,
+          description: `কাস্টমার রেফার কমিশন ৫% — ${user.name || ''} (৳৫০)`,
+          related_user_id: user.id,
+        });
 
-        // Weekly club promotion: ১৫ সক্রিয় রেফারাল হলে
-        if (newCount >= 15 && !referrer.is_weekly_club) {
-          refUpdates.is_weekly_club = true;
-        }
+        // Weekly club: ১৫ সক্রিয় রেফারাল হলে
+        if (newCount >= 15 && !referrer.is_weekly_club) refUpdates.is_weekly_club = true;
 
-        // Insurance + Pension: ১৫ জন weekly club member direct referral হলে
+        // Insurance + Pension: ১৫ জন weekly club direct হলে
         if (!referrer.is_insurance_club) {
           const { data: directs } = await supabase.from('mlm_users')
             .select('id, is_weekly_club').eq('referrer_id', referrer.id).eq('is_active', true);
@@ -242,13 +243,13 @@ export default function Checkout() {
       }
     }
 
-    // ── Generation bonus — শুধু active customer এর PV purchase এ, active upline পাবে ──
+    // ── Generation bonus: active হলেই শুধু, active upline পাবে ───────────────
     const isNowActive = user.is_active || updates.is_active === true;
     if (isNowActive && user.referrer_id && pvToAdd > 0) {
       await processGenerationBonusChain(user.referrer_id, pvToAdd, user.id, 1);
     }
 
-    // ── Club pools — সব PV purchase এ যোগ হবে ──
+    // ── Club pools: প্রতিটি PV purchase এ যোগ হবে ──────────────────────────
     if (pvToAdd >= 1) {
       await addToClubPools(pvToAdd);
     }
