@@ -186,27 +186,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'রেজিস্ট্রেশন করতে সমস্যা হয়েছে: ' + error.message };
       }
 
-      if (regData.referrer_id && data) {
-        await processReferralCommission(regData.referrer_id, data.id);
-      }
-
+      // ✅ direct_referrals_count is updated by admin on package approval, not at registration
       return { success: true, userId: data.id };
     } catch (e: unknown) {
       return { success: false, error: 'রেজিস্ট্রেশন করতে সমস্যা হয়েছে: ' + (e instanceof Error ? e.message : String(e)) };
     }
   };
-
-  async function processReferralCommission(referrerId: string, _newUserId: string) {
-    // ✅ DB থেকে actual count recount করো — stale +1 increment এড়াতে
-    const { count } = await supabase
-      .from('mlm_users')
-      .select('id', { count: 'exact', head: true })
-      .eq('referrer_id', referrerId);
-
-    await supabase.from('mlm_users').update({
-      direct_referrals_count: count || 0,
-    }).eq('id', referrerId);
-  }
 
   async function processGenerationBonus(userId: string, pvPoints: number, sourceUserId: string, generation: number) {
     if (generation > 5) return;

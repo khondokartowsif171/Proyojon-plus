@@ -291,7 +291,7 @@ export default function AdminDashboard() {
       // ══ CASE 1: Product purchase ══════════════════════════════════════════
       if (pv.purpose === 'product_purchase') {
         const { data: userData } = await supabase.from('mlm_users')
-          .select('pv_points, monthly_pv_purchased, referrer_id, package_type, is_active')
+          .select('pv_points, monthly_pv_purchased, referrer_id, package_type, is_active, activated_at')
           .eq('id', pv.user_id).single();
 
         if (userData) {
@@ -302,12 +302,17 @@ export default function AdminDashboard() {
             monthly_pv_purchased: newMonthly,
           };
 
-          // ✅ Fix 2: Customer package — monthly reactivation ১০০ PV হলে
-          if (userData.package_type === 'customer' && newMonthly >= 100) {
-            const expiry = new Date();
-            expiry.setDate(expiry.getDate() + 30);
-            updates.is_active  = true;
-            updates.expires_at = expiry.toISOString();
+          // First activation: 1000 PV, re-activation: 100 PV
+          if (userData.package_type === 'customer') {
+            const isFirstTime = !userData.activated_at;
+            const pvThreshold = isFirstTime ? 1000 : 100;
+            if (!userData.is_active && newMonthly >= pvThreshold) {
+              const expiry = new Date();
+              expiry.setDate(expiry.getDate() + 30);
+              updates.is_active    = true;
+              updates.expires_at   = expiry.toISOString();
+              updates.activated_at = new Date().toISOString();
+            }
           }
 
           await supabase.from('mlm_users').update(updates).eq('id', pv.user_id);
@@ -326,7 +331,28 @@ export default function AdminDashboard() {
         return;
       }
 
-      // ══ CASE 2: Package purchase ══════════════════════════════════════════
+      // ══ CASE 2: Customer registration (admin manual activation) ══════════
+      if (pv.purpose === 'customer_registration') {
+        const { data: regUser } = await supabase.from('mlm_users')
+          .select('id, referrer_id, is_active, activated_at').eq('id', pv.user_id).single();
+        if (regUser && !regUser.is_active) {
+          const expiry = new Date();
+          expiry.setDate(expiry.getDate() + 30);
+          await supabase.from('mlm_users').update({
+            is_active:    true,
+            expires_at:   expiry.toISOString(),
+            activated_at: new Date().toISOString(),
+            is_daily_club: true,
+          }).eq('id', pv.user_id);
+          toast.success('✅ কাস্টমার আইডি সক্রিয় করা হয়েছে।');
+        } else {
+          toast.success('ইতিমধ্যে সক্রিয়।');
+        }
+        fetchAll(); setLoading(false);
+        return;
+      }
+
+      // ══ CASE 3: Package purchase ══════════════════════════════════════════
       const isCustomer    = pv.purpose === 'customer_package';
       const isShareholder = pv.purpose === 'shareholder_package';
       const isGold        = pv.purpose === 'gold_package';

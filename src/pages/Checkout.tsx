@@ -168,17 +168,19 @@ export default function Checkout() {
       monthly_pv_purchased: newMonthly,
     };
 
-    // ✅ Fix 2: Customer package activate condition — ১০০০ PV প্রয়োজন (package price)
-    // কিন্তু monthly reactivation এর জন্য ১০০ PV যথেষ্ট
-    // প্রথম activation: pv_points >= 1000
-    // Monthly reactivation: monthly_pv_purchased >= 100
-    if (!user.is_active && newMonthly >= 100) {
+    // First activation: 1000 PV required (activated_at is null)
+    // Re-activation after expiry: 100 PV per month (activated_at is set)
+    const isFirstTime = !user.activated_at;
+    const pvThreshold = isFirstTime ? 1000 : 100;
+
+    if (!user.is_active && newMonthly >= pvThreshold) {
       const newExpiry = new Date();
       newExpiry.setDate(newExpiry.getDate() + 30);
-      updates.is_active  = true;
-      updates.expires_at = newExpiry.toISOString();
+      updates.is_active    = true;
+      updates.expires_at   = newExpiry.toISOString();
+      updates.activated_at = new Date().toISOString();
     } else if (user.is_active && newMonthly >= 100) {
-      // Already active, just extend
+      // Already active — extend expiry
       const newExpiry = new Date();
       newExpiry.setDate(newExpiry.getDate() + 30);
       updates.expires_at = newExpiry.toISOString();
