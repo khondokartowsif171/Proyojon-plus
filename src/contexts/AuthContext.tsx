@@ -42,7 +42,6 @@ interface AuthContextType {
   register: (data: RegisterData) => Promise<{ success: boolean; error?: string; userId?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
-  trackPvPurchase: (pvPoints: number, productName: string) => Promise<void>;
 }
 
 interface RegisterData {
@@ -193,107 +192,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  async function processGenerationBonus(userId: string, pvPoints: number, sourceUserId: string, generation: number) {
-    if (generation > 5) return;
-    const { data: u } = await supabase.from('mlm_users')
-      .select('id, referrer_id, is_active, current_balance, total_income')
-      .eq('id', userId).single();
-
-    if (!u || !u.is_active) return;
-
-    const bonus = Math.floor(pvPoints * 0.01);
-    if (bonus > 0) {
-      await supabase.from('mlm_users').update({
-        current_balance: Number(u.current_balance || 0) + bonus,
-        total_income:    Number(u.total_income || 0) + bonus,
-      }).eq('id', userId);
-
-      await supabase.from('mlm_transactions').insert({
-        user_id: userId, type: 'generation_bonus', amount: bonus,
-        description: `জেনারেশন ${generation} বোনাস (PV: ${pvPoints})`, related_user_id: sourceUserId,
-      });
-    }
-
-    if (u.referrer_id) {
-      await processGenerationBonus(u.referrer_id, pvPoints, sourceUserId, generation + 1);
-    }
-  }
-
-  const distributeToClubPools = async (pvAmount: number) => {
-    const pools = [
-      { type: 'daily_club', amount: Math.floor(pvAmount * 0.30) },
-      { type: 'weekly_club', amount: Math.floor(pvAmount * 0.025) },
-      { type: 'insurance_club', amount: Math.floor(pvAmount * 0.0125) },
-      { type: 'pension_club', amount: Math.floor(pvAmount * 0.0125) },
-      { type: 'shareholder_club', amount: Math.floor(pvAmount * 0.10) },
-    ];
-
-    for (const pool of pools) {
-      const { data: existing } = await supabase.from('mlm_club_pools').select('total_amount').eq('club_type', pool.type).single();
-      if (existing) {
-        await supabase.from('mlm_club_pools').update({ total_amount: Number(existing.total_amount || 0) + pool.amount }).eq('club_type', pool.type);
-      }
-    }
-  };
-
-  // Track PV purchase from shop
-  const trackPvPurchase = async (pvPoints: number, productName: string) => {
-    if (!user || pvPoints <= 0) return;
-
-    const newMonthlyPV = (user.monthly_pv_purchased || 0) + pvPoints;
-    const newTotalPV = (user.pv_points || 0) + pvPoints;
-
-    await supabase.from('mlm_users').update({
-      monthly_pv_purchased: newMonthlyPV,
-      pv_points: newTotalPV,
-    }).eq('id', user.id);
-
-    // Log PV
-    await supabase.from('mlm_pv_log').insert({
-      user_id: user.id, amount: pvPoints, source: 'product_purchase', product_name: productName,
-    });
-
-    // Activation: first time needs 1000 PV, re-activation needs 100 PV/month
-    const isFirstTime = !user.activated_at;
-    const pvThreshold = isFirstTime ? 1000 : 100;
-    if (!user.is_active && newMonthlyPV >= pvThreshold) {
-      const newExpiry = new Date();
-      newExpiry.setDate(newExpiry.getDate() + 30);
-      await supabase.from('mlm_users').update({
-        is_active: true, expires_at: newExpiry.toISOString(),
-        activated_at: user.activated_at || new Date().toISOString(),
-        is_daily_club: true,
-      }).eq('id', user.id);
-    } else if (user.is_active && newMonthlyPV >= 100) {
-      // Already active — extend expiry
-      const newExpiry = new Date();
-      newExpiry.setDate(newExpiry.getDate() + 30);
-      await supabase.from('mlm_users').update({
-        expires_at: newExpiry.toISOString(),
-        is_daily_club: true,
-      }).eq('id', user.id);
-    }
-
-    // Generation bonus for PV purchase
-    if (user.referrer_id && pvPoints > 0) {
-      await processGenerationBonus(user.referrer_id, pvPoints, user.id, 1);
-    }
-
-    // Club pool distribution
-    if (pvPoints >= 100) {
-      await distributeToClubPools(pvPoints);
-    }
-
-    await refreshUser();
-  };
-
   const logout = () => {
     setUser(null);
     localStorage.removeItem('mlm_user_id');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser, trackPvPurchase }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

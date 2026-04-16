@@ -326,19 +326,20 @@ export default function AdminDashboard() {
 
           await supabase.from('mlm_users').update(updates).eq('id', pv.user_id);
 
-          // Referrer 5% commission on first activation
-          if (justActivated && userData.referrer_id && pvToAdd > 0) {
+          // Referrer 5% commission + direct count + club promotions on first activation
+          if (justActivated && userData.referrer_id) {
             const commission = Math.floor(pvToAdd * 0.05);
-            if (commission > 0) {
-              const { data: ref } = await supabase.from('mlm_users')
-                .select('id, current_balance, total_income, is_active, direct_referrals_count')
-                .eq('id', userData.referrer_id).single();
-              if (ref && ref.is_active) {
-                await supabase.from('mlm_users').update({
-                  current_balance:        Number(ref.current_balance || 0) + commission,
-                  total_income:           Number(ref.total_income    || 0) + commission,
-                  direct_referrals_count: Number(ref.direct_referrals_count || 0) + 1,
-                }).eq('id', ref.id);
+            const { data: ref } = await supabase.from('mlm_users')
+              .select('id, current_balance, total_income, is_active, direct_referrals_count, is_weekly_club, is_insurance_club')
+              .eq('id', userData.referrer_id).single();
+
+            if (ref && ref.is_active) {
+              const newCount   = Number(ref.direct_referrals_count || 0) + 1;
+              const refUpdates: any = { direct_referrals_count: newCount };
+
+              if (commission > 0) {
+                refUpdates.current_balance = Number(ref.current_balance || 0) + commission;
+                refUpdates.total_income    = Number(ref.total_income    || 0) + commission;
                 await supabase.from('mlm_transactions').insert({
                   user_id:         ref.id,
                   type:            'referral_income',
@@ -347,6 +348,26 @@ export default function AdminDashboard() {
                   related_user_id: pv.user_id,
                 });
               }
+
+              // Weekly club: ১৫ সক্রিয় রেফারাল হলে
+              if (newCount >= 15 && !ref.is_weekly_club) {
+                refUpdates.is_weekly_club = true;
+                toast.success(`🎉 ${ref.id} উইকলি ক্লাবে যোগ হয়েছে!`);
+              }
+
+              // Insurance + Pension: ১৫ জন weekly club direct হলে
+              if (!ref.is_insurance_club) {
+                const { data: directs } = await supabase.from('mlm_users')
+                  .select('id, is_weekly_club').eq('referrer_id', ref.id).eq('is_active', true);
+                const weeklyCount = (directs || []).filter(r => r.is_weekly_club).length;
+                if (weeklyCount >= 15) {
+                  refUpdates.is_insurance_club = true;
+                  refUpdates.is_pension_club   = true;
+                  toast.success(`🎉 ${ref.id} ইনসুরেন্স ও পেনশন ক্লাবে যোগ হয়েছে!`);
+                }
+              }
+
+              await supabase.from('mlm_users').update(refUpdates).eq('id', ref.id);
             }
           }
 
