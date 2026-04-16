@@ -307,8 +307,12 @@ export default function UserDashboard() {
             <div className="flex flex-wrap items-center gap-2">
               {user.package_type === 'customer' && (
                 <div className="text-right hidden md:block">
-                  <p className="text-white/70 text-xs">মাসিক PV</p>
-                  <p className="font-bold">{user.monthly_pv_purchased || 0} / 100</p>
+                  <p className="text-white/70 text-xs">
+                    {user.activated_at ? 'মাসিক PV (নবায়ন)' : 'PV (প্রথম সক্রিয়করণ)'}
+                  </p>
+                  <p className="font-bold">
+                    {user.monthly_pv_purchased || 0} / {user.activated_at ? 100 : 1000}
+                  </p>
                 </div>
               )}
               <button onClick={copyReferralLink}

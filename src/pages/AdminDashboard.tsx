@@ -385,23 +385,10 @@ export default function AdminDashboard() {
         return;
       }
 
-      // ══ CASE 2: Customer registration (admin manual activation) ══════════
+      // ══ CASE 2: Customer registration — শুধু acknowledgment, activation নয় ══
+      // activation হবে শুধু 1000 PV পণ্য কেনার পরে (CASE 1 বা Checkout)
       if (pv.purpose === 'customer_registration') {
-        const { data: regUser } = await supabase.from('mlm_users')
-          .select('id, referrer_id, is_active, activated_at').eq('id', pv.user_id).single();
-        if (regUser && !regUser.is_active) {
-          const expiry = new Date();
-          expiry.setDate(expiry.getDate() + 30);
-          await supabase.from('mlm_users').update({
-            is_active:    true,
-            expires_at:   expiry.toISOString(),
-            activated_at: new Date().toISOString(),
-            is_daily_club: true,
-          }).eq('id', pv.user_id);
-          toast.success('✅ কাস্টমার আইডি সক্রিয় করা হয়েছে।');
-        } else {
-          toast.success('ইতিমধ্যে সক্রিয়।');
-        }
+        toast.success('✅ রেজিস্ট্রেশন নিশ্চিত হয়েছে। আইডি সক্রিয় হবে ১,০০০ PV পণ্য কিনলে।');
         fetchAll(); setLoading(false);
         return;
       }
@@ -688,7 +675,7 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex justify-between items-center py-2 px-3 bg-blue-50 rounded-lg border border-blue-100">
                         <span className="text-sm text-blue-800">পেন্ডিং পেমেন্ট</span>
-                        <span className="font-bold text-blue-700">{paymentVerifications.filter(p=>p.status==='pending').length}</span>
+                        <span className="font-bold text-blue-700">{paymentVerifications.filter(p=>p.status==='pending' && p.purpose!=='customer_registration').length}</span>
                       </div>
                       <div className="flex justify-between items-center py-2 px-3 bg-red-50 rounded-lg border border-red-100">
                         <span className="text-sm text-red-800">নিষ্ক্রিয় আইডি</span>
@@ -877,38 +864,63 @@ export default function AdminDashboard() {
                       ))}
                     </tr></thead>
                     <tbody>
-                      {paymentVerifications.map(pv => (
-                        <tr key={pv.id} className="border-b border-gray-50">
-                          <td className="py-2 px-3"><p className="font-medium text-xs">{pv.user?.name}</p><p className="text-[10px] text-gray-400">{pv.user?.phone}</p></td>
-                          <td className="py-2 px-3 font-bold">৳{pv.amount}</td>
-                          <td className="py-2 px-3">
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${pv.method==='bkash'?'bg-pink-500':pv.method==='nagad'?'bg-orange-500':'bg-purple-600'}`}>
-                              {pv.method==='bkash'?'বিকাশ':pv.method==='nagad'?'নগদ':'রকেট'}
-                            </span>
-                          </td>
-                          <td className="py-2 px-3 font-mono text-xs">{pv.trx_id}</td>
-                          <td className="py-2 px-3 text-xs">{pv.sender_number||'-'}</td>
-                          <td className="py-2 px-3 text-xs">
-                            <span className={`px-2 py-0.5 rounded-full text-xs ${pv.purpose==='product_purchase'?'bg-teal-100 text-teal-700':pv.purpose==='gold_package'?'bg-yellow-100 text-yellow-700':pv.purpose==='shareholder_package'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>
-                              {pv.purpose==='customer_package'?'কাস্টমার':pv.purpose==='shareholder_package'?'শেয়ারহোল্ডার':pv.purpose==='gold_package'?'গোল্ড':pv.purpose==='product_purchase'?'পণ্য ক্রয়':pv.purpose}
-                            </span>
-                          </td>
-                          <td className="py-2 px-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${pv.status==='approved'?'bg-green-100 text-green-700':pv.status==='rejected'?'bg-red-100 text-red-700':'bg-yellow-100 text-yellow-700'}`}>
-                              {pv.status==='approved'?'অনুমোদিত':pv.status==='rejected'?'প্রত্যাখ্যাত':'পেন্ডিং'}
-                            </span>
-                          </td>
-                          <td className="py-2 px-3">
-                            {pv.status==='pending' && (
-                              <div className="flex gap-1">
-                                <button onClick={() => handleApprovePayment(pv.id, true)} className="p-1 rounded bg-green-100 text-green-600 hover:bg-green-200"><CheckCircle size={14} /></button>
-                                <button onClick={() => handleApprovePayment(pv.id, false)} className="p-1 rounded bg-red-100 text-red-600 hover:bg-red-200"><XCircle size={14} /></button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                      {paymentVerifications.length===0 && <tr><td colSpan={8} className="text-center py-8 text-gray-400 text-xs">কোন পেমেন্ট অনুরোধ নেই</td></tr>}
+                      {paymentVerifications
+                        .filter(pv => pv.purpose !== 'customer_registration')
+                        .map(pv => {
+                        const purposeLabel =
+                          pv.purpose === 'customer_package'    ? 'কাস্টমার প্যাকেজ'
+                          : pv.purpose === 'shareholder_package' ? 'শেয়ারহোল্ডার'
+                          : pv.purpose === 'gold_package'        ? 'গোল্ড'
+                          : pv.purpose === 'product_purchase'    ? 'পণ্য ক্রয়'
+                          : pv.purpose;
+                        const purposeColor =
+                          pv.purpose === 'product_purchase'    ? 'bg-teal-100 text-teal-700'
+                          : pv.purpose === 'gold_package'      ? 'bg-yellow-100 text-yellow-700'
+                          : pv.purpose === 'shareholder_package' ? 'bg-purple-100 text-purple-700'
+                          : 'bg-blue-100 text-blue-700';
+                        const methodLabel =
+                          pv.method === 'bkash'  ? 'বিকাশ'
+                          : pv.method === 'nagad'  ? 'নগদ'
+                          : pv.method === 'rocket' ? 'রকেট'
+                          : pv.method === 'balance' ? 'ব্যালেন্স'
+                          : pv.method;
+                        const methodColor =
+                          pv.method === 'bkash'   ? 'bg-pink-500'
+                          : pv.method === 'nagad'  ? 'bg-orange-500'
+                          : pv.method === 'rocket' ? 'bg-purple-600'
+                          : pv.method === 'balance' ? 'bg-green-600'
+                          : 'bg-gray-500';
+                        return (
+                          <tr key={pv.id} className="border-b border-gray-50 hover:bg-gray-50">
+                            <td className="py-2 px-3"><p className="font-medium text-xs">{pv.user?.name}</p><p className="text-[10px] text-gray-400">{pv.user?.phone}</p></td>
+                            <td className="py-2 px-3 font-bold">৳{(pv.amount||0).toLocaleString()}</td>
+                            <td className="py-2 px-3">
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${methodColor}`}>{methodLabel}</span>
+                            </td>
+                            <td className="py-2 px-3 font-mono text-xs">{pv.trx_id}</td>
+                            <td className="py-2 px-3 text-xs">{pv.sender_number||'-'}</td>
+                            <td className="py-2 px-3">
+                              <span className={`px-2 py-0.5 rounded-full text-xs ${purposeColor}`}>{purposeLabel}</span>
+                            </td>
+                            <td className="py-2 px-3">
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${pv.status==='approved'?'bg-green-100 text-green-700':pv.status==='rejected'?'bg-red-100 text-red-700':'bg-yellow-100 text-yellow-700'}`}>
+                                {pv.status==='approved'?'অনুমোদিত':pv.status==='rejected'?'প্রত্যাখ্যাত':'পেন্ডিং'}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3">
+                              {pv.status==='pending' && (
+                                <div className="flex gap-1">
+                                  <button onClick={() => handleApprovePayment(pv.id, true)} className="p-1 rounded bg-green-100 text-green-600 hover:bg-green-200"><CheckCircle size={14} /></button>
+                                  <button onClick={() => handleApprovePayment(pv.id, false)} className="p-1 rounded bg-red-100 text-red-600 hover:bg-red-200"><XCircle size={14} /></button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {paymentVerifications.filter(p => p.purpose !== 'customer_registration').length === 0 && (
+                        <tr><td colSpan={8} className="text-center py-8 text-gray-400 text-xs">কোন পেমেন্ট অনুরোধ নেই</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>

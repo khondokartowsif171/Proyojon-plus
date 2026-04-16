@@ -82,13 +82,16 @@ export default function Register() {
       if (form.package_type === 'customer') {
         // Customer: no cash payment needed — product purchase activates ID
         // Insert pending record so admin can track, amount=0
+        // Customer registration needs no payment — auto-approved immediately
+        // Actual activation happens only after buying 1000 PV of products
         await supabase.from('mlm_payment_verifications').insert({
           user_id: result.userId,
           amount: 0,
           method: 'product',
-          trx_id: 'PRODUCT_PURCHASE_PENDING',
+          trx_id: 'AUTO_APPROVED',
           purpose: 'customer_registration',
-          status: 'pending',
+          status: 'approved',
+          processed_at: new Date().toISOString(),
         });
         setStep(3);
       } else {
