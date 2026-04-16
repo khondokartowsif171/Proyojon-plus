@@ -253,12 +253,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user_id: user.id, amount: pvPoints, source: 'product_purchase', product_name: productName,
     });
 
-    // Auto-reactivation
-    if (newMonthlyPV >= 100) {
+    // Activation: first time needs 1000 PV, re-activation needs 100 PV/month
+    const isFirstTime = !user.activated_at;
+    const pvThreshold = isFirstTime ? 1000 : 100;
+    if (!user.is_active && newMonthlyPV >= pvThreshold) {
       const newExpiry = new Date();
       newExpiry.setDate(newExpiry.getDate() + 30);
       await supabase.from('mlm_users').update({
         is_active: true, expires_at: newExpiry.toISOString(),
+        activated_at: user.activated_at || new Date().toISOString(),
+        is_daily_club: true,
+      }).eq('id', user.id);
+    } else if (user.is_active && newMonthlyPV >= 100) {
+      // Already active — extend expiry
+      const newExpiry = new Date();
+      newExpiry.setDate(newExpiry.getDate() + 30);
+      await supabase.from('mlm_users').update({
+        expires_at: newExpiry.toISOString(),
+        is_daily_club: true,
       }).eq('id', user.id);
     }
 
