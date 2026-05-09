@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(node setup.js)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(npx vite *)",
+      "mcp__claude_ai_Vercel__deploy_to_vercel"
     ]
   }
 }

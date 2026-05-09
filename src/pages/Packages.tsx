@@ -43,44 +43,48 @@ const packages = [
       { text: 'শেয়ারহোল্ডার ক্লাব সদস্যপদ (PV এর ১০%)', ok: true },
       { text: '১% জেনারেশন বোনাস (৫ লেভেল) — PV sales এ', ok: true },
       { text: 'কোনো PV নেই — শুধু Shareholder club income', ok: true },
+      { text: 'আজীবন মেয়াদ — কোনো রিনিউ লাগে না', ok: true },
+      { text: '১% জেনারেশন বোনাস (৫ লেভেল)', ok: true },
       { text: 'ডেইলি/উইকলি ক্লাব নেই', ok: false },
     ],
     btnLabel: 'এখনই জয়েন করুন',
   },
   {
     name: 'গোল্ড প্যাকেজ',
-    priceDisplay: '৳১,০০,০০০',
-    pvLabel: '১,০০,০০০ GP',
-    pvSub: '',
-    points: '১,০০,০০০ GP',
+    priceDisplay: '৳৫,০০০+',
+    pvLabel: 'বিনিয়োগ অনুযায়ী GP',
+    pvSub: 'যত বিনিয়োগ, তত GP',
+    points: '৫,০০০ GP থেকে',
     type: 'gold',
     icon: <Award size={32} />,
     color: 'from-yellow-500 to-orange-600',
     shadow: 'shadow-yellow-200',
     popular: false,
     features: [
-      { text: 'রেফারার পায় ৳১,৮০০ — ৩৬৫ দিনে (৳৪.৯৩/দিন)', ok: true },
-      { text: 'বায়ারের বকেয়া জমে ৳৩৬,০০০ (৳৯৮.৬৩/দিন)', ok: true },
-      { text: '১% জেনারেশন বোনাস (৫ লেভেল) — PV sales এ', ok: true },
-      { text: '৩৬৫ দিনের কাউন্টডাউন টাইমার', ok: true },
-      { text: 'কোনো ক্লাব নেই — শুধু active ID', ok: false },
+      { text: 'রেফারার পায় বিনিয়োগের ১.৮% — ৩৬৫ দিনে (দৈনিক)', ok: true },
+      { text: 'বায়ারের বকেয়া: বিনিয়োগের ৩৬% (দৈনিক জমে)', ok: true },
+      { text: '৩৬৫ দিনের কাউন্টডাউন টাইমার — প্রতিটি আলাদা', ok: true },
+      { text: 'একাধিক Gold package একই ID থেকে কেনা যায়', ok: true },
+      { text: 'গোল্ড লকার ছবি আপলোড (মেয়াদে লক)', ok: true },
+      { text: 'ক্লাব বোনাস নেই', ok: false },
     ],
     btnLabel: 'এখনই জয়েন করুন',
   },
 ];
 
 const commissionRows = [
-  { label: 'জয়েনিং', customer: '১,০০০ PV পণ্য কিনুন', shareholder: '৳৫,০০০', gold: '৳১,০০,০০০' },
-  { label: 'পয়েন্ট', customer: '১,০০০ PV', shareholder: '৫,০০০ SP', gold: '১,০০,০০০ GP' },
-  { label: 'রেফার কমিশন', customer: '৫% = ৳৫০', shareholder: '২.৫% = ৳১২৫', gold: '৳১,৮০০ / ৩৬৫ দিন' },
+  { label: 'জয়েনিং মূল্য', customer: '১,০০০ PV পণ্য কিনুন', shareholder: '৳৫,০০০', gold: '৳৫,০০০+ (flexible)' },
+  { label: 'পয়েন্ট', customer: '১,০০০ PV', shareholder: '৫,০০০ SP (additive)', gold: 'বিনিয়োগ = GP' },
+  { label: 'রেফার কমিশন', customer: '৫% = ৳৫০', shareholder: '২.৫% = ৳১২৫', gold: 'বিনিয়োগের ১.৮% / ৩৬৫ দিন' },
+  { label: 'বকেয়া (Buyer)', customer: '✗', shareholder: '✗', gold: 'বিনিয়োগের ৩৬% (দৈনিক)' },
   { label: 'জেনারেশন বোনাস', customer: 'PV এর ১% × ৫', shareholder: 'PV এর ১% × ৫', gold: 'PV এর ১% × ৫' },
   { label: 'ডেইলি ক্লাব (৩০%)', customer: '✓', shareholder: '✗', gold: '✗' },
   { label: 'উইকলি ক্লাব (২.৫%)', customer: '১৫ রেফারে', shareholder: '✗', gold: '✗' },
   { label: 'ইনসুরেন্স ক্লাব (১.২৫%)', customer: '১৫ weekly refs', shareholder: '✗', gold: '✗' },
   { label: 'পেনশন ক্লাব (১.২৫%)', customer: '১৫ weekly refs', shareholder: '✗', gold: '✗' },
   { label: 'শেয়ারহোল্ডার ক্লাব (১০%)', customer: '✗', shareholder: '✓', gold: '✗' },
-  { label: 'মেয়াদ', customer: '৩০ দিন', shareholder: 'আজীবন', gold: '৩৬৫ দিন' },
-  { label: 'রিনিউ শর্ত', customer: 'মাসে ১০০ PV', shareholder: 'রিনিউ লাগে না', gold: 'N/A' },
+  { label: 'মেয়াদ', customer: '৩০ দিন', shareholder: 'আজীবন', gold: '৩৬৫ দিন / প্যাকেজ' },
+  { label: 'রিনিউ শর্ত', customer: 'মাসে ১০০ PV', shareholder: 'রিনিউ লাগে না', gold: 'নতুন প্যাকেজ কিনুন' },
 ];
 
 const clubInfo = [
@@ -168,7 +172,7 @@ export default function Packages() {
             </div>
             <div className="w-px h-10 bg-white/20" />
             <div className="text-center">
-              <p className="text-3xl font-bold text-yellow-400">৳১,৮০০</p>
+              <p className="text-3xl font-bold text-yellow-400">১.৮%</p>
               <p className="text-xs text-gray-400 mt-1">Gold রেফার ইনকাম</p>
             </div>
             <div className="w-px h-10 bg-white/20" />
@@ -301,7 +305,7 @@ export default function Packages() {
                   <div className="flex flex-col items-center gap-1.5">
                     <Award size={16} />
                     <span>গোল্ড</span>
-                    <span className="text-[10px] opacity-70 font-normal">৳১,০০,০০০</span>
+                    <span className="text-[10px] opacity-70 font-normal">৳৫,০০০ থেকে</span>
                   </div>
                 </th>
               </tr>
@@ -414,7 +418,7 @@ export default function Packages() {
       </section>
 
       {/* Gold Package detail */}
-      <section className="py-12 px-4 max-w-4xl mx-auto">
+      <section className="py-12 px-4 max-w-5xl mx-auto">
         <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-3xl p-8 border border-yellow-200">
           <div className="flex items-center gap-4 mb-6">
             <div className="w-14 h-14 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-2xl flex items-center justify-center text-white shadow-lg">
@@ -422,23 +426,62 @@ export default function Packages() {
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-900">গোল্ড প্যাকেজ — বিস্তারিত</h2>
-              <p className="text-sm text-gray-500">৳১,০০,০০০ বিনিয়োগে ৩৬৫ দিনের সুবিধা</p>
+              <p className="text-sm text-gray-500">৳৫,০০০ থেকে যেকোনো পরিমাণ — সব proportional</p>
             </div>
           </div>
-          <div className="grid md:grid-cols-2 gap-4">
+
+          {/* Formula cards */}
+          <div className="grid md:grid-cols-2 gap-4 mb-6">
             <div className="bg-white rounded-2xl p-5 border border-yellow-100">
-              <p className="text-xs font-semibold text-yellow-700 mb-2 uppercase tracking-wider">রেফারার পায়</p>
-              <p className="text-3xl font-extrabold text-yellow-600">৳১,৮০০</p>
-              <p className="text-sm text-gray-500 mt-1">৳৪.৯৩/দিন × ৩৬৫ দিন</p>
+              <p className="text-xs font-semibold text-yellow-700 mb-2 uppercase tracking-wider">রেফারার পায় (১.৮%)</p>
+              <p className="text-2xl font-extrabold text-yellow-600">বিনিয়োগ × ১.৮%</p>
+              <p className="text-sm text-gray-500 mt-1">÷ ৩৬৫ দিন = দৈনিক রিলিজ</p>
               <div className="mt-3 w-full h-2 bg-yellow-100 rounded-full overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full w-full animate-pulse" />
               </div>
             </div>
             <div className="bg-white rounded-2xl p-5 border border-orange-100">
-              <p className="text-xs font-semibold text-orange-700 mb-2 uppercase tracking-wider">বায়ারের বকেয়া জমে</p>
-              <p className="text-3xl font-extrabold text-orange-600">৳৩৬,০০০</p>
-              <p className="text-sm text-gray-500 mt-1">৳৯৮.৬৩/দিন × ৩৬৫ দিন</p>
-              <p className="text-xs text-orange-500 mt-2">প্যাকেজ বাতিল করতে এই পরিমাণ পরিশোধ করতে হবে</p>
+              <p className="text-xs font-semibold text-orange-700 mb-2 uppercase tracking-wider">বায়ারের বকেয়া (৩৬%)</p>
+              <p className="text-2xl font-extrabold text-orange-600">বিনিয়োগ × ৩৬%</p>
+              <p className="text-sm text-gray-500 mt-1">÷ ৩৬৫ দিন = দৈনিক জমে</p>
+              <p className="text-xs text-orange-500 mt-2">Dashboard থেকে যেকোনো সময় পরিশোধ করা যাবে</p>
+            </div>
+          </div>
+
+          {/* Example table */}
+          <div className="bg-white rounded-2xl border border-yellow-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-yellow-500 to-orange-500 px-5 py-3">
+              <p className="text-white font-bold text-sm">উদাহরণ হিসাব (বিভিন্ন পরিমাণে)</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="bg-yellow-50">
+                  {['বিনিয়োগ','GP পয়েন্ট','রেফারার মোট (১.৮%)','রেফারার দৈনিক','মোট বকেয়া (৩৬%)','বকেয়া দৈনিক'].map(h=>(
+                    <th key={h} className="text-left py-2.5 px-4 font-semibold text-yellow-800">{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {[
+                    [5000, 5000, 90, (90/365).toFixed(2), 1800, (1800/365).toFixed(2)],
+                    [10000, 10000, 180, (180/365).toFixed(2), 3600, (3600/365).toFixed(2)],
+                    [30000, 30000, 540, (540/365).toFixed(2), 10800, (10800/365).toFixed(2)],
+                    [50000, 50000, 900, (900/365).toFixed(2), 18000, (18000/365).toFixed(2)],
+                    [100000, 100000, 1800, (1800/365).toFixed(2), 36000, (36000/365).toFixed(2)],
+                  ].map((row, i) => (
+                    <tr key={i} className={`border-t border-yellow-50 ${i%2===0?'bg-white':'bg-yellow-50/30'}`}>
+                      <td className="py-2.5 px-4 font-bold text-gray-800">৳{(row[0] as number).toLocaleString()}</td>
+                      <td className="py-2.5 px-4 text-gray-600">{(row[1] as number).toLocaleString()}</td>
+                      <td className="py-2.5 px-4 font-bold text-yellow-700">৳{(row[2] as number).toLocaleString()}</td>
+                      <td className="py-2.5 px-4 text-yellow-600">৳{row[3]}/দিন</td>
+                      <td className="py-2.5 px-4 font-bold text-orange-700">৳{(row[4] as number).toLocaleString()}</td>
+                      <td className="py-2.5 px-4 text-orange-600">৳{row[5]}/দিন</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-5 py-3 bg-yellow-50 border-t border-yellow-100">
+              <p className="text-xs text-yellow-700">✓ একাধিক Gold Package কেনা যাবে একই ID থেকে — প্রতিটির আলাদা ৩৬৫ দিনের timer</p>
             </div>
           </div>
         </div>

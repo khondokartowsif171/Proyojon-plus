@@ -16,6 +16,7 @@ export default function Register() {
     package_type: 'customer',
     referrer_id: searchParams.get('ref') || '',
   });
+  const [showEmailField, setShowEmailField] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -48,12 +49,12 @@ export default function Register() {
     {
       value: 'gold',
       label: 'গোল্ড প্যাকেজ',
-      subtitle: '৳১,০০,০০০',
-      badge: '১,০০,০০০ GP',
-      amount: 100000,
+      subtitle: '৳৫,০০০ থেকে শুরু',
+      badge: '৫,০০০+ GP',
+      amount: 0,
       icon: <Award size={20} />,
       color: 'from-yellow-500 to-orange-600',
-      note: '৩৬৫ দিন মেয়াদ, রেফারার পায় ৳১৮০০ (৩৬৫ দিনে)',
+      note: 'রেজিস্ট্রেশনের পর ড্যাশবোর্ড থেকে কিনুন (৳৫,০০০ – সীমাহীন, অনুপাতিক ইনকাম)',
     },
   ];
 
@@ -65,13 +66,17 @@ export default function Register() {
     setError('');
     if (form.password !== form.confirmPassword) { setError('পাসওয়ার্ড মিলছে না'); return; }
     if (form.password.length < 4) { setError('পাসওয়ার্ড কমপক্ষে ৪ অক্ষর'); return; }
-    if (!form.name.trim() || !form.phone.trim()) { setError('নাম ও ফোন নম্বর দিন'); return; }
+    if (!form.name.trim() || !form.phone.trim()) { setError('নাম ও মোবাইল নম্বর দিন'); return; }
+    if (!form.referrer_id.trim()) { setError('রেফারার আইডি বাধ্যতামূলক'); return; }
+    // Phone format basic check
+    const phoneClean = form.phone.trim().replace(/\s/g, '');
+    if (phoneClean.length < 10) { setError('সঠিক মোবাইল নম্বর দিন'); return; }
 
     setLoading(true);
     const result = await register({
       name: form.name.trim(),
-      email: form.email.trim(),
-      phone: form.phone.trim(),
+      email: form.email.trim() || undefined,   // email optional
+      phone: phoneClean,
       password: form.password,
       package_type: form.package_type,
       referrer_id: form.referrer_id.trim() || undefined,
@@ -80,10 +85,7 @@ export default function Register() {
     if (result.success && result.userId) {
       setRegisteredUserId(result.userId);
       if (form.package_type === 'customer') {
-        // Customer: no cash payment needed — product purchase activates ID
-        // Insert pending record so admin can track, amount=0
-        // Customer registration needs no payment — auto-approved immediately
-        // Actual activation happens only after buying 1000 PV of products
+        // Customer: no cash payment — product purchase activates ID
         await supabase.from('mlm_payment_verifications').insert({
           user_id: result.userId,
           amount: 0,
@@ -94,7 +96,11 @@ export default function Register() {
           processed_at: new Date().toISOString(),
         });
         setStep(3);
+      } else if (form.package_type === 'gold') {
+        // Gold: no payment at registration — user buys from dashboard after login
+        setStep(3);
       } else {
+        // Shareholder: go to payment step
         setStep(2);
       }
     } else {
@@ -269,6 +275,14 @@ export default function Register() {
                   <p className="text-blue-800 font-semibold text-sm">শপ থেকে ১,০০০ PV মূল্যের পণ্য কিনুন</p>
                   <p className="text-blue-600 text-xs mt-1">পণ্য কিনলেই আপনার আইডি স্বয়ংক্রিয়ভাবে সক্রিয় হবে (১ PV = ১ টাকা)</p>
                   <p className="text-blue-500 text-xs mt-1">মেয়াদ: ৩০ দিন | রিনিউ: মাসে ১০০ PV কিনলে</p>
+                </div>
+              </div>
+            ) : form.package_type === 'gold' ? (
+              <div>
+                <div className="bg-yellow-50 rounded-xl p-4 mb-6 border border-yellow-200">
+                  <p className="text-yellow-800 font-semibold text-sm">✅ রেজিস্ট্রেশন সম্পন্ন!</p>
+                  <p className="text-yellow-700 text-xs mt-2">লগইন করুন → ড্যাশবোর্ড → প্যাকেজ ট্যাব থেকে গোল্ড প্যাকেজ কিনুন</p>
+                  <p className="text-yellow-600 text-xs mt-1">আপনার বাজেট অনুযায়ী ৳৫,০০০ থেকে শুরু করতে পারবেন</p>
                 </div>
               </div>
             ) : paymentMethod === 'balance' ? (
@@ -452,19 +466,43 @@ export default function Register() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">নাম *</label>
                   <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="আপনার নাম" />
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="আপনার পুরো নাম" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">ফোন *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">মোবাইল নম্বর *</label>
                   <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} required
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="০১XXXXXXXXX" />
                 </div>
               </div>
 
+              {/* Email — Optional */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">ইমেইল *</label>
-                <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="your@email.com" />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm font-medium text-gray-700">
+                    ইমেইল
+                    <span className="ml-1.5 text-xs text-gray-400 font-normal">(ঐচ্ছিক)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => { setShowEmailField(!showEmailField); if (showEmailField) setForm({ ...form, email: '' }); }}
+                    className="text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+                  >
+                    {showEmailField ? '✕ বাদ দিন' : '+ ইমেইল যোগ করুন'}
+                  </button>
+                </div>
+                {showEmailField && (
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={e => setForm({ ...form, email: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm"
+                    placeholder="your@email.com"
+                    autoComplete="email"
+                  />
+                )}
+                {!showEmailField && (
+                  <p className="text-xs text-gray-400">📱 মোবাইল নম্বর দিয়েই লগইন করতে পারবেন — ইমেইল না দিলেও চলবে।</p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -486,9 +524,9 @@ export default function Register() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">রেফারার আইডি (ঐচ্ছিক)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">রেফারার আইডি <span className="text-red-500">*</span></label>
                 <input value={form.referrer_id} onChange={e => setForm({ ...form, referrer_id: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="রেফারারের আইডি" />
+                  required className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="রেফারারের আইডি দিন" />
               </div>
 
               {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl border border-red-100">{error}</div>}

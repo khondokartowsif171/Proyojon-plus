@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
+import { useLang } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
 import { ShoppingCart, User, Menu, X, LogOut, LayoutDashboard, Store, ChevronDown } from 'lucide-react';
 
 export default function Header() {
   const { user, logout } = useAuth();
   const { cartCount } = useCart();
+  const { lang, setLang, t } = useLang();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collections, setCollections] = useState<any[]>([]);
@@ -48,14 +50,14 @@ export default function Header() {
           {/* Desktop Nav */}
           <nav className="hidden md:flex items-center gap-1">
             <Link to="/" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
-              হোম
+              {t('home')}
             </Link>
             
             {/* Shop Dropdown */}
             <div className="relative" onMouseEnter={() => setShopDropdown(true)} onMouseLeave={() => setShopDropdown(false)}>
               <Link to="/shop" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium flex items-center gap-1">
                 <Store size={16} />
-                শপ
+                {t('shop')}
                 <ChevronDown size={14} />
               </Link>
               {shopDropdown && (
@@ -75,7 +77,7 @@ export default function Header() {
             </div>
 
             <Link to="/packages" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
-              প্যাকেজ
+              {t('packages')}
             </Link>
           </nav>
 
@@ -110,7 +112,7 @@ export default function Header() {
                       <p className="font-semibold text-sm">{user.name}</p>
                       <p className="text-xs text-gray-500">{user.email}</p>
                       <p className="text-xs text-indigo-600 font-medium mt-1">
-                        ব্যালেন্স: ৳{(user.current_balance || 0).toLocaleString()}
+                        {t('balance')}: ৳{(user.current_balance || 0).toLocaleString()}
                       </p>
                     </div>
                     <Link
@@ -119,14 +121,14 @@ export default function Header() {
                       onClick={() => setUserDropdown(false)}
                     >
                       <LayoutDashboard size={16} />
-                      ড্যাশবোর্ড
+                      {t('dashboard')}
                     </Link>
                     <button
                       onClick={handleLogout}
                       className="flex items-center gap-2 px-4 py-2.5 hover:bg-red-50 text-sm transition-colors w-full text-left text-red-600"
                     >
                       <LogOut size={16} />
-                      লগআউট
+                      {t('logout')}
                     </button>
                   </div>
                 )}
@@ -137,16 +139,25 @@ export default function Header() {
                   to="/login"
                   className="px-4 py-2 text-sm font-medium rounded-lg hover:bg-white/10 transition-colors"
                 >
-                  লগইন
+                  {t('login')}
                 </Link>
                 <Link
                   to="/register"
                   className="px-4 py-2 text-sm font-medium bg-gradient-to-r from-yellow-400 to-orange-500 text-indigo-900 rounded-lg hover:from-yellow-300 hover:to-orange-400 transition-all shadow-lg"
                 >
-                  রেজিস্ট্রেশন
+                  {t('register')}
                 </Link>
               </div>
             )}
+
+            {/* Language toggle */}
+            <button
+              onClick={() => setLang(lang === 'bn' ? 'en' : 'bn')}
+              className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold transition-all"
+              title="Switch language"
+            >
+              {lang === 'bn' ? 'EN' : 'বাং'}
+            </button>
 
             {/* Mobile menu */}
             <button

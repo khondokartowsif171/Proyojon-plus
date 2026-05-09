@@ -51,6 +51,12 @@ export default function AdminDashboard() {
   const [catForm, setCatForm] = useState({ name: '', parent_id: '', description: '' });
   const [showCatForm, setShowCatForm] = useState(false);
   const [networkMembers, setNetworkMembers] = useState<any[]>([]);
+  const [manualGoldUserId,    setManualGoldUserId]    = useState('');
+  const [manualGoldAmount,    setManualGoldAmount]    = useState('');
+  const [manualGoldLoading,   setManualGoldLoading]   = useState(false);
+  const [manualBakeyaUserId,  setManualBakeyaUserId]  = useState('');
+  const [manualBakeyaAmount,  setManualBakeyaAmount]  = useState('');
+  const [manualBakeyaLoading, setManualBakeyaLoading] = useState(false);
 
   useEffect(() => {
     if (!user || user.role !== 'admin') { navigate('/login'); return; }
@@ -91,9 +97,23 @@ export default function AdminDashboard() {
       .select('*, user:mlm_users(name)').order('created_at', { ascending: false }).limit(100);
     if (txns) setTransactions(txns);
 
-    const { data: ordersData } = await supabase.from('ecom_orders')
-      .select('*, customer:ecom_customers(name, email)').order('created_at', { ascending: false }).limit(50);
-    if (ordersData) setOrders(ordersData);
+    const { data: ordersRaw } = await supabase.from('ecom_orders')
+      .select('*')
+      .order('created_at', { ascending: false }).limit(50);
+
+    if (ordersRaw && ordersRaw.length > 0) {
+      const orderIds = ordersRaw.map((o: any) => o.id);
+      const { data: itemsRaw } = await supabase.from('ecom_order_items')
+        .select('*')
+        .in('order_id', orderIds);
+      const merged = ordersRaw.map((o: any) => ({
+        ...o,
+        order_items: (itemsRaw || []).filter((i: any) => i.order_id === o.id),
+      }));
+      setOrders(merged);
+    } else if (ordersRaw) {
+      setOrders([]);
+    }
 
     const { data: catsData } = await supabase.from('mlm_categories').select('*').order('sort_order');
     if (catsData) setCategories(catsData);
@@ -111,33 +131,60 @@ export default function AdminDashboard() {
     setCronRunning(true);
     setCronResult(null);
     try {
-      const dailyGold   = parseFloat((1800 / 365).toFixed(2));
-      const dailyBakeya = Math.round((100000 * 0.36) / 365);
       let goldCount = 0;
+      const now = new Date();
 
-      const { data: goldUsers } = await supabase.from('mlm_users')
-        .select('id, gold_referral_pending, current_balance, total_income')
-        .gt('gold_referral_pending', 0).eq('is_active', true).neq('role', 'admin');
+      // Per-package gold referral daily release
+      const { data: goldPkgs } = await supabase.from('mlm_gold_packages')
+        .select('id, user_id, daily_income, daily_bakeya, referral_income_pending, bakeya_accumulated, income_released, expires_at')
+        .eq('status', 'active').gt('referral_income_pending', 0);
 
-      for (const u of (goldUsers || [])) {
-        if (u.gold_referral_pending >= dailyGold) {
-          await supabase.from('mlm_users').update({
-            current_balance:       (u.current_balance || 0) + dailyGold,
-            total_income:          (u.total_income || 0) + dailyGold,
-            gold_referral_pending: u.gold_referral_pending - dailyGold,
-          }).eq('id', u.id);
-          await supabase.from('mlm_transactions').insert({
-            user_id: u.id, type: 'gold_daily', amount: dailyGold,
-            description: `গোল্ড রেফার দৈনিক ইনকাম ৳${dailyGold}`,
-          });
-          goldCount++;
+      for (const pkg of (goldPkgs || [])) {
+        if (pkg.expires_at && new Date(pkg.expires_at) <= now) {
+          await supabase.from('mlm_gold_packages').update({ status: 'expired' }).eq('id', pkg.id);
+          continue;
         }
+        const { data: buyer } = await supabase.from('mlm_users').select('referrer_id').eq('id', pkg.user_id).single();
+        if (!buyer?.referrer_id) continue;
+        const { data: referrer } = await supabase.from('mlm_users')
+          .select('id, current_balance, total_income, gold_referral_pending, is_active')
+          .eq('id', buyer.referrer_id).eq('is_active', true).single();
+        if (!referrer) continue;
+        const release = parseFloat(Math.min(pkg.daily_income, pkg.referral_income_pending).toFixed(4));
+        if (release <= 0) continue;
+        await supabase.from('mlm_users').update({
+          current_balance:       parseFloat(((referrer.current_balance||0) + release).toFixed(4)),
+          total_income:          parseFloat(((referrer.total_income||0) + release).toFixed(4)),
+          gold_referral_pending: parseFloat(Math.max(0,(referrer.gold_referral_pending||0) - release).toFixed(4)),
+        }).eq('id', referrer.id);
+        await supabase.from('mlm_gold_packages').update({
+          referral_income_pending: parseFloat(Math.max(0, pkg.referral_income_pending - release).toFixed(4)),
+          income_released:         parseFloat(((pkg.income_released||0) + release).toFixed(4)),
+        }).eq('id', pkg.id);
+        await supabase.from('mlm_transactions').insert({
+          user_id: referrer.id, type: 'gold_daily', amount: release,
+          description: `গোল্ড দৈনিক রিলিজ ৳${release.toFixed(4)}`,
+        });
+        goldCount++;
       }
 
-      const { data: goldBuyers } = await supabase.from('mlm_users').select('id, bakeya_amount')
-        .eq('package_type', 'gold').eq('is_active', true).neq('role', 'admin');
-      for (const buyer of (goldBuyers || [])) {
-        await supabase.from('mlm_users').update({ bakeya_amount: (buyer.bakeya_amount || 0) + dailyBakeya }).eq('id', buyer.id);
+      // Per-package bakeya accumulation for buyers
+      const { data: allGoldPkgs } = await supabase.from('mlm_gold_packages')
+        .select('id, user_id, daily_bakeya, bakeya_accumulated, expires_at').eq('status', 'active');
+      const bakeyaUserMap: Record<string, number> = {};
+      for (const pkg of (allGoldPkgs || [])) {
+        if (pkg.expires_at && new Date(pkg.expires_at) <= now) {
+          await supabase.from('mlm_gold_packages').update({ status: 'expired' }).eq('id', pkg.id);
+          continue;
+        }
+        bakeyaUserMap[pkg.user_id] = (bakeyaUserMap[pkg.user_id]||0) + pkg.daily_bakeya;
+        await supabase.from('mlm_gold_packages').update({
+          bakeya_accumulated: parseFloat(((pkg.bakeya_accumulated||0)+pkg.daily_bakeya).toFixed(4)),
+        }).eq('id', pkg.id);
+      }
+      for (const [uid, bakeyaAmt] of Object.entries(bakeyaUserMap)) {
+        const { data: bu } = await supabase.from('mlm_users').select('bakeya_amount').eq('id', uid).single();
+        if (bu) await supabase.from('mlm_users').update({ bakeya_amount: parseFloat(((bu.bakeya_amount||0)+bakeyaAmt).toFixed(4)) }).eq('id', uid);
       }
 
       let deactivatedCount = 0;
@@ -159,7 +206,7 @@ export default function AdminDashboard() {
         pvReset = 1;
       }
 
-      setCronResult({ success: true, results: { goldReferralDistributed: goldCount, bakeyaAccumulated: (goldBuyers || []).length, deactivatedUsers: deactivatedCount, monthlyPvReset: pvReset } });
+      setCronResult({ success: true, results: { goldReferralDistributed: goldCount, bakeyaAccumulated: Object.keys(bakeyaUserMap).length, deactivatedUsers: deactivatedCount, monthlyPvReset: pvReset } });
       toast.success('দৈনিক কাজ সম্পন্ন!');
       fetchAll();
     } catch (e: any) {
@@ -167,6 +214,38 @@ export default function AdminDashboard() {
       setCronResult({ success: false, error: e.message });
     }
     setCronRunning(false);
+  };
+
+  const handleManualGoldCredit = async () => {
+    const amount = parseFloat(manualGoldAmount);
+    if (!manualGoldUserId.trim()||isNaN(amount)||amount<=0) { toast.error('User ID ও পরিমাণ দিন'); return; }
+    setManualGoldLoading(true);
+    const { data: target } = await supabase.from('mlm_users').select('id, name, current_balance, total_income').eq('id', manualGoldUserId.trim()).single();
+    if (!target) { toast.error('User পাওয়া যায়নি'); setManualGoldLoading(false); return; }
+    await supabase.from('mlm_users').update({ current_balance:(target.current_balance||0)+amount, total_income:(target.total_income||0)+amount }).eq('id', target.id);
+    const { error: txErr } = await supabase.from('mlm_transactions').insert({ user_id:target.id, type:'admin_credit', amount, description:`এডমিন প্যানেল থেকে ৳${amount} ব্যালেন্স সংযুক্ত করা হয়েছে` });
+    if (txErr) { toast.error(`Transaction log error: ${txErr.message}`); setManualGoldLoading(false); return; }
+    toast.success(`✅ ৳${amount} → ${target.name} এ জমা হয়েছে`);
+    setManualGoldUserId(''); setManualGoldAmount('');
+    fetchAll(); setManualGoldLoading(false);
+  };
+
+  const handleManualBakeyaDeduct = async () => {
+    const amount = parseFloat(manualBakeyaAmount);
+    if (!manualBakeyaUserId.trim()||isNaN(amount)||amount<=0) { toast.error('User ID ও পরিমাণ দিন'); return; }
+    setManualBakeyaLoading(true);
+    const { data: target } = await supabase.from('mlm_users').select('id, name, bakeya_amount, gold_referral_pending').eq('id', manualBakeyaUserId.trim()).single();
+    if (!target) { toast.error('User পাওয়া যায়নি'); setManualBakeyaLoading(false); return; }
+    const newBakeya = Math.max(0, (target.bakeya_amount||0) - amount);
+    const deductFromPending = Math.min(amount, target.gold_referral_pending||0);
+    await supabase.from('mlm_users').update({
+      bakeya_amount: parseFloat(newBakeya.toFixed(4)),
+      gold_referral_pending: Math.max(0,(target.gold_referral_pending||0)-deductFromPending),
+    }).eq('id', target.id);
+    await supabase.from('mlm_transactions').insert({ user_id:target.id, type:'bakeya_deduct', amount:-amount, description:`Admin বকেয়া কর্তন ৳${amount}` });
+    toast.success(`✅ ${target.name} এর বকেয়া ৳${amount} কমানো হয়েছে`);
+    setManualBakeyaUserId(''); setManualBakeyaAmount('');
+    fetchAll(); setManualBakeyaLoading(false);
   };
 
   const handleLockUser = async (userId: string, lock: boolean) => {
@@ -282,8 +361,15 @@ export default function AdminDashboard() {
   // ── Payment approve ──────────────────────────────────────────────────────
   const handleApprovePayment = async (id: string, approve: boolean) => {
     const pv = paymentVerifications.find(p => p.id === id);
-    if (!pv) return;
+    if (!pv || pv.status !== 'pending') return;
     setLoading(true);
+
+    // DB-level idempotency check — double-click বা race condition রোধ করে
+    const { data: freshPv } = await supabase.from('mlm_payment_verifications').select('status').eq('id', id).single();
+    if (freshPv?.status !== 'pending') {
+      toast.error('এই পেমেন্ট ইতিমধ্যে প্রসেস হয়েছে');
+      setLoading(false); fetchAll(); return;
+    }
 
     if (approve) {
       await supabase.from('mlm_payment_verifications').update({ status: 'approved', processed_at: new Date().toISOString() }).eq('id', id);
@@ -392,10 +478,22 @@ export default function AdminDashboard() {
         return;
       }
 
-      // ══ CASE 2: Customer registration — শুধু acknowledgment, activation নয় ══
-      // activation হবে শুধু 1000 PV পণ্য কেনার পরে (CASE 1 বা Checkout)
+      // ══ CASE 2: Customer registration ══
       if (pv.purpose === 'customer_registration') {
         toast.success('✅ রেজিস্ট্রেশন নিশ্চিত হয়েছে। আইডি সক্রিয় হবে ১,০০০ PV পণ্য কিনলে।');
+        fetchAll(); setLoading(false);
+        return;
+      }
+
+      // ══ CASE 2B: Bakeya payment ══
+      if (pv.purpose === 'bakeya_payment') {
+        const { data: bakeyaUser } = await supabase.from('mlm_users').select('bakeya_amount').eq('id', pv.user_id).single();
+        if (bakeyaUser) {
+          const newBakeya = Math.max(0, (bakeyaUser.bakeya_amount||0) - (pv.amount||0));
+          await supabase.from('mlm_users').update({ bakeya_amount: parseFloat(newBakeya.toFixed(4)) }).eq('id', pv.user_id);
+          await supabase.from('mlm_transactions').insert({ user_id:pv.user_id, type:'bakeya_payment', amount:-(pv.amount||0), description:`বকেয়া পরিশোধ ৳${pv.amount}` });
+        }
+        toast.success('✅ বকেয়া পরিশোধ অনুমোদিত!');
         fetchAll(); setLoading(false);
         return;
       }
@@ -405,19 +503,26 @@ export default function AdminDashboard() {
       const isShareholder = pv.purpose === 'shareholder_package';
       const isGold        = pv.purpose === 'gold_package';
 
+      const quantity = pv.quantity || 1;
+
+      // Fetch current buyer data for additive calculations
+      const { data: buyerData } = await supabase.from('mlm_users')
+        .select('pv_points, ps_points, gp_points, shareholder_count, is_weekly_club, is_insurance_club, is_pension_club, is_daily_club, is_shareholder_club')
+        .eq('id', pv.user_id).single();
+
       let pvPoints = 0, psPoints = 0, gpPoints = 0;
       let goldStart = null;
       const expiry = new Date();
 
       if (isCustomer) {
-        // ✅ Fix 2: Customer package activate — ১০০০ PV set করো
         pvPoints = 1000;
         expiry.setDate(expiry.getDate() + 30);
       } else if (isShareholder) {
-        psPoints = 5000; // শুধু SP, PV নেই
+        psPoints = ((buyerData?.ps_points || 0) + quantity * 5000);
         expiry.setDate(expiry.getDate() + 30);
       } else if (isGold) {
-        gpPoints  = 100000;
+        const amtPerPkg = (pv.amount||0) / quantity;
+        gpPoints  = (buyerData?.gp_points || 0) + quantity * amtPerPkg;
         goldStart = new Date().toISOString();
         expiry.setDate(expiry.getDate() + 365);
       }
@@ -426,21 +531,48 @@ export default function AdminDashboard() {
         is_active:            true,
         expires_at:           expiry.toISOString(),
         activated_at:         new Date().toISOString(),
-        gold_package_start:   goldStart,
         monthly_pv_purchased: isCustomer ? pvPoints : 0,
-        // Club flags
-        is_daily_club:        isCustomer,
-        is_shareholder_club:  isShareholder,
-        is_weekly_club:       false,
-        is_insurance_club:    false,
-        is_pension_club:      false,
+        // Preserve existing club flags — only set new ones
+        is_daily_club:       isCustomer ? true : (buyerData?.is_daily_club ?? false),
+        is_shareholder_club: isShareholder ? true : (buyerData?.is_shareholder_club ?? false),
+        is_weekly_club:      buyerData?.is_weekly_club ?? false,
+        is_insurance_club:   buyerData?.is_insurance_club ?? false,
+        is_pension_club:     buyerData?.is_pension_club ?? false,
       };
 
+      if (isGold) updatePayload.gold_package_start = goldStart;
       if (isCustomer)    updatePayload.pv_points = pvPoints;
-      if (isShareholder) updatePayload.ps_points = psPoints;
-      if (isGold)        updatePayload.gp_points = gpPoints;
+      if (isShareholder) {
+        updatePayload.ps_points         = psPoints;
+        updatePayload.shareholder_count = (buyerData?.shareholder_count || 0) + quantity;
+      }
+      if (isGold) updatePayload.gp_points = gpPoints;
 
       await supabase.from('mlm_users').update(updatePayload).eq('id', pv.user_id);
+
+      // Gold: insert one row per package to mlm_gold_packages (proportional)
+      if (isGold) {
+        const goldExpiry = new Date();
+        goldExpiry.setDate(goldExpiry.getDate() + 365);
+        const amtPerPkg      = (pv.amount||0) / quantity;
+        const refIncomePkg   = parseFloat((amtPerPkg * 0.018).toFixed(4));
+        const dailyIncomePkg = parseFloat((refIncomePkg / 365).toFixed(4));
+        const dailyBakeyaPkg = parseFloat((amtPerPkg * 0.36 / 365).toFixed(4));
+        for (let i = 0; i < quantity; i++) {
+          const { error: gpInsertError } = await supabase.from('mlm_gold_packages').insert({
+            user_id:                 pv.user_id,
+            purchased_at:            new Date().toISOString(),
+            expires_at:              goldExpiry.toISOString(),
+            daily_income:            dailyIncomePkg,
+            daily_bakeya:            dailyBakeyaPkg,
+            referral_income_pending: refIncomePkg,
+            income_released:         0,
+            bakeya_accumulated:      0,
+            status:                  'active',
+          });
+          if (gpInsertError) { toast.error(`Gold package insert error: ${gpInsertError.message}`); setLoading(false); return; }
+        }
+      }
 
       // ✅ Customer package activate হলে club pool এ টাকা যাবে
       if (isCustomer && pvPoints >= 100) {
@@ -458,23 +590,23 @@ export default function AdminDashboard() {
           let desc       = '';
 
           if (isCustomer) {
-            commission = Math.floor(pvPoints * 0.05);
+            commission = Math.floor(1000 * 0.05); // ৳50 fixed per customer
             desc       = 'কাস্টমার রেফার কমিশন (৫%)';
           } else if (isShareholder) {
-            commission = Math.floor(psPoints * 0.025);
-            desc       = 'শেয়ারহোল্ডার রেফার কমিশন (২.৫%)';
+            commission = quantity * Math.floor(5000 * 0.025); // ৳125 × quantity
+            desc       = `শেয়ারহোল্ডার রেফার কমিশন (২.৫% × ${quantity}টি)`;
           } else if (isGold) {
-            const totalGold = 1800;
+            const amtPerPkg2   = (pv.amount||0) / quantity;
+            const totalGold    = parseFloat((amtPerPkg2 * 0.018 * quantity).toFixed(4));
             await supabase.from('mlm_users').update({
-              gold_referral_income:  (referrer.gold_referral_income || 0) + totalGold,
-              gold_referral_pending: (referrer.gold_referral_pending || 0) + totalGold,
+              gold_referral_income:  parseFloat(((referrer.gold_referral_income || 0) + totalGold).toFixed(4)),
+              gold_referral_pending: parseFloat(((referrer.gold_referral_pending || 0) + totalGold).toFixed(4)),
             }).eq('id', referrer.id);
             await supabase.from('mlm_transactions').insert({
               user_id: referrer.id, type: 'referral_income', amount: totalGold,
-              description: 'গোল্ড রেফার ইনকাম (৳১৮০০, ৩৬৫ দিনে বন্টন)', related_user_id: pv.user_id,
+              description: `গোল্ড রেফার ইনকাম (৳${totalGold}, ${quantity}টি প্যাকেজ, ৩৬৫ দিনে বন্টন)`, related_user_id: pv.user_id,
             });
-            const dailyBakeya = Math.round((100000 * 0.36) / 365);
-            await supabase.from('mlm_users').update({ bakeya_amount: dailyBakeya }).eq('id', pv.user_id);
+            // Bakeya accumulates per gold package via cron (mlm_gold_packages)
           }
 
           // ✅ Fix 3: Commission credit — সাথে সাথে balance এ যাবে
@@ -900,7 +1032,13 @@ export default function AdminDashboard() {
                         return (
                           <tr key={pv.id} className="border-b border-gray-50 hover:bg-gray-50">
                             <td className="py-2 px-3"><p className="font-medium text-xs">{pv.user?.name}</p><p className="text-[10px] text-gray-400">{pv.user?.phone}</p></td>
-                            <td className="py-2 px-3 font-bold">৳{(pv.amount||0).toLocaleString()}</td>
+                            <td className="py-2 px-3 font-bold">
+                              <p>৳{(pv.amount||0).toLocaleString()}</p>
+                              {(pv.quantity || 1) > 1 && <p className="text-[10px] text-gray-400">{pv.quantity}টি প্যাকেজ</p>}
+                              {pv.purpose==='gold_package'&&pv.locker_image_url&&(
+                                <img src={pv.locker_image_url} alt="locker" className="mt-1 h-10 w-10 rounded-lg object-cover border border-yellow-300"/>
+                              )}
+                            </td>
                             <td className="py-2 px-3">
                               <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${methodColor}`}>{methodLabel}</span>
                             </td>
@@ -917,8 +1055,8 @@ export default function AdminDashboard() {
                             <td className="py-2 px-3">
                               {pv.status==='pending' && (
                                 <div className="flex gap-1">
-                                  <button onClick={() => handleApprovePayment(pv.id, true)} className="p-1 rounded bg-green-100 text-green-600 hover:bg-green-200"><CheckCircle size={14} /></button>
-                                  <button onClick={() => handleApprovePayment(pv.id, false)} className="p-1 rounded bg-red-100 text-red-600 hover:bg-red-200"><XCircle size={14} /></button>
+                                  <button onClick={() => handleApprovePayment(pv.id, true)} disabled={loading} className="p-1 rounded bg-green-100 text-green-600 hover:bg-green-200 disabled:opacity-40 disabled:cursor-not-allowed"><CheckCircle size={14} /></button>
+                                  <button onClick={() => handleApprovePayment(pv.id, false)} disabled={loading} className="p-1 rounded bg-red-100 text-red-600 hover:bg-red-200 disabled:opacity-40 disabled:cursor-not-allowed"><XCircle size={14} /></button>
                                 </div>
                               )}
                             </td>
@@ -940,6 +1078,28 @@ export default function AdminDashboard() {
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-xs text-blue-800 space-y-1">
                   <p>📌 Customer package + PV sales → Daily 30% • Weekly 2.5% • Insurance 1.25% • Pension 1.25% • Shareholder 10%</p>
                   <p>📌 Shareholder club → শুধু shareholder package holders পাবেন</p>
+                </div>
+                <div className="grid md:grid-cols-2 gap-4 mb-6">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                    <h3 className="font-bold text-yellow-800 text-sm mb-3">গোল্ড ম্যানুয়াল ক্রেডিট</h3>
+                    <div className="space-y-2">
+                      <input value={manualGoldUserId} onChange={e=>setManualGoldUserId(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs font-mono" placeholder="User ID (UUID)"/>
+                      <input type="number" value={manualGoldAmount} onChange={e=>setManualGoldAmount(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs" placeholder="পরিমাণ (৳)"/>
+                      <button onClick={handleManualGoldCredit} disabled={manualGoldLoading} className="w-full py-2 bg-yellow-500 text-white text-sm font-bold rounded-lg hover:bg-yellow-600 disabled:opacity-50">
+                        {manualGoldLoading?'প্রসেসিং...':'জমা করুন'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                    <h3 className="font-bold text-orange-800 text-sm mb-3">বকেয়া ম্যানুয়াল কর্তন</h3>
+                    <div className="space-y-2">
+                      <input value={manualBakeyaUserId} onChange={e=>setManualBakeyaUserId(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs font-mono" placeholder="User ID (UUID)"/>
+                      <input type="number" value={manualBakeyaAmount} onChange={e=>setManualBakeyaAmount(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs" placeholder="কর্তনের পরিমাণ (৳)"/>
+                      <button onClick={handleManualBakeyaDeduct} disabled={manualBakeyaLoading} className="w-full py-2 bg-orange-500 text-white text-sm font-bold rounded-lg hover:bg-orange-600 disabled:opacity-50">
+                        {manualBakeyaLoading?'প্রসেসিং...':'বকেয়া কমান'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {clubPools.map(pool => {
@@ -989,7 +1149,12 @@ export default function AdminDashboard() {
                               {wd.method==='bkash'?'বিকাশ':wd.method==='nagad'?'নগদ':wd.method==='rocket'?'রকেট':'ব্যাংক'}
                             </span>
                           </td>
-                          <td className="py-2 px-3 text-xs">{wd.account_number}</td>
+                          <td className="py-2 px-3 text-xs">
+                            <p>{wd.account_number}</p>
+                            {wd.method === 'bank' && wd.bank_name && (
+                              <p className="text-[10px] text-gray-400">{wd.account_holder_name} | {wd.bank_name} | রাউটিং: {wd.routing_number} | শাখা: {wd.branch_name}</p>
+                            )}
+                          </td>
                           <td className="py-2 px-3">
                             <span className={`text-xs px-2 py-0.5 rounded-full ${wd.status==='approved'?'bg-green-100 text-green-700':wd.status==='rejected'?'bg-red-100 text-red-700':'bg-yellow-100 text-yellow-700'}`}>
                               {wd.status==='approved'?'অনুমোদিত':wd.status==='rejected'?'প্রত্যাখ্যাত':'পেন্ডিং'}
@@ -1039,25 +1204,45 @@ export default function AdminDashboard() {
                     <p className="text-sm">কোনো অর্ডার নেই</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead><tr className="bg-gray-50">
-                        {['অর্ডার ID','কাস্টমার','মোট','স্ট্যাটাস','তারিখ'].map(h => (
-                          <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-500">{h}</th>
-                        ))}
-                      </tr></thead>
-                      <tbody>
-                        {orders.map(order => (
-                          <tr key={order.id} className="border-b border-gray-50">
-                            <td className="py-2 px-3 font-mono text-xs">{order.id.slice(0,8)}...</td>
-                            <td className="py-2 px-3 text-xs">{order.customer?.name||order.shipping_address?.name||'N/A'}</td>
-                            <td className="py-2 px-3 font-bold text-xs">৳{((order.total||0)/100).toLocaleString()}</td>
-                            <td className="py-2 px-3"><span className={`text-xs px-2 py-0.5 rounded-full ${order.status==='paid'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>{order.status==='paid'?'পেইড':'পেন্ডিং'}</span></td>
-                            <td className="py-2 px-3 text-xs">{new Date(order.created_at).toLocaleDateString('bn-BD')}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-4">
+                    {orders.map(order => (
+                      <div key={order.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                        {/* Order header */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 px-4 py-3">
+                          <div>
+                            <p className="font-mono text-xs text-gray-500">#{order.id.slice(0,8).toUpperCase()}</p>
+                            <p className="text-sm font-semibold">{order.customer?.name||order.shipping_address?.name||'N/A'}</p>
+                            <p className="text-xs text-gray-500">{order.customer?.email||order.shipping_address?.email||''}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-indigo-700">৳{(order.total_price||order.total||0).toLocaleString()}</p>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${order.financial_status==='paid'||order.status==='paid'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>
+                              {order.financial_status==='paid'||order.status==='paid'?'পেইড':'পেন্ডিং'}
+                            </span>
+                            <p className="text-xs text-gray-400 mt-1">{new Date(order.created_at).toLocaleDateString('bn-BD')}</p>
+                          </div>
+                        </div>
+                        {/* Order items */}
+                        {order.order_items && order.order_items.length > 0 ? (
+                          <div className="divide-y divide-gray-100">
+                            {order.order_items.map((item: any, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between px-4 py-2.5">
+                                <div>
+                                  <p className="text-xs font-medium">{item.product_name||item.title||'পণ্য'}</p>
+                                  {item.variant_title && <p className="text-[10px] text-gray-400">{item.variant_title}</p>}
+                                </div>
+                                <div className="text-right text-xs">
+                                  <span className="text-gray-500">×{item.quantity}</span>
+                                  <span className="ml-2 font-semibold">৳{(item.unit_price||item.price||0).toLocaleString()}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="px-4 py-2 text-xs text-gray-400">পণ্যের তথ্য নেই</p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

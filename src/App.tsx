@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { CartProvider } from "@/contexts/CartContext";
+import { LanguageProvider } from "@/contexts/LanguageContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
@@ -25,6 +26,7 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <ThemeProvider defaultTheme="light">
+    <LanguageProvider>
     <AuthProvider>
       <CartProvider>
         <QueryClientProvider client={queryClient}>
@@ -53,6 +55,7 @@ const App = () => (
         </QueryClientProvider>
       </CartProvider>
     </AuthProvider>
+    </LanguageProvider>
   </ThemeProvider>
 );
 

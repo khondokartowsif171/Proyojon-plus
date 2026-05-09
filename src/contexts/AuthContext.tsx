@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
+import { hashPassword, isEmail } from '@/lib/crypto';
 
 interface User {
   id: string;
@@ -33,28 +34,32 @@ interface User {
   nid_number?: string;
   nominee_name?: string;
   nominee_phone?: string;
+  profile_image_url?: string;
+  nid_front_url?: string;
+  nid_back_url?: string;
+  shareholder_count?: number;
 }
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (identifier: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (data: RegisterData) => Promise<{ success: boolean; error?: string; userId?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
 
 interface RegisterData {
-  email: string;
+  email?: string;       // ঐচ্ছিক
+  phone: string;        // বাধ্যতামূলক
   password: string;
   name: string;
-  phone: string;
   package_type: string;
   referrer_id?: string;
 }
 
 interface InsertUserData {
-  email: string;
+  email?: string;
   password_hash: string;
   name: string;
   phone: string;
@@ -90,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .select('*')
         .eq('id', userId)
         .single();
-      
+
       if (data && !error) {
         setUser(data as User);
       } else {
@@ -108,17 +113,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (email: string, password: string) => {
+  // ── Login: Phone অথবা Email যেকোনো একটা দিয়ে ────────────────────────────
+  const login = async (identifier: string, password: string) => {
     try {
-      const { data, error } = await supabase
+      const hashedPassword = await hashPassword(password);
+
+      // identifier এ @ থাকলে email, না থাকলে phone
+      const field = isEmail(identifier) ? 'email' : 'phone';
+
+      // ── প্রথমে hashed password দিয়ে try ───────────────────────────────────
+      let { data, error } = await supabase
         .from('mlm_users')
         .select('*')
-        .eq('email', email)
-        .eq('password_hash', password)
+        .eq(field, identifier.trim())
+        .eq('password_hash', hashedPassword)
         .single();
 
+      // ── পুরনো plain-text password migration (backward compat) ──────────────
+      if (!data || error) {
+        const { data: plainData, error: plainError } = await supabase
+          .from('mlm_users')
+          .select('*')
+          .eq(field, identifier.trim())
+          .eq('password_hash', password) // plain text check
+          .single();
+
+        if (!plainError && plainData) {
+          // ✅ পুরনো account পাওয়া গেছে — hash করে update করো (migration)
+          await supabase
+            .from('mlm_users')
+            .update({ password_hash: hashedPassword })
+            .eq('id', plainData.id);
+          data = plainData;
+          error = null;
+        }
+      }
+
       if (error || !data) {
-        return { success: false, error: 'ইমেইল বা পাসওয়ার্ড ভুল হয়েছে' };
+        return { success: false, error: 'মোবাইল নম্বর/ইমেইল অথবা পাসওয়ার্ড ভুল হয়েছে' };
       }
 
       if (data.is_locked) {
@@ -133,43 +165,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ── Register ─────────────────────────────────────────────────────────────
   const register = async (regData: RegisterData) => {
     try {
-      const { data: existing } = await supabase
+      // Phone uniqueness check (বাধ্যতামূলক)
+      const { data: existingPhone } = await supabase
         .from('mlm_users')
         .select('id')
-        .eq('email', regData.email)
+        .eq('phone', regData.phone.trim())
         .single();
 
-      if (existing) {
-        return { success: false, error: 'এই ইমেইল দিয়ে আগেই রেজিস্ট্রেশন করা হয়েছে' };
+      if (existingPhone) {
+        return { success: false, error: 'এই মোবাইল নম্বর দিয়ে আগেই রেজিস্ট্রেশন করা হয়েছে' };
       }
 
-      let pvPoints = 0, psPoints = 0, gpPoints = 0;
+      // Email uniqueness check (ঐচ্ছিক — দিলে unique হতে হবে)
+      if (regData.email && regData.email.trim()) {
+        const { data: existingEmail } = await supabase
+          .from('mlm_users')
+          .select('id')
+          .eq('email', regData.email.trim())
+          .single();
 
-      if (regData.package_type === 'customer') {
-        pvPoints = 1000;
-      } else if (regData.package_type === 'shareholder') {
-        psPoints = 5000;
-        pvPoints = 1000;
-      } else if (regData.package_type === 'gold') {
-        gpPoints = 100000;
-        pvPoints = 1000;
+        if (existingEmail) {
+          return { success: false, error: 'এই ইমেইল দিয়ে আগেই রেজিস্ট্রেশন করা হয়েছে' };
+        }
       }
 
-     const insertData: InsertUserData = {
-  email: regData.email,
-  password_hash: regData.password,
-  name: regData.name,
-  phone: regData.phone,
-  package_type: regData.package_type,
-  pv_points: 0,          // Admin approve এর আগে 0
-  ps_points: 0,
-  gp_points: 0,
-  monthly_pv_purchased: 0,
-  is_active: false,      // Admin approve এর আগে inactive
-  gold_package_start: null,  
- };
+      // ✅ Password হ্যাশ করো
+      const hashedPassword = await hashPassword(regData.password);
+
+      const insertData: InsertUserData = {
+        password_hash: hashedPassword,   // ✅ SHA-256 hashed
+        name: regData.name,
+        phone: regData.phone.trim(),
+        package_type: regData.package_type,
+        pv_points: 0,
+        ps_points: 0,
+        gp_points: 0,
+        monthly_pv_purchased: 0,
+        is_active: false,
+        gold_package_start: null,
+      };
+
+      // Email optional — শুধু থাকলে insert করো
+      if (regData.email && regData.email.trim()) {
+        insertData.email = regData.email.trim();
+      }
 
       if (regData.referrer_id) {
         insertData.referrer_id = regData.referrer_id;
@@ -185,10 +227,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'রেজিস্ট্রেশন করতে সমস্যা হয়েছে: ' + error.message };
       }
 
-      // ✅ direct_referrals_count is updated by admin on package approval, not at registration
       return { success: true, userId: data.id };
     } catch (e: unknown) {
-      return { success: false, error: 'রেজিস্ট্রেশন করতে সমস্যা হয়েছে: ' + (e instanceof Error ? e.message : String(e)) };
+      return {
+        success: false,
+        error: 'রেজিস্ট্রেশন করতে সমস্যা হয়েছে: ' + (e instanceof Error ? e.message : String(e)),
+      };
     }
   };
 

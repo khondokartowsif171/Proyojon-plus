@@ -95,7 +95,7 @@ export default function AppLayout() {
                       </div>
                       <div>
                         <p className="text-white font-semibold text-sm">গোল্ড প্যাকেজ</p>
-                        <p className="text-yellow-300 font-bold">৳১,০০,০০০ / ১,০০,০০০ GP</p>
+                        <p className="text-yellow-300 font-bold">৳৫,০০০+ / বিনিয়োগ অনুযায়ী GP</p>
                       </div>
                     </div>
                   </div>
@@ -155,18 +155,18 @@ export default function AppLayout() {
               },
               {
                 name: 'গোল্ড প্যাকেজ',
-                priceDisplay: '৳১,০০,০০০',
-                pvLabel: '১,০০,০০০ GP',
+                priceDisplay: '৳৫,০০০+',
+                pvLabel: 'বিনিয়োগ অনুযায়ী GP',
                 subtext: '',
                 unit: 'GP',
                 color: 'from-yellow-500 to-orange-600',
                 shadow: 'shadow-yellow-500/20',
                 icon: <Award size={32} />,
                 features: [
-                  'রেফারার পায় ৳১,৮০০ (৩৬৫ দিনে — ৳৪.৯৩/দিন)',
-                  'বায়ারের বকেয়া জমা (৳৩৬,০০০ / ৩৬৫ দিন)',
+                  'রেফারার পায় বিনিয়োগের ১.৮% (৩৬৫ দিনে)',
+                  'বায়ারের বকেয়া — বিনিয়োগের ৩৬% (৩৬৫ দিনে)',
                   '৩৬৫ দিনের কাউন্টডাউন টাইমার',
-                  'কোনো ক্লাব নেই — শুধু active ID',
+                  'গোল্ড লকার ইমেজ সিস্টেম',
                   '১% জেনারেশন বোনাস (৫ লেভেল)',
                 ],
                 popular: false,
