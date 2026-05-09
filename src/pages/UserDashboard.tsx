@@ -9,6 +9,7 @@ import {
   Wallet, TrendingUp, Gift, Users, Copy, Check, ArrowDownToLine,
   ArrowRightLeft, Crown, Award, Clock, RefreshCw,
   Star, Shield, LogOut, ShoppingBag, Camera, Upload, AlertCircle,
+  BarChart3, ChevronDown, ChevronRight, History, Package,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -47,6 +48,7 @@ export default function UserDashboard() {
   const { t } = useLang();
 
   const [activeTab,        setActiveTab]        = useState('overview');
+  const [sidebarOpen,     setSidebarOpen]      = useState(true);
   const [transactions,     setTransactions]     = useState<any[]>([]);
   const [generations,      setGenerations]      = useState<any[]>([]);
   const [withdrawals,      setWithdrawals]      = useState<any[]>([]);
@@ -352,15 +354,15 @@ export default function UserDashboard() {
   ];
   const genColors = ['bg-blue-600','bg-indigo-500','bg-purple-500','bg-pink-500','bg-orange-500'];
   const tabs = [
-    {id:'overview',    label:t('overview')},
-    {id:'income',      label:t('income')},
-    {id:'generations', label:t('generations')},
-    {id:'clubs',       label:t('clubs')},
-    {id:'packages',    label:t('pkgTab')},
-    {id:'withdraw',    label:t('withdraw')},
-    {id:'transfer',    label:t('transfer')},
-    {id:'history',     label:t('history')},
-    {id:'profile',     label:t('profile')},
+    {id:'overview',    label:t('overview'),    icon:<BarChart3 size={18}/>},
+    {id:'income',      label:t('income'),      icon:<TrendingUp size={18}/>},
+    {id:'generations', label:t('generations'), icon:<Users size={18}/>},
+    {id:'clubs',       label:t('clubs'),       icon:<Gift size={18}/>},
+    {id:'packages',    label:t('pkgTab'),      icon:<Package size={18}/>},
+    {id:'withdraw',    label:t('withdraw'),    icon:<ArrowDownToLine size={18}/>},
+    {id:'transfer',    label:t('transfer'),    icon:<ArrowRightLeft size={18}/>},
+    {id:'history',     label:t('history'),     icon:<History size={18}/>},
+    {id:'profile',     label:t('profile'),     icon:<Camera size={18}/>},
   ];
 
   const purposeLabel = (p: string) =>
@@ -372,7 +374,90 @@ export default function UserDashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      <div className="max-w-6xl mx-auto px-4 py-8">
+      <div className="flex">
+
+        {/* ── Sidebar (Desktop) ── */}
+        <aside className={`${
+          sidebarOpen ? 'w-64' : 'w-16'
+        } bg-gradient-to-b from-gray-900 to-gray-800 min-h-[calc(100vh-64px)] transition-all duration-300 hidden lg:flex flex-col flex-shrink-0`}>
+          <div className="p-3 flex-1">
+            {/* Collapse toggle */}
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-white/10 text-gray-400 mb-4 transition-all"
+            >
+              {sidebarOpen ? <ChevronDown size={18} className="rotate-90" /> : <ChevronRight size={18} />}
+            </button>
+
+            {/* User mini card */}
+            {sidebarOpen && (
+              <div className="mb-4 px-2">
+                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${pkgColor} flex items-center justify-center text-white font-bold text-lg mx-auto mb-2`}>
+                  {user.name?.charAt(0)?.toUpperCase()}
+                </div>
+                <p className="text-white text-xs font-semibold text-center truncate">{user.name}</p>
+                <p className="text-gray-400 text-[10px] text-center truncate">{user.phone}</p>
+                <div className="flex justify-center mt-1.5">
+                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
+                    user.is_active ? 'bg-green-500/30 text-green-300' : 'bg-red-500/30 text-red-300'
+                  }`}>
+                    {user.is_active ? '✓ সক্রিয়' : '✗ নিষ্ক্রিয়'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {sidebarOpen && <p className="text-[10px] text-gray-500 uppercase tracking-wider px-3 mb-2">মেনু</p>}
+
+            {/* Nav items */}
+            <nav className="space-y-1">
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                    activeTab === tab.id
+                      ? 'bg-indigo-600 text-white shadow-lg'
+                      : 'text-gray-400 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {tab.icon}
+                  {sidebarOpen && <span>{tab.label}</span>}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {/* Sidebar footer */}
+          {sidebarOpen && (
+            <div className="p-3 border-t border-white/10">
+              <button
+                onClick={() => { logout(); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-400 hover:bg-red-500/20 hover:text-red-300 transition-all"
+              >
+                <LogOut size={18} />
+                <span>{t('logout')}</span>
+              </button>
+            </div>
+          )}
+        </aside>
+
+        {/* ── Main Content ── */}
+        <main className="flex-1 min-w-0 overflow-x-hidden">
+          <div className="max-w-5xl mx-auto px-4 py-6">
+
+            {/* Mobile tabs */}
+            <div className="flex flex-wrap gap-1.5 mb-4 lg:hidden overflow-x-auto">
+              {tabs.map(tab => (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex items-center gap-1.5 ${
+                    activeTab === tab.id ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200'
+                  }`}>
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
         {user.package_type==='gold'&&user.gold_package_start&&<GoldCountdown startDate={user.gold_package_start} t={t}/>}
 
@@ -495,14 +580,17 @@ export default function UserDashboard() {
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          {tabs.map(tab=>(
-            <button key={tab.id} onClick={()=>setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${activeTab===tab.id?'bg-indigo-600 text-white shadow-lg':'bg-white text-gray-600 border border-gray-200 hover:border-indigo-300'}`}>
-              {tab.label}
-            </button>
-          ))}
+        {/* Page title */}
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">
+              {tabs.find(t => t.id === activeTab)?.label}
+            </h1>
+            <p className="text-xs text-gray-400">Proyojon Plus ড্যাশবোর্ড</p>
+          </div>
+          <button onClick={fetchData} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-xs hover:bg-gray-50">
+            <RefreshCw size={13}/> রিফ্রেশ
+          </button>
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
@@ -1033,7 +1121,10 @@ export default function UserDashboard() {
             </div>
           )}
 
-        </div>
+          </div>
+
+          </div>
+        </main>
       </div>
       <Footer/>
     </div>
