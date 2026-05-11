@@ -39,6 +39,8 @@ interface User {
   nid_back_url?: string;
   shareholder_count?: number;
   created_at?: string;
+  is_dealer?: boolean;
+  dealer_area?: string | null;
 }
 
 interface AuthContextType {

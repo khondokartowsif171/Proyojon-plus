@@ -177,7 +177,7 @@ export default function UserDashboard() {
   const fetchDealerData = async () => {
     if (!user) return;
     const [prodsRes, stockRes, ordersRes, reqsRes] = await Promise.all([
-      supabase.from('ecom_products').select('id, title, metadata').eq('status', 'active').order('title'),
+      supabase.from('ecom_products').select('id, name, metadata').eq('status', 'active').order('name'),
       supabase.from('dealer_stock').select('*').eq('dealer_id', user.id),
       supabase.from('ecom_orders')
         .select('*, order_items:ecom_order_items(*)')
@@ -206,7 +206,7 @@ export default function UserDashboard() {
     const { error } = await supabase.from('dealer_requisitions').insert({
       dealer_id:         user.id,
       product_id:        product.id,
-      product_name:      product.title,
+      product_name:      product.name,
       quantity:          dealerReqForm.quantity,
       pv_per_unit:       pvPerUnit,
       total_pv:          totalPv,
@@ -1360,7 +1360,7 @@ export default function UserDashboard() {
                       className="w-full px-3 py-2.5 rounded-xl border border-orange-200 text-sm bg-white focus:border-orange-500 outline-none">
                       <option value="">-- পণ্য বেছে নিন --</option>
                       {dealerProducts.map(p=>(
-                        <option key={p.id} value={p.id}>{p.title} ({p.metadata?.pv_points||0} PV/unit)</option>
+                        <option key={p.id} value={p.id}>{p.name} ({p.metadata?.pv_points||0} PV/unit)</option>
                       ))}
                     </select>
                   </div>
