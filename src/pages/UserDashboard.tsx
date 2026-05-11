@@ -12,6 +12,7 @@ import {
   BarChart3, ChevronDown, ChevronRight, History, Package,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { hashPassword } from '@/lib/crypto';
 
 function GoldCountdown({ startDate, t }: { startDate: string; t: (k: any) => string }) {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
@@ -44,7 +45,7 @@ function GoldCountdown({ startDate, t }: { startDate: string; t: (k: any) => str
 
 export default function UserDashboard() {
   const navigate = useNavigate();
-  const { user, logout, refreshUser } = useAuth();
+  const { user, loading: authLoading, logout, refreshUser } = useAuth();
   const { t } = useLang();
 
   const [activeTab,        setActiveTab]        = useState('overview');
@@ -103,6 +104,18 @@ export default function UserDashboard() {
     return () => clearInterval(id);
   }, []);
 
+  // Locker lightbox
+  const [lockerLightbox, setLockerLightbox] = useState<string|null>(null);
+
+  // Password change
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew,     setPwNew]     = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+
+  // Referral purchases
+  const [referralPurchases, setReferralPurchases] = useState<any[]>([]);
+
   // Bakeya payment
   const [bakeyaMethod,     setBakeyaMethod]     = useState('bkash');
   const [bakeyaAccount,    setBakeyaAccount]    = useState('');
@@ -111,13 +124,14 @@ export default function UserDashboard() {
   const [bakeyaPayLoading, setBakeyaPayLoading] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) { navigate('/login'); return; }
     setProfName(user.name || '');
     setProfPhone(user.phone || '');
     setProfNid(user.nid_number || '');
     setProfImgPreview(user.profile_image_url || '');
     fetchData();
-  }, [user]);
+  }, [user, authLoading]);
 
   const fetchData = async () => {
     if (!user) return;
@@ -138,6 +152,12 @@ export default function UserDashboard() {
     if (pvRes.data)  setPendingPayments(pvRes.data.filter((p:any) => p.status === 'pending'));
     if (dirRes.data) setDirectCustomers(dirRes.data);
     if (lockerRes.data) setGoldLockerImages(lockerRes.data.map((p:any)=>p.locker_image_url).filter(Boolean));
+    // Referral purchases feed
+    const directIds = (dirRes.data||[]).map((u:any)=>u.id);
+    if (directIds.length > 0) {
+      const {data:pvLog} = await supabase.from('mlm_pv_log').select('*, user:mlm_users(name,phone)').in('user_id', directIds).order('created_at',{ascending:false}).limit(20);
+      if (pvLog) setReferralPurchases(pvLog);
+    }
     await buildGenerationTable();
     setLoading(false);
   };
@@ -242,6 +262,24 @@ export default function UserDashboard() {
     const {error} = await supabase.from('mlm_users').update(updates).eq('id',user.id);
     if (error) { toast.error('আপডেট ব্যর্থ: '+error.message); } else { toast.success('✅ প্রোফাইল আপডেট সফল!'); await refreshUser(); setProfImgFile(null); setProfNidFrontFile(null); setProfNidBackFile(null); }
     setProfLoading(false);
+  };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    if (pwNew.length < 4) { toast.error('নতুন পাসওয়ার্ড কমপক্ষে ৪ অক্ষর'); return; }
+    if (pwNew !== pwConfirm) { toast.error('নতুন পাসওয়ার্ড মিলছে না'); return; }
+    setPwLoading(true);
+    const currentHash = await hashPassword(pwCurrent);
+    const { data: match } = await supabase.from('mlm_users').select('id').eq('id', user.id).eq('password_hash', currentHash).single();
+    if (!match) { toast.error('বর্তমান পাসওয়ার্ড ভুল'); setPwLoading(false); return; }
+    const newHash = await hashPassword(pwNew);
+    const { error } = await supabase.from('mlm_users').update({ password_hash: newHash }).eq('id', user.id);
+    if (error) { toast.error('আপডেট ব্যর্থ: ' + error.message); } else {
+      toast.success('✅ পাসওয়ার্ড পরিবর্তন সফল!');
+      setPwCurrent(''); setPwNew(''); setPwConfirm('');
+    }
+    setPwLoading(false);
   };
 
   const handlePackagePurchase = async (e: React.FormEvent) => {
@@ -356,7 +394,7 @@ export default function UserDashboard() {
   const tabs = [
     {id:'overview',    label:t('overview'),    icon:<BarChart3 size={18}/>},
     {id:'income',      label:t('income'),      icon:<TrendingUp size={18}/>},
-    {id:'generations', label:t('generations'), icon:<Users size={18}/>},
+    {id:'team', label:t('generations'), icon:<Users size={18}/>},
     {id:'clubs',       label:t('clubs'),       icon:<Gift size={18}/>},
     {id:'packages',    label:t('pkgTab'),      icon:<Package size={18}/>},
     {id:'withdraw',    label:t('withdraw'),    icon:<ArrowDownToLine size={18}/>},
@@ -555,28 +593,35 @@ export default function UserDashboard() {
         )}
 
         {user.package_type==='gold'&&user.is_active&&(
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
-            <p className="text-yellow-800 font-semibold text-sm">📊 গোল্ড বকেয়া</p>
-            <div className="flex items-center justify-between mt-1">
-              <p className="text-yellow-700 text-xs">বর্তমান বকেয়া:</p>
-              <span className="font-bold text-yellow-800">৳{realTimeBakeya.toFixed(4)}</span>
+          <div className="bg-gradient-to-br from-yellow-400 to-orange-500 rounded-2xl p-5 mb-6 text-white shadow-lg">
+            <div className="flex items-center gap-2 mb-3">
+              <Award size={22}/>
+              <p className="font-bold text-base">গোল্ড বকেয়া</p>
             </div>
+            <p className="text-4xl font-bold tabular-nums mb-1">৳{realTimeBakeya.toFixed(2)}</p>
             {goldPackages.filter(g=>g.status!=='expired').length>0&&(
-              <div className="flex items-center justify-between mt-1">
-                <p className="text-yellow-600 text-xs">দৈনিক জমা হবে:</p>
-                <span className="text-yellow-700 text-xs font-medium">৳{goldPackages.filter(g=>g.status!=='expired').reduce((s:number,g:any)=>s+(g.daily_bakeya||0),0).toFixed(4)}/দিন</span>
-              </div>
+              <p className="text-yellow-100 text-sm">দৈনিক জমা: ৳{goldPackages.filter(g=>g.status!=='expired').reduce((s:number,g:any)=>s+(g.daily_bakeya||0),0).toFixed(2)}/দিন</p>
             )}
             {goldLockerImages.length>0&&(
-              <div className="mt-2 pt-2 border-t border-yellow-200">
-                <p className="text-[10px] text-yellow-600 mb-1">🔐 লকার ছবি</p>
+              <div className="mt-3 pt-3 border-t border-white/30">
+                <p className="text-yellow-100 text-xs mb-2">🔐 লকার ছবি</p>
                 <div className="flex gap-2 flex-wrap">
                   {goldLockerImages.map((url,i)=>(
-                    <img key={i} src={url} alt={`locker-${i+1}`} className="h-12 w-12 rounded-lg object-cover border border-yellow-300"/>
+                    <img key={i} src={url} alt={`locker-${i+1}`} onClick={()=>setLockerLightbox(url)}
+                      className="h-20 w-20 rounded-xl object-cover border-2 border-white/50 cursor-pointer hover:border-white transition-all hover:scale-105"/>
                   ))}
                 </div>
               </div>
             )}
+          </div>
+        )}
+        {/* Locker lightbox */}
+        {lockerLightbox&&(
+          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={()=>setLockerLightbox(null)}>
+            <div className="relative max-w-2xl w-full" onClick={e=>e.stopPropagation()}>
+              <img src={lockerLightbox} alt="locker" className="w-full rounded-2xl shadow-2xl"/>
+              <button onClick={()=>setLockerLightbox(null)} className="absolute top-3 right-3 w-9 h-9 bg-black/60 text-white rounded-full flex items-center justify-center text-lg hover:bg-black/80">✕</button>
+            </div>
           </div>
         )}
 
@@ -598,11 +643,18 @@ export default function UserDashboard() {
           {/* OVERVIEW */}
           {activeTab==='overview'&&(
             <div>
-              <h2 className="text-lg font-bold mb-5">{t('myId')}</h2>
+              <div className="flex items-center gap-3 mb-5">
+                <h2 className="text-lg font-bold">{t('myId')}</h2>
+                {user.is_dealer && (
+                  <span className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-xs font-bold rounded-full shadow-md">
+                    <Award size={12} /> ডিলার
+                  </span>
+                )}
+              </div>
               <div className="grid md:grid-cols-2 gap-8">
                 <div className="space-y-2">
                   {([
-                    [t('name'), user.name],[t('email'), user.email],[t('phone'), user.phone],
+                    [t('name'), user.name],[t('email'), user.email],[t('phone'), user.phone],['জয়েনিং তারিখ', user.created_at ? new Date(user.created_at).toLocaleDateString('bn-BD') : '—'],
                     [t('package'), pkgLabel],[t('status'), user.is_active?t('active'):t('inactive')],
                     ...(user.package_type==='customer'?[[t('monthlyPv'),`${user.monthly_pv_purchased||0}/100`],...(user.expires_at?[[t('expiry'),`${daysLeft} ${t('daysLeft')}`]]:[])]:[] as any),
                     ...(user.package_type==='shareholder'?[[t('shareholderPkg'),`${user.shareholder_count||1}টি`]]:[] as any),
@@ -622,6 +674,7 @@ export default function UserDashboard() {
                       {label:t('genBonus'),    value:sumByType('generation_bonus')},
                       {label:t('clubBonus'),   value:sumByTypes(['daily_club','weekly_club','insurance_club','pension_club','shareholder_club'])},
                       ...(user.package_type==='gold'?[{label:t('goldDaily'),value:sumByType('gold_daily')}]:[]),
+                      ...(user.is_dealer?[{label:'ডিলার কমিশন',value:sumByType('dealer_commission')}]:[]),
                     ].map((item,i)=>(
                       <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
                         <span className="text-sm text-gray-600">{item.label}</span>
@@ -666,8 +719,8 @@ export default function UserDashboard() {
             </div>
           )}
 
-          {/* GENERATIONS */}
-          {activeTab==='generations'&&(
+          {/* TEAM LEVEL */}
+          {activeTab==='team'&&(
             <div>
               <h2 className="text-lg font-bold mb-2">{t('genTable')}</h2>
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-5 text-xs text-blue-800">{t('genNote')}</div>
@@ -683,7 +736,7 @@ export default function UserDashboard() {
                   {generations.map(({gen,members})=>(
                     <div key={gen} className="border border-gray-200 rounded-xl overflow-hidden">
                       <div className={`${genColors[gen-1]} p-3 text-white font-bold text-sm flex items-center justify-between`}>
-                        <span>{gen}ম জেনারেশন</span><span className="text-xs opacity-80 font-normal">{members.length} জন</span>
+                        <span>লেভেল {gen}</span><span className="text-xs opacity-80 font-normal">{members.length} জন</span>
                       </div>
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -703,6 +756,24 @@ export default function UserDashboard() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+              {/* Referral purchases feed */}
+              {referralPurchases.length>0&&(
+                <div className="mt-6">
+                  <h3 className="font-semibold text-sm text-gray-700 mb-3">ডিরেক্ট রেফারদের সাম্প্রতিক কেনাকাটা</h3>
+                  <div className="space-y-2">
+                    {referralPurchases.map((p:any,i:number)=>(
+                      <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-800">{p.user?.name||'—'}</p>
+                          <p className="text-[10px] text-gray-400">{p.user?.phone} • {new Date(p.created_at).toLocaleDateString('bn-BD')}</p>
+                          <p className="text-[10px] text-gray-500">{p.source||'purchase'}</p>
+                        </div>
+                        <span className="text-sm font-bold text-indigo-600">+{p.amount||0} PV</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -1117,6 +1188,27 @@ export default function UserDashboard() {
                 <button onClick={handleProfileSave} disabled={profLoading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg">
                   {profLoading?t('saving'):t('saveProfile')}
                 </button>
+              </div>
+
+              {/* Password change */}
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <h3 className="font-semibold text-gray-800 mb-4">পাসওয়ার্ড পরিবর্তন</h3>
+                <form onSubmit={handlePasswordChange} className="space-y-3">
+                  {[
+                    {label:'বর্তমান পাসওয়ার্ড', val:pwCurrent, set:setPwCurrent},
+                    {label:'নতুন পাসওয়ার্ড',   val:pwNew,     set:setPwNew},
+                    {label:'নিশ্চিত করুন',       val:pwConfirm, set:setPwConfirm},
+                  ].map((f,i)=>(
+                    <div key={i}>
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">{f.label}</label>
+                      <input type="password" value={f.val} onChange={e=>f.set(e.target.value)} required minLength={4}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none"/>
+                    </div>
+                  ))}
+                  <button type="submit" disabled={pwLoading} className="w-full py-3 bg-gradient-to-r from-gray-700 to-gray-900 text-white font-bold rounded-xl hover:from-gray-800 hover:to-black disabled:opacity-50 transition-all">
+                    {pwLoading ? 'আপডেট হচ্ছে...' : '🔒 পাসওয়ার্ড পরিবর্তন করুন'}
+                  </button>
+                </form>
               </div>
             </div>
           )}

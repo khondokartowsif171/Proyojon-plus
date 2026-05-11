@@ -8,7 +8,7 @@ const strings = {
     home: 'হোম', shop: 'শপ', packages: 'প্যাকেজ', login: 'লগইন', register: 'রেজিস্ট্রেশন',
     dashboard: 'ড্যাশবোর্ড', logout: 'লগআউট', balance: 'ব্যালেন্স',
     // Tabs
-    overview: 'ওভারভিউ', income: 'ইনকাম', generations: 'জেনারেশন', clubs: 'ক্লাব',
+    overview: 'ওভারভিউ', income: 'ইনকাম', generations: 'টিম লেভেল', clubs: 'ক্লাব',
     pkgTab: 'প্যাকেজ', withdraw: 'উইথড্রো', transfer: 'ট্রান্সফার', history: 'ইতিহাস', profile: 'প্রোফাইল',
     // Overview
     myId: 'আমার আইডি তথ্য', name: 'নাম', email: 'ইমেইল', phone: 'ফোন',
@@ -37,7 +37,7 @@ const strings = {
     // Income tab
     incomeDetails: 'ইনকাম বিবরণ',
     // Generations
-    genTable: 'জেনারেশন টেবিল', genNote: '📌 জেনারেশন বোনাস শুধু Customer package এর PV sales এ — প্রতি জেনারেশনে PV এর ১% (১ম–৫ম জেনারেশন)। শুধু সক্রিয় আইডিতে বোনাস যায়।',
+    genTable: 'টিম লেভেল', genNote: '📌 জেনারেশন বোনাস শুধু Customer package এর PV sales এ — প্রতি লেভেলে PV এর ১% (লেভেল ১–৫)। শুধু সক্রিয় আইডিতে বোনাস যায়।',
     noReferrals: 'এখনো কোনো রেফারেল নেই', copyRefLink: 'রেফারেল লিংক কপি করুন',
     genName: 'নাম', genPhone: 'ফোন', genPkg: 'প্যাকেজ', genPv: 'PV পয়েন্ট', genStatus: 'স্ট্যাটাস',
     customerPkg: 'কাস্টমার', shareholderPkg: 'শেয়ারহোল্ডার', goldPkg: 'গোল্ড',
@@ -70,7 +70,7 @@ const strings = {
   en: {
     home: 'Home', shop: 'Shop', packages: 'Packages', login: 'Login', register: 'Register',
     dashboard: 'Dashboard', logout: 'Logout', balance: 'Balance',
-    overview: 'Overview', income: 'Income', generations: 'Generations', clubs: 'Clubs',
+    overview: 'Overview', income: 'Income', generations: 'Team Level', clubs: 'Clubs',
     pkgTab: 'Packages', withdraw: 'Withdraw', transfer: 'Transfer', history: 'History', profile: 'Profile',
     myId: 'My Account Info', name: 'Name', email: 'Email', phone: 'Phone',
     package: 'Package', status: 'Status', active: '✓ Active', inactive: '✗ Inactive',
@@ -92,7 +92,7 @@ const strings = {
     clubNote: 'Pool funds are distributed equally among all active members by admin.',
     clubNote2: 'Inactive accounts receive no club bonus.',
     incomeDetails: 'Income Details',
-    genTable: 'Generation Table', genNote: '📌 Generation bonus only on Customer package PV sales — 1% per generation (Gen 1–5). Only active IDs receive bonus.',
+    genTable: 'Team Level', genNote: '📌 Generation bonus only on Customer package PV sales — 1% per level (Level 1–5). Only active IDs receive bonus.',
     noReferrals: 'No referrals yet', copyRefLink: 'Copy Referral Link',
     genName: 'Name', genPhone: 'Phone', genPkg: 'Package', genPv: 'PV Points', genStatus: 'Status',
     customerPkg: 'Customer', shareholderPkg: 'Shareholder', goldPkg: 'Gold',

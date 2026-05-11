@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '@/lib/supabase';
+import { processDealerCommission } from '@/lib/mlm-business-logic';
 import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
@@ -254,6 +255,9 @@ export default function Checkout() {
       await addToClubPools(pvToAdd);
     }
 
+    // ── Dealer commission: ডিলার নিজে কিনলে তার PV এর ৫% extra ─────────────
+    await processDealerCommission(user.id, pvToAdd);
+
     await refreshUser();
   };
 
@@ -261,13 +265,24 @@ export default function Checkout() {
   // addPvNow = true → Card / Balance payment (সাথে সাথে PV দাও)
   // addPvNow = false → Mobile payment (Admin approve এর পরে PV দেবে)
   const createOrder = async (paymentRef: string, addPvNow: boolean = false) => {
-    const { data: customer } = await supabase
-      .from('ecom_customers')
-      .upsert(
-        { email: shippingAddress.email, name: shippingAddress.name, phone: shippingAddress.phone },
-        { onConflict: 'email' },
-      )
-      .select('id').single();
+    const customerEmail = shippingAddress.email?.trim() || null;
+    let customer: any = null;
+    if (customerEmail) {
+      const { data: c } = await supabase
+        .from('ecom_customers')
+        .upsert(
+          { email: customerEmail, name: shippingAddress.name, phone: shippingAddress.phone },
+          { onConflict: 'email' },
+        )
+        .select('id').single();
+      customer = c;
+    } else {
+      const { data: c } = await supabase
+        .from('ecom_customers')
+        .insert({ name: shippingAddress.name, phone: shippingAddress.phone })
+        .select('id').single();
+      customer = c;
+    }
 
     const { data: order } = await supabase.from('ecom_orders').insert({
       customer_id:              customer?.id  || null,

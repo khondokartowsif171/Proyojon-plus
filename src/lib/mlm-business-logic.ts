@@ -37,6 +37,7 @@ export const PV_CLUB_PCTS: Record<string, number> = {
 export const CUSTOMER_REFERRAL_PCT    = 0.05;   // ৫%
 export const SHAREHOLDER_REFERRAL_PCT = 0.025;  // ২.৫%
 export const GENERATION_BONUS_PCT     = 0.01;   // ১%
+export const DEALER_COMMISSION_PCT    = 0.05;   // ডিলার: নিজের PV এর ৫%
 
 
 // ── Club pool: add PV amount to all relevant pools ───────────────────────────
@@ -191,6 +192,36 @@ export const processReferrerCommission = async (
   }
 
   await supabase.from('mlm_users').update(refUpdates).eq('id', referrerId);
+};
+
+
+// ── Dealer commission: ডিলার নিজে product কিনলে তার PV এর ৫% extra পাবে ──────
+export const processDealerCommission = async (
+  userId: string,
+  pvAmount: number,
+): Promise<void> => {
+  if (pvAmount <= 0) return;
+  const { data: u } = await supabase
+    .from('mlm_users')
+    .select('is_dealer, current_balance, total_income')
+    .eq('id', userId)
+    .single();
+  if (!u?.is_dealer) return;
+
+  const commission = Math.floor(pvAmount * DEALER_COMMISSION_PCT);
+  if (commission <= 0) return;
+
+  await supabase.from('mlm_users').update({
+    current_balance: Number(u.current_balance || 0) + commission,
+    total_income:    Number(u.total_income    || 0) + commission,
+  }).eq('id', userId);
+
+  await supabase.from('mlm_transactions').insert({
+    user_id:     userId,
+    type:        'dealer_commission',
+    amount:      commission,
+    description: `ডিলার কমিশন (৫% × ${pvAmount} PV = ৳${commission})`,
+  });
 };
 
 

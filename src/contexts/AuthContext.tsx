@@ -38,6 +38,7 @@ interface User {
   nid_front_url?: string;
   nid_back_url?: string;
   shareholder_count?: number;
+  created_at?: string;
 }
 
 interface AuthContextType {

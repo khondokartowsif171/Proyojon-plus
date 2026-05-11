@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLang } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
+import { processDealerCommission } from '@/lib/mlm-business-logic';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import AdminProductManager from '@/components/AdminProductManager';
@@ -9,6 +11,7 @@ import {
   Users, Wallet, TrendingUp, Gift, Search, Lock, Unlock, Edit, Trash2, RefreshCw,
   DollarSign, CheckCircle, XCircle, Play, Loader2, BarChart3, Network, Package,
   FolderTree, CreditCard, FileText, Plus, Save, ChevronDown, ChevronRight, ShoppingBag,
+  Image, Bell, Star, Award,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -31,6 +34,7 @@ const PV_CLUB_PCTS: Record<string, number> = {
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  useLang(); // subscribe to LanguageContext so Header's language toggle re-renders this page
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [users, setUsers] = useState<any[]>([]);
@@ -57,6 +61,40 @@ export default function AdminDashboard() {
   const [manualBakeyaUserId,  setManualBakeyaUserId]  = useState('');
   const [manualBakeyaAmount,  setManualBakeyaAmount]  = useState('');
   const [manualBakeyaLoading, setManualBakeyaLoading] = useState(false);
+
+  // Gallery state
+  const [galleryItems,     setGalleryItems]     = useState<any[]>([]);
+  const [galleryCaption,   setGalleryCaption]   = useState('');
+  const [galleryUploading, setGalleryUploading] = useState(false);
+  const galleryFileRef = useRef<HTMLInputElement>(null);
+
+  // Notice state
+  const [notices,        setNotices]        = useState<any[]>([]);
+  const [noticeTitle,    setNoticeTitle]    = useState('');
+  const [noticeContent,  setNoticeContent]  = useState('');
+  const [noticeExpiry,   setNoticeExpiry]   = useState('');
+  const [noticeSaving,   setNoticeSaving]   = useState(false);
+
+  // Overview extras
+  const [pvLeaders,        setPvLeaders]        = useState<any[]>([]);
+  const [pkgModalType,     setPkgModalType]     = useState<string|null>(null);
+  const [pkgModalUsers,    setPkgModalUsers]    = useState<any[]>([]);
+
+  // Gift bonus state (#8)
+  const [giftModalUser,  setGiftModalUser]  = useState<any>(null);
+  const [giftAmount,     setGiftAmount]     = useState('');
+  const [giftLoading,    setGiftLoading]    = useState(false);
+
+  // Dealer form state (#16)
+  const [dealerFormUser,  setDealerFormUser]  = useState<any>(null);
+  const [dealerFormType,  setDealerFormType]  = useState('');
+  const [dealerFormNotes, setDealerFormNotes] = useState('');
+
+  // Gold packages admin (#15)
+  const [adminGoldPkgs,  setAdminGoldPkgs]  = useState<any[]>([]);
+  const [goldEditPkg,    setGoldEditPkg]    = useState<any>(null);
+  const [goldEditDate,   setGoldEditDate]   = useState('');
+  const [goldEditLoading,setGoldEditLoading]= useState(false);
 
   useEffect(() => {
     if (!user || user.role !== 'admin') { navigate('/login'); return; }
@@ -124,6 +162,26 @@ export default function AdminDashboard() {
     const { data: pvData } = await supabase.from('mlm_payment_verifications')
       .select('*, user_id, user:mlm_users(name, email, phone)').order('created_at', { ascending: false });
     if (pvData) setPV(pvData);
+
+    const { data: galleryData } = await supabase.from('proyojon_gallery')
+      .select('*').order('sort_order').order('created_at', { ascending: false });
+    if (galleryData) setGalleryItems(galleryData);
+
+    const { data: noticeData } = await supabase.from('proyojon_notices')
+      .select('*').order('priority', { ascending: false }).order('created_at', { ascending: false });
+    if (noticeData) setNotices(noticeData);
+
+    const { data: leadersData } = await supabase.from('mlm_users')
+      .select('id, name, phone, package_type, monthly_pv_purchased')
+      .neq('role', 'admin')
+      .order('monthly_pv_purchased', { ascending: false })
+      .limit(15);
+    if (leadersData) setPvLeaders(leadersData);
+
+    const { data: goldPkgsData } = await supabase.from('mlm_gold_packages')
+      .select('*, user:mlm_users(name,phone)')
+      .order('purchased_at', { ascending: false });
+    if (goldPkgsData) setAdminGoldPkgs(goldPkgsData);
   };
 
   // ── Daily cron ───────────────────────────────────────────────────────────────
@@ -252,6 +310,109 @@ export default function AdminDashboard() {
     await supabase.from('mlm_users').update({ is_locked: lock }).eq('id', userId);
     toast.success(lock ? 'আইডি লক' : 'আইডি আনলক');
     fetchAll();
+  };
+
+  const handleToggleDealer = async (userId: string, makeDealer: boolean) => {
+    const { error } = await supabase.from('mlm_users').update({ is_dealer: makeDealer }).eq('id', userId);
+    if (error) { toast.error('সমস্যা: ' + error.message); return; }
+    toast.success(makeDealer ? '✅ ডিলার মনোনীত করা হয়েছে' : '❌ ডিলার মর্যাদা বাতিল');
+    setDealerFormUser(null); setDealerFormType(''); setDealerFormNotes('');
+    fetchAll();
+  };
+
+  const handleGiftBonus = async () => {
+    if (!giftModalUser) return;
+    const amt = parseInt(giftAmount, 10);
+    if (isNaN(amt) || amt <= 0) { toast.error('সঠিক পরিমাণ দিন'); return; }
+    setGiftLoading(true);
+    const { data: u } = await supabase.from('mlm_users').select('current_balance,total_income').eq('id', giftModalUser.id).single();
+    await supabase.from('mlm_users').update({
+      current_balance: (u?.current_balance||0) + amt,
+      total_income:    (u?.total_income||0) + amt,
+    }).eq('id', giftModalUser.id);
+    await supabase.from('mlm_transactions').insert({
+      user_id: giftModalUser.id, type: 'gift_bonus', amount: amt,
+      description: `মাসিক PV গিফট পুরস্কার — ৳${amt}`,
+    });
+    toast.success(`✅ ৳${amt} গিফট দেওয়া হয়েছে ${giftModalUser.name} কে`);
+    setGiftModalUser(null); setGiftAmount('');
+    setGiftLoading(false); fetchAll();
+  };
+
+  const handleGoldPkgDateSave = async () => {
+    if (!goldEditPkg || !goldEditDate) return;
+    setGoldEditLoading(true);
+    const newExpiry = new Date(goldEditDate).toISOString();
+    const remainingDays = Math.max(1, Math.ceil((new Date(goldEditDate).getTime() - Date.now()) / 86400000));
+    const newDailyIncome = parseFloat(((goldEditPkg.referral_income_pending || 0) / remainingDays).toFixed(4));
+    await supabase.from('mlm_gold_packages').update({
+      expires_at: newExpiry,
+      daily_income: newDailyIncome,
+    }).eq('id', goldEditPkg.id);
+    toast.success('✅ মেয়াদ আপডেট হয়েছে');
+    setGoldEditPkg(null); setGoldEditDate('');
+    setGoldEditLoading(false); fetchAll();
+  };
+
+  const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('শুধু ছবি আপলোড করুন'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error('ছবি ৫MB এর বেশি হওয়া যাবে না'); return; }
+    setGalleryUploading(true);
+    const ext      = file.name.split('.').pop();
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error: upErr } = await supabase.storage.from('gallery-images').upload(`gallery/${filename}`, file);
+    if (upErr) { toast.error('আপলোড সমস্যা: ' + upErr.message); setGalleryUploading(false); return; }
+    const { data: urlData } = supabase.storage.from('gallery-images').getPublicUrl(`gallery/${filename}`);
+    await supabase.from('proyojon_gallery').insert({ image_url: urlData.publicUrl, caption: galleryCaption.trim() || null, sort_order: 0, is_visible: true });
+    toast.success('✅ ছবি গ্যালারিতে যোগ হয়েছে!');
+    setGalleryCaption('');
+    if (galleryFileRef.current) galleryFileRef.current.value = '';
+    fetchAll(); setGalleryUploading(false);
+  };
+
+  const handleDeleteGallery = async (id: string, imageUrl: string) => {
+    await supabase.from('proyojon_gallery').delete().eq('id', id);
+    const path = imageUrl.split('/gallery-images/')[1];
+    if (path) await supabase.storage.from('gallery-images').remove([path]);
+    toast.success('মুছে ফেলা হয়েছে'); fetchAll();
+  };
+
+  const handleToggleGalleryVisibility = async (id: string, current: boolean) => {
+    await supabase.from('proyojon_gallery').update({ is_visible: !current }).eq('id', id);
+    fetchAll();
+  };
+
+  const handleSaveNotice = async () => {
+    if (!noticeTitle.trim()) { toast.error('নোটিশের শিরোনাম দিন'); return; }
+    setNoticeSaving(true);
+    await supabase.from('proyojon_notices').insert({
+      title:      noticeTitle.trim(),
+      content:    noticeContent.trim() || null,
+      expires_at: noticeExpiry || null,
+      is_active:  true,
+      priority:   0,
+    });
+    toast.success('✅ নোটিশ প্রকাশিত হয়েছে!');
+    setNoticeTitle(''); setNoticeContent(''); setNoticeExpiry('');
+    fetchAll(); setNoticeSaving(false);
+  };
+
+  const handleDeleteNotice = async (id: string) => {
+    await supabase.from('proyojon_notices').delete().eq('id', id);
+    toast.success('নোটিশ মুছে ফেলা হয়েছে'); fetchAll();
+  };
+
+  const handleToggleNotice = async (id: string, current: boolean) => {
+    await supabase.from('proyojon_notices').update({ is_active: !current }).eq('id', id);
+    fetchAll();
+  };
+
+  const openPackageModal = async (pkgType: string) => {
+    setPkgModalType(pkgType);
+    const pkgUsers = users.filter(u => u.package_type === pkgType && u.role !== 'admin');
+    setPkgModalUsers(pkgUsers);
   };
 
   const handleUpdateUser = async () => {
@@ -471,6 +632,9 @@ export default function AdminDashboard() {
 
           // Club pools
           if (pvToAdd >= 1) await addToClubPools(pvToAdd);
+
+          // Dealer commission: ডিলার নিজে কিনলে তার PV এর ৫% extra
+          if (pvToAdd > 0) await processDealerCommission(pv.user_id, pvToAdd);
         }
 
         toast.success('✅ পণ্য পেমেন্ট অনুমোদিত! PV ও Club pool আপডেট হয়েছে।');
@@ -683,7 +847,9 @@ export default function AdminDashboard() {
     { id: 'network',      label: 'নেটওয়ার্ক টেবিল', icon: <Network size={18} /> },
     { id: 'categories',   label: 'ক্যাটাগরি',       icon: <FolderTree size={18} /> },
     { id: 'products',     label: 'পণ্য ম্যানেজ',    icon: <ShoppingBag size={18} /> },
-    { id: 'payments',     label: 'পেমেন্ট ভেরিফাই', icon: <CreditCard size={18} /> },
+    { id: 'content',       label: 'গ্যালারি / নোটিশ',  icon: <Image size={18} /> },
+    { id: 'gold_packages', label: 'গোল্ড প্যাকেজ',    icon: <Award size={18} /> },
+    { id: 'payments',      label: 'পেমেন্ট ভেরিফাই',  icon: <CreditCard size={18} /> },
     { id: 'clubs',        label: 'ক্লাব বন্টন',     icon: <Gift size={18} /> },
     { id: 'withdrawals',  label: 'উইথড্রো',         icon: <Wallet size={18} /> },
     { id: 'transactions', label: 'লেনদেন',          icon: <FileText size={18} /> },
@@ -774,25 +940,35 @@ export default function AdminDashboard() {
             {activeTab === 'overview' && (
               <div>
                 <h2 className="text-lg font-bold mb-4">সিস্টেম ওভারভিউ</h2>
-                <div className="grid md:grid-cols-3 gap-6">
-                  <div>
-                    <h3 className="font-semibold text-sm text-gray-700 mb-3">প্যাকেজ অনুযায়ী</h3>
-                    {['customer', 'shareholder', 'gold'].map(pkg => {
-                      const count = users.filter(u => u.package_type === pkg && u.role !== 'admin').length;
-                      const pct   = Math.round((count / (stats.totalUsers || 1)) * 100);
-                      return (
-                        <div key={pkg} className="mb-3">
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="text-gray-600">{pkg==='customer'?'কাস্টমার':pkg==='shareholder'?'শেয়ারহোল্ডার':'গোল্ড'}</span>
-                            <span className="font-bold">{count} জন ({pct}%)</span>
-                          </div>
-                          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${pkg==='customer'?'bg-blue-500':pkg==='shareholder'?'bg-purple-500':'bg-yellow-500'}`} style={{ width: `${pct}%` }} />
-                          </div>
+
+                {/* Clickable package distribution cards */}
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  {[
+                    { pkg: 'customer',    label: 'কাস্টমার',        color: 'from-blue-500 to-cyan-500',   bg: 'bg-blue-50 border-blue-200',   textColor: 'text-blue-700' },
+                    { pkg: 'shareholder', label: 'শেয়ারহোল্ডার',   color: 'from-purple-500 to-violet-500', bg: 'bg-purple-50 border-purple-200', textColor: 'text-purple-700' },
+                    { pkg: 'gold',        label: 'গোল্ড',            color: 'from-yellow-500 to-orange-500', bg: 'bg-yellow-50 border-yellow-200', textColor: 'text-yellow-700' },
+                  ].map(({ pkg, label, color, bg, textColor }) => {
+                    const count = users.filter(u => u.package_type === pkg && u.role !== 'admin').length;
+                    const pct   = Math.round((count / (stats.totalUsers || 1)) * 100);
+                    return (
+                      <button key={pkg} onClick={() => openPackageModal(pkg)}
+                        className={`${bg} border rounded-2xl p-4 text-left hover:shadow-md transition-all cursor-pointer`}>
+                        <div className={`w-10 h-10 bg-gradient-to-br ${color} rounded-xl flex items-center justify-center text-white mb-3`}>
+                          <Users size={18} />
                         </div>
-                      );
-                    })}
-                  </div>
+                        <p className="text-xs text-gray-500 mb-1">{label}</p>
+                        <p className={`text-2xl font-extrabold ${textColor}`}>{count} জন</p>
+                        <div className="w-full h-1.5 bg-white/60 rounded-full mt-2 overflow-hidden">
+                          <div className={`h-full bg-gradient-to-r ${color} rounded-full`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1">{pct}% মোট সদস্যের</p>
+                        <p className={`text-[10px] font-semibold ${textColor} mt-1`}>ক্লিক করে তালিকা দেখুন →</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-6">
                   <div>
                     <h3 className="font-semibold text-sm text-gray-700 mb-3">ক্লাব সদস্য</h3>
                     {Object.entries(clubLabels).map(([key, label]) => {
@@ -822,6 +998,29 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Monthly PV leaderboard */}
+                  <div>
+                    <h3 className="font-semibold text-sm text-gray-700 mb-3 flex items-center gap-1.5">
+                      <Star size={14} className="text-yellow-500" /> এ মাসের PV র‍্যাংকিং
+                    </h3>
+                    <div className="space-y-1.5">
+                      {pvLeaders.filter(u => (u.monthly_pv_purchased || 0) > 0).slice(0, 15).map((u, i) => (
+                        <div key={u.id} className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-gray-50 text-xs">
+                          <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] text-white flex-shrink-0 ${i===0?'bg-yellow-500':i===1?'bg-gray-400':i===2?'bg-orange-400':'bg-gray-300'}`}>{i+1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{u.name}</p>
+                            <p className="text-gray-400">{u.phone}</p>
+                          </div>
+                          <span className="font-bold text-green-600 flex-shrink-0">{(u.monthly_pv_purchased||0).toLocaleString()} PV</span>
+                          <button onClick={()=>{setGiftModalUser(u);setGiftAmount('');}} className="ml-1 px-2 py-1 bg-yellow-500 text-white text-[10px] font-bold rounded-lg hover:bg-yellow-600">গিফট</button>
+                        </div>
+                      ))}
+                      {pvLeaders.filter(u => (u.monthly_pv_purchased || 0) > 0).length === 0 && (
+                        <p className="text-xs text-gray-400 text-center py-4">এই মাসে কোনো PV নেই</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -847,7 +1046,12 @@ export default function AdminDashboard() {
                     <tbody>
                       {filteredUsers.filter(u => u.role !== 'admin').map(u => (
                         <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50">
-                          <td className="py-2 px-3 font-medium">{u.name}</td>
+                          <td className="py-2 px-3 font-medium">
+                            <div className="flex items-center gap-1.5">
+                              {u.name}
+                              {u.is_dealer && <span className="text-[9px] px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded-full font-bold">ডিলার</span>}
+                            </div>
+                          </td>
                           <td className="py-2 px-3 text-xs"><p>{u.email}</p><p className="text-gray-400">{u.phone}</p></td>
                           <td className="py-2 px-3">
                             <span className={`text-xs px-2 py-0.5 rounded-full ${u.package_type==='gold'?'bg-yellow-100 text-yellow-700':u.package_type==='shareholder'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>
@@ -868,6 +1072,12 @@ export default function AdminDashboard() {
                               <button onClick={() => handleLockUser(u.id, !u.is_locked)}
                                 className={`p-1.5 rounded-lg ${u.is_locked?'hover:bg-green-50 text-green-600':'hover:bg-red-50 text-red-600'}`}>
                                 {u.is_locked?<Unlock size={14} />:<Lock size={14} />}
+                              </button>
+                              <button
+                                onClick={() => u.is_dealer ? handleToggleDealer(u.id, false) : setDealerFormUser(u)}
+                                title={u.is_dealer ? 'ডিলার মর্যাদা বাতিল' : 'ডিলার বানান'}
+                                className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${u.is_dealer ? 'bg-orange-100 text-orange-600 hover:bg-orange-200' : 'hover:bg-orange-50 text-gray-400 hover:text-orange-600'}`}>
+                                <Award size={14} />
                               </button>
                             </div>
                           </td>
@@ -989,6 +1199,141 @@ export default function AdminDashboard() {
 
             {activeTab === 'products' && (
               <AdminProductManager products={products} categories={categories} onRefresh={fetchAll} />
+            )}
+
+            {activeTab === 'content' && (
+              <div className="space-y-8">
+                {/* ── Image Gallery ── */}
+                <div>
+                  <h2 className="text-lg font-bold mb-1 flex items-center gap-2"><Image size={20} className="text-indigo-600" /> ইমেজ গ্যালারি</h2>
+                  <p className="text-xs text-gray-500 mb-4">ওয়েবসাইটে যে ছবিগুলো দেখাবে সেগুলো এখান থেকে আপলোড করুন</p>
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-4">
+                    <div className="grid md:grid-cols-3 gap-3 items-end">
+                      <div>
+                        <label className="text-xs font-medium text-gray-600 mb-1 block">ছবি বেছে নিন</label>
+                        <input ref={galleryFileRef} type="file" accept="image/*" onChange={handleGalleryUpload}
+                          className="w-full text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-gray-600 mb-1 block">ক্যাপশন (ঐচ্ছিক)</label>
+                        <input value={galleryCaption} onChange={e => setGalleryCaption(e.target.value)}
+                          placeholder="ছবির বিবরণ..." className="w-full px-3 py-2 rounded-lg border text-sm" />
+                      </div>
+                      <div>
+                        {galleryUploading && <div className="flex items-center gap-2 text-indigo-600 text-sm"><Loader2 size={16} className="animate-spin" /> আপলোড হচ্ছে...</div>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {galleryItems.map(item => (
+                      <div key={item.id} className="relative group rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
+                        <img src={item.image_url} alt={item.caption || ''} className="w-full aspect-square object-cover" />
+                        {item.caption && <p className="text-[10px] text-gray-600 p-1.5 truncate">{item.caption}</p>}
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <button onClick={() => handleToggleGalleryVisibility(item.id, item.is_visible)}
+                            className={`px-2 py-1 text-[10px] font-bold rounded-lg ${item.is_visible ? 'bg-yellow-500 text-white' : 'bg-green-500 text-white'}`}>
+                            {item.is_visible ? 'লুকান' : 'দেখান'}
+                          </button>
+                          <button onClick={() => handleDeleteGallery(item.id, item.image_url)}
+                            className="px-2 py-1 text-[10px] font-bold rounded-lg bg-red-500 text-white">মুছুন</button>
+                        </div>
+                        {!item.is_visible && <div className="absolute top-1 right-1 bg-gray-700/70 text-white text-[9px] px-1.5 py-0.5 rounded">লুকানো</div>}
+                      </div>
+                    ))}
+                    {galleryItems.length === 0 && <p className="col-span-4 text-center text-sm text-gray-400 py-8">কোনো ছবি নেই</p>}
+                  </div>
+                </div>
+
+                <hr className="border-gray-200" />
+
+                {/* ── Notice Board ── */}
+                <div>
+                  <h2 className="text-lg font-bold mb-1 flex items-center gap-2"><Bell size={20} className="text-orange-600" /> নোটিশ বোর্ড</h2>
+                  <p className="text-xs text-gray-500 mb-4">ওয়েবসাইটের নোটিশ বার এ যা দেখাবে সেগুলো এখান থেকে পোস্ট করুন</p>
+                  <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 mb-4">
+                    <div className="grid md:grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="text-xs font-medium text-gray-600 mb-1 block">শিরোনাম *</label>
+                        <input value={noticeTitle} onChange={e => setNoticeTitle(e.target.value)}
+                          placeholder="নোটিশের শিরোনাম..." className="w-full px-3 py-2 rounded-lg border text-sm" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-gray-600 mb-1 block">মেয়াদ শেষ (ঐচ্ছিক)</label>
+                        <input type="datetime-local" value={noticeExpiry} onChange={e => setNoticeExpiry(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border text-sm" />
+                      </div>
+                    </div>
+                    <div className="mb-3">
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">বিস্তারিত (ঐচ্ছিক)</label>
+                      <textarea value={noticeContent} onChange={e => setNoticeContent(e.target.value)} rows={2}
+                        placeholder="নোটিশের বিস্তারিত তথ্য..." className="w-full px-3 py-2 rounded-lg border text-sm resize-none" />
+                    </div>
+                    <button onClick={handleSaveNotice} disabled={noticeSaving}
+                      className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700 disabled:opacity-50">
+                      {noticeSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} নোটিশ প্রকাশ করুন
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {notices.map(notice => (
+                      <div key={notice.id} className={`flex items-start justify-between p-3 rounded-xl border ${notice.is_active ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100 opacity-60'}`}>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm">{notice.title}</p>
+                          {notice.content && <p className="text-xs text-gray-500 mt-0.5">{notice.content}</p>}
+                          {notice.expires_at && (
+                            <p className="text-[10px] text-orange-500 mt-1">মেয়াদ শেষ: {new Date(notice.expires_at).toLocaleDateString('bn-BD')}</p>
+                          )}
+                        </div>
+                        <div className="flex gap-1 ml-3 flex-shrink-0">
+                          <button onClick={() => handleToggleNotice(notice.id, notice.is_active)}
+                            className={`px-2 py-1 text-[10px] font-bold rounded-lg ${notice.is_active ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                            {notice.is_active ? 'বন্ধ' : 'চালু'}
+                          </button>
+                          <button onClick={() => handleDeleteNotice(notice.id)}
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-red-500"><Trash2 size={12} /></button>
+                        </div>
+                      </div>
+                    ))}
+                    {notices.length === 0 && <p className="text-center text-sm text-gray-400 py-6">কোনো নোটিশ নেই</p>}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'gold_packages' && (
+              <div>
+                <h2 className="text-lg font-bold mb-4">গোল্ড প্যাকেজ ম্যানেজ</h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="bg-yellow-50">
+                      {['#','ব্যবহারকারী','ফোন','কেনার তারিখ','মেয়াদ শেষ','বাকি দিন','দৈনিক ইনকাম','স্ট্যাটাস','সম্পাদনা'].map(h=>(
+                        <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-600">{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {adminGoldPkgs.map((pkg:any, i:number)=>{
+                        const remaining = pkg.expires_at ? Math.max(0,Math.ceil((new Date(pkg.expires_at).getTime()-Date.now())/86400000)) : '—';
+                        return (
+                          <tr key={pkg.id} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-2 px-3 text-xs text-gray-400">{i+1}</td>
+                            <td className="py-2 px-3 font-medium text-xs">{pkg.user?.name||'—'}</td>
+                            <td className="py-2 px-3 text-xs text-gray-500">{pkg.user?.phone||'—'}</td>
+                            <td className="py-2 px-3 text-xs">{pkg.purchased_at?new Date(pkg.purchased_at).toLocaleDateString('bn-BD'):'—'}</td>
+                            <td className="py-2 px-3 text-xs">{pkg.expires_at?new Date(pkg.expires_at).toLocaleDateString('bn-BD'):'—'}</td>
+                            <td className="py-2 px-3 text-xs font-bold text-orange-600">{remaining}</td>
+                            <td className="py-2 px-3 text-xs">৳{(pkg.daily_income||0).toFixed(4)}</td>
+                            <td className="py-2 px-3"><span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${pkg.status==='active'?'bg-green-100 text-green-700':'bg-red-100 text-red-500'}`}>{pkg.status||'active'}</span></td>
+                            <td className="py-2 px-3">
+                              <button onClick={()=>{setGoldEditPkg(pkg);setGoldEditDate(pkg.expires_at?new Date(pkg.expires_at).toISOString().split('T')[0]:'');}}
+                                className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-lg text-xs hover:bg-indigo-200">সম্পাদনা</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {adminGoldPkgs.length===0&&<p className="text-center text-gray-400 py-8 text-sm">কোনো গোল্ড প্যাকেজ নেই</p>}
+                </div>
+              </div>
             )}
 
             {activeTab === 'payments' && (
@@ -1334,6 +1679,127 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+      {/* Package distribution modal */}
+      {pkgModalType && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setPkgModalType(null)}>
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">
+                {pkgModalType === 'customer' ? 'কাস্টমার' : pkgModalType === 'shareholder' ? 'শেয়ারহোল্ডার' : 'গোল্ড'} সদস্য তালিকা
+              </h2>
+              <span className="text-sm font-bold text-gray-500">{pkgModalUsers.length} জন</span>
+            </div>
+            <div className="space-y-2">
+              {pkgModalUsers.map((u, i) => (
+                <div key={u.id} className="flex items-center gap-3 py-2 px-3 rounded-xl bg-gray-50 text-sm">
+                  <span className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 flex-shrink-0">{i+1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{u.name}</p>
+                    <p className="text-xs text-gray-400">{u.phone}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-500'}`}>
+                      {u.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}
+                    </span>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{(u.monthly_pv_purchased||0)} PV</p>
+                  </div>
+                </div>
+              ))}
+              {pkgModalUsers.length === 0 && <p className="text-center text-gray-400 py-8">কোনো সদস্য নেই</p>}
+            </div>
+            <button onClick={() => setPkgModalType(null)} className="mt-4 w-full py-2 border border-gray-200 rounded-xl text-sm hover:bg-gray-50">বন্ধ করুন</button>
+          </div>
+        </div>
+      )}
+
+      {/* Dealer form modal (#16) */}
+      {dealerFormUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={()=>setDealerFormUser(null)}>
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full" onClick={e=>e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-4">ডিলার নিয়োগ ফর্ম</h2>
+            <div className="space-y-3 mb-4">
+              {[['নাম', dealerFormUser.name],['ফোন', dealerFormUser.phone],['প্যাকেজ', dealerFormUser.package_type]].map(([l,v])=>(
+                <div key={l} className="flex justify-between items-center py-2 px-3 bg-gray-50 rounded-lg">
+                  <span className="text-sm text-gray-500">{l}</span>
+                  <span className="text-sm font-semibold">{v}</span>
+                </div>
+              ))}
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">ডিলার ধরন (ঐচ্ছিক)</label>
+                <input value={dealerFormType} onChange={e=>setDealerFormType(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-500 outline-none"
+                  placeholder="যেমন: আঞ্চলিক ডিলার"/>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">মন্তব্য (ঐচ্ছিক)</label>
+                <textarea value={dealerFormNotes} onChange={e=>setDealerFormNotes(e.target.value)} rows={2}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-500 outline-none resize-none"
+                  placeholder="অতিরিক্ত তথ্য"/>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={()=>setDealerFormUser(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50">বাতিল</button>
+              <button onClick={()=>handleToggleDealer(dealerFormUser.id, true)}
+                className="flex-1 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 text-white rounded-xl text-sm font-bold hover:from-orange-600 hover:to-amber-700">
+                ডিলার মনোনীত করুন
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Gift bonus modal (#8) */}
+      {giftModalUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={()=>setGiftModalUser(null)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full" onClick={e=>e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-2">গিফট বোনাস</h2>
+            <p className="text-sm text-gray-600 mb-4">{giftModalUser.name} ({giftModalUser.phone}) — {(giftModalUser.monthly_pv_purchased||0)} PV</p>
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-500 mb-1 block">পরিমাণ (৳)</label>
+              <input type="number" value={giftAmount} onChange={e=>setGiftAmount(e.target.value)} min="1"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-yellow-500 outline-none"
+                placeholder="গিফটের পরিমাণ"/>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={()=>setGiftModalUser(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50">বাতিল</button>
+              <button onClick={handleGiftBonus} disabled={giftLoading||!giftAmount}
+                className="flex-1 py-2.5 bg-gradient-to-r from-yellow-500 to-amber-600 text-white rounded-xl text-sm font-bold hover:from-yellow-600 hover:to-amber-700 disabled:opacity-50">
+                {giftLoading?'দেওয়া হচ্ছে...':'গিফট দিন'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Gold package edit modal (#15) */}
+      {goldEditPkg && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={()=>setGoldEditPkg(null)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full" onClick={e=>e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-2">গোল্ড প্যাকেজ সম্পাদনা</h2>
+            <p className="text-sm text-gray-500 mb-4">{goldEditPkg.user?.name} — দৈনিক: ৳{(goldEditPkg.daily_income||0).toFixed(4)}</p>
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {[[-30,'−৩০'],[- 7,'−৭'],[7,'+৭'],[30,'+৩০']].map(([days,label])=>(
+                <button key={days} onClick={()=>{const d=new Date(goldEditDate||goldEditPkg.expires_at);d.setDate(d.getDate()+(days as number));setGoldEditDate(d.toISOString().split('T')[0]);}}
+                  className="py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50">{label} দিন</button>
+              ))}
+            </div>
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-500 mb-1 block">মেয়াদ শেষ তারিখ</label>
+              <input type="date" value={goldEditDate} onChange={e=>setGoldEditDate(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none"/>
+            </div>
+            {goldEditDate&&<p className="text-xs text-indigo-600 mb-4">নতুন দৈনিক ইনকাম: ৳{(Math.max(1,Math.ceil((new Date(goldEditDate).getTime()-Date.now())/86400000))>0?(goldEditPkg.referral_income_pending||0)/Math.max(1,Math.ceil((new Date(goldEditDate).getTime()-Date.now())/86400000)):0).toFixed(4)}/দিন (পুনঃগণনা)</p>}
+            <div className="flex gap-3">
+              <button onClick={()=>setGoldEditPkg(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50">বাতিল</button>
+              <button onClick={handleGoldPkgDateSave} disabled={goldEditLoading||!goldEditDate}
+                className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 disabled:opacity-50">
+                {goldEditLoading?'সেভ হচ্ছে...':'সেভ করুন'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Footer />
     </div>
   );

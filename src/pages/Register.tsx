@@ -12,11 +12,10 @@ export default function Register() {
   const [searchParams] = useSearchParams();
   const [step, setStep] = useState(1); // 1: form, 2: payment, 3: success
   const [form, setForm] = useState({
-    name: '', email: '', phone: '', password: '', confirmPassword: '',
+    name: '', phone: '', password: '', confirmPassword: '',
     package_type: 'customer',
     referrer_id: searchParams.get('ref') || '',
   });
-  const [showEmailField, setShowEmailField] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -75,7 +74,6 @@ export default function Register() {
     setLoading(true);
     const result = await register({
       name: form.name.trim(),
-      email: form.email.trim() || undefined,   // email optional
       phone: phoneClean,
       password: form.password,
       package_type: form.package_type,
@@ -473,36 +471,6 @@ export default function Register() {
                   <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} required
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="০১XXXXXXXXX" />
                 </div>
-              </div>
-
-              {/* Email — Optional */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-sm font-medium text-gray-700">
-                    ইমেইল
-                    <span className="ml-1.5 text-xs text-gray-400 font-normal">(ঐচ্ছিক)</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => { setShowEmailField(!showEmailField); if (showEmailField) setForm({ ...form, email: '' }); }}
-                    className="text-xs text-indigo-600 hover:text-indigo-700 font-medium"
-                  >
-                    {showEmailField ? '✕ বাদ দিন' : '+ ইমেইল যোগ করুন'}
-                  </button>
-                </div>
-                {showEmailField && (
-                  <input
-                    type="email"
-                    value={form.email}
-                    onChange={e => setForm({ ...form, email: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm"
-                    placeholder="your@email.com"
-                    autoComplete="email"
-                  />
-                )}
-                {!showEmailField && (
-                  <p className="text-xs text-gray-400">📱 মোবাইল নম্বর দিয়েই লগইন করতে পারবেন — ইমেইল না দিলেও চলবে।</p>
-                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

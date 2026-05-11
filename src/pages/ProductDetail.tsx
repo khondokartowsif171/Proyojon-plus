@@ -18,11 +18,12 @@ export default function ProductDetail() {
     const fetchProduct = async () => {
       if (!handle) return;
       setLoading(true);
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('ecom_products')
-        .select('*, variants:ecom_product_variants(*)')
+        .select('*')
         .eq('handle', handle)
-        .single();
+        .maybeSingle();
+      if (error) console.error('Product fetch error:', error.message);
 
       if (data) {
         setProduct(data);

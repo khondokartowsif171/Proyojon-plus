@@ -7,18 +7,29 @@ import ProductCard from '@/components/ProductCard';
 import { ArrowRight, Users, Shield, TrendingUp, Gift, Star, Zap, Crown, Award, ChevronRight, ShoppingBag } from 'lucide-react';
 
 export default function AppLayout() {
-  const [products, setProducts] = useState<any[]>([]);
+  const [products,    setProducts]    = useState<any[]>([]);
   const [collections, setCollections] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading,     setLoading]     = useState(true);
+  const [notices,     setNotices]     = useState<any[]>([]);
+  const [gallery,     setGallery]     = useState<any[]>([]);
+  const [lightboxImg, setLightboxImg] = useState<string|null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
-      const [productsRes, collectionsRes] = await Promise.all([
+      const now = new Date().toISOString();
+      const [productsRes, collectionsRes, noticesRes, galleryRes] = await Promise.all([
         supabase.from('ecom_products').select('*').eq('status', 'active').limit(8),
         supabase.from('ecom_collections').select('*').eq('is_visible', true),
+        supabase.from('proyojon_notices').select('*').eq('is_active', true)
+          .or(`expires_at.is.null,expires_at.gt.${now}`)
+          .order('priority', { ascending: false }).limit(5),
+        supabase.from('proyojon_gallery').select('*').eq('is_visible', true)
+          .order('sort_order').order('created_at', { ascending: false }),
       ]);
-      if (productsRes.data) setProducts(productsRes.data);
+      if (productsRes.data)    setProducts(productsRes.data);
       if (collectionsRes.data) setCollections(collectionsRes.data);
+      if (noticesRes.data)     setNotices(noticesRes.data);
+      if (galleryRes.data)     setGallery(galleryRes.data);
       setLoading(false);
     };
     fetchData();
@@ -27,6 +38,25 @@ export default function AppLayout() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
+
+      {/* Notice Bar */}
+      {notices.length > 0 && (
+        <div className="bg-gradient-to-r from-orange-500 to-amber-500 text-white py-2 px-4 overflow-hidden">
+          <div className="max-w-7xl mx-auto flex items-center gap-3">
+            <span className="flex-shrink-0 text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full">📢 নোটিশ</span>
+            <div className="overflow-hidden flex-1">
+              <div className="flex gap-8 animate-marquee whitespace-nowrap">
+                {[...notices, ...notices].map((n, i) => (
+                  <span key={i} className="text-sm font-medium flex-shrink-0">
+                    {n.title}{n.content ? ` — ${n.content}` : ''}
+                    <span className="mx-4 opacity-40">|</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hero */}
       <section className="relative bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-800 overflow-hidden">
@@ -62,7 +92,7 @@ export default function AppLayout() {
             </div>
 
             {/* Package Cards */}
-            <div className="hidden lg:block relative">
+            <div className="relative mt-10 lg:mt-0">
               <div className="relative w-full aspect-square max-w-md mx-auto">
                 <div className="absolute inset-0 bg-gradient-to-br from-yellow-400/20 to-orange-500/20 rounded-3xl rotate-6" />
                 <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 rounded-3xl -rotate-3" />
@@ -102,6 +132,25 @@ export default function AppLayout() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Stats bar */}
+      <section className="bg-white border-b border-gray-100 py-6">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+            {[
+              {label:'মোট পণ্য', value: products.length > 0 ? `${products.length}+` : '—', color:'text-blue-600'},
+              {label:'প্যাকেজ ধরন', value:'৩টি', color:'text-purple-600'},
+              {label:'জেনারেশন বোনাস', value:'৫ লেভেল', color:'text-green-600'},
+              {label:'ডেইলি ক্লাব বোনাস', value:'PV এর ৩০%', color:'text-orange-600'},
+            ].map((s,i)=>(
+              <div key={i}>
+                <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -278,6 +327,39 @@ export default function AppLayout() {
           )}
         </div>
       </section>
+
+      {/* Gallery */}
+      {gallery.length > 0 && (
+        <section className="py-16 bg-gray-50">
+          <div className="max-w-7xl mx-auto px-4">
+            <div className="text-center mb-10">
+              <h2 className="text-3xl font-bold text-gray-900 mb-2">আমাদের গ্যালারি</h2>
+              <p className="text-gray-500">Proyojon Plus এর মুহূর্তগুলো</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {gallery.map(item => (
+                <button key={item.id} onClick={() => setLightboxImg(item.image_url)}
+                  className="group relative rounded-2xl overflow-hidden aspect-[4/3] bg-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 hover:scale-105">
+                  <img src={item.image_url} alt={item.caption || ''} className="w-full h-full object-cover" />
+                  {item.caption && (
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+                      <p className="text-white text-xs font-medium">{item.caption}</p>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Lightbox */}
+      {lightboxImg && (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>
+          <img src={lightboxImg} alt="" className="max-w-full max-h-[90vh] rounded-2xl object-contain" onClick={e => e.stopPropagation()} />
+          <button onClick={() => setLightboxImg(null)} className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl font-light">✕</button>
+        </div>
+      )}
 
       {/* CTA */}
       <section className="py-20 bg-gradient-to-r from-indigo-900 via-purple-900 to-indigo-900 relative overflow-hidden">
