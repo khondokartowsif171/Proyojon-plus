@@ -283,9 +283,6 @@ export default function Checkout() {
       await addToClubPools(pvToAdd);
     }
 
-    // ── Dealer commission: ডিলার নিজে কিনলে তার PV এর ৫% extra ─────────────
-    await processDealerCommission(user.id, pvToAdd);
-
     await refreshUser();
   };
 
@@ -351,6 +348,10 @@ export default function Checkout() {
       await processPvForCustomer(totalPvPoints);
     } else if (addPvNow) {
       await refreshUser();
+    }
+    // Dealer commission — সব package type এর জন্য, company-direct কেনায়
+    if (shouldAddPvNow && user?.is_dealer && totalPvPoints > 0) {
+      await processDealerCommission(user.id, totalPvPoints);
     }
 
     clearCart();

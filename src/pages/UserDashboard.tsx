@@ -177,7 +177,7 @@ export default function UserDashboard() {
   const fetchDealerData = async () => {
     if (!user) return;
     const [prodsRes, stockRes, ordersRes, reqsRes] = await Promise.all([
-      supabase.from('ecom_products').select('id, title, metadata').eq('is_visible', true).order('title'),
+      supabase.from('ecom_products').select('id, title, metadata').eq('status', 'active').order('title'),
       supabase.from('dealer_stock').select('*').eq('dealer_id', user.id),
       supabase.from('ecom_orders')
         .select('*, order_items:ecom_order_items(*)')
@@ -223,42 +223,39 @@ export default function UserDashboard() {
     if (!user) return;
     setAcceptingOrderId(order.id);
     const items = order.order_items || [];
+    try {
+      const stockMap: Record<string, number> = {};
+      const stockRowMap: Record<string, any> = {};
+      dealerStock.forEach((s: any) => { stockMap[s.product_id] = s.quantity; stockRowMap[s.product_id] = s; });
 
-    // Build stock map
-    const stockMap: Record<string, number> = {};
-    dealerStock.forEach((s: any) => { stockMap[s.product_id] = s.quantity; });
-
-    // Validate stock per item
-    let totalPv = 0;
-    for (const item of items) {
-      const available = stockMap[item.product_id] || 0;
-      if (available < item.quantity) {
-        toast.error(`স্টক অপর্যাপ্ত: ${item.product_title || item.product_id} — ${available}টি আছে, ${item.quantity}টি দরকার`);
-        setAcceptingOrderId(null);
-        return;
+      let totalPv = 0;
+      for (const item of items) {
+        if (!item.product_id) { toast.error('সমস্যা: একটি আইটেমে product_id নেই'); return; }
+        if (!stockRowMap[item.product_id]) { toast.error(`স্টক রেকর্ড নেই: ${item.product_title || ''}`); return; }
+        const available = stockMap[item.product_id] || 0;
+        if (available < item.quantity) {
+          toast.error(`স্টক অপর্যাপ্ত: ${item.product_title || item.product_id} — ${available}টি আছে, ${item.quantity}টি দরকার`);
+          return;
+        }
+        const { data: prod } = await supabase.from('ecom_products').select('metadata').eq('id', item.product_id).single();
+        totalPv += (prod?.metadata?.pv_points || 0) * item.quantity;
       }
-      // Fetch product PV
-      const { data: prod } = await supabase.from('ecom_products').select('metadata').eq('id', item.product_id).single();
-      totalPv += (prod?.metadata?.pv_points || 0) * item.quantity;
-    }
 
-    // Decrement dealer stock
-    for (const item of items) {
-      const stockRow = dealerStock.find((s: any) => s.product_id === item.product_id);
-      if (stockRow) {
+      for (const item of items) {
+        const stockRow = stockRowMap[item.product_id];
         await supabase.from('dealer_stock').update({ quantity: stockRow.quantity - item.quantity, updated_at: new Date().toISOString() }).eq('id', stockRow.id);
       }
+
+      await supabase.from('ecom_orders').update({ dealer_status: 'accepted', status: 'paid' }).eq('id', order.id);
+      if (totalPv > 0) await processOrderCommissionsForUser(order.user_id, totalPv);
+
+      toast.success('✅ অর্ডার গ্রহণ হয়েছে, কমিশন বন্টন হয়েছে!');
+      fetchDealerData();
+    } catch (err: any) {
+      toast.error('ত্রুটি: ' + err.message);
+    } finally {
+      setAcceptingOrderId(null);
     }
-
-    // Accept order
-    await supabase.from('ecom_orders').update({ dealer_status: 'accepted', status: 'paid' }).eq('id', order.id);
-
-    // Distribute commissions for customer
-    if (totalPv > 0) await processOrderCommissionsForUser(order.user_id, totalPv);
-
-    toast.success('✅ অর্ডার গ্রহণ হয়েছে, কমিশন বন্টন হয়েছে!');
-    setAcceptingOrderId(null);
-    fetchDealerData();
   };
 
   const buildGenerationTable = async () => {
@@ -1369,7 +1366,7 @@ export default function UserDashboard() {
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">পরিমাণ</label>
-                    <input type="number" min={1} value={dealerReqForm.quantity} onChange={e=>setDealerReqForm(f=>({...f,quantity:parseInt(e.target.value)||1}))}
+                    <input type="number" min={1} value={dealerReqForm.quantity || ''} onChange={e=>setDealerReqForm(f=>({...f,quantity:parseInt(e.target.value)||0}))}
                       className="w-full px-3 py-2.5 rounded-xl border border-orange-200 text-sm bg-white focus:border-orange-500 outline-none"/>
                   </div>
                 </div>
