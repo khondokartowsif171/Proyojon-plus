@@ -79,6 +79,9 @@ export default function Header() {
             <Link to="/packages" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
               {t('packages')}
             </Link>
+            <Link to="/gallery" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
+              গ্যালারি
+            </Link>
           </nav>
 
           {/* Right side */}
@@ -180,6 +183,7 @@ export default function Header() {
               </Link>
             ))}
             <Link to="/packages" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>প্যাকেজ</Link>
+            <Link to="/gallery" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>গ্যালারি</Link>
           </div>
         )}
       </div>

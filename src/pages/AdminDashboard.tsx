@@ -32,9 +32,81 @@ const PV_CLUB_PCTS: Record<string, number> = {
   shareholder_club: 0.10,
 };
 
+const adminT = {
+  bn: {
+    sidebarTitle: 'এডমিন প্যানেল',
+    overview: 'ওভারভিউ', users: 'মেম্বার ম্যানেজ', network: 'নেটওয়ার্ক টেবিল',
+    categories: 'ক্যাটাগরি', products: 'পণ্য ম্যানেজ', content: 'গ্যালারি / নোটিশ',
+    gold_packages: 'গোল্ড প্যাকেজ', payments: 'পেমেন্ট ভেরিফাই', clubs: 'ক্লাব বন্টন',
+    withdrawals: 'উইথড্রো', transactions: 'লেনদেন', orders: 'অর্ডার', reports: 'রিপোর্ট',
+    dashTitle: 'এডমিন ড্যাশবোর্ড', dashSub: 'সকল কার্যক্রম পরিচালনা করুন',
+    refresh: 'রিফ্রেশ', dailyTask: 'দৈনিক কাজ', running: 'চলছে...',
+    totalMembers: 'মোট মেম্বার', activeMembers: 'সক্রিয় মেম্বার',
+    totalIncome: 'মোট ইনকাম বন্টিত', totalWithdraw: 'মোট উইথড্রো',
+    approve: 'অনুমোদন', reject: 'প্রত্যাখ্যান', edit: 'সম্পাদনা', delete: 'মুছুন',
+    save: 'সংরক্ষণ', cancel: 'বাতিল', search: 'নাম, ইমেইল বা ফোন...',
+    active: 'সক্রিয়', inactive: 'নিষ্ক্রিয়', locked: 'লক',
+    pending: 'পেন্ডিং', approved: 'অনুমোদিত', rejected: 'প্রত্যাখ্যাত',
+    dealer: 'ডিলার', gift: 'গিফট',
+    systemOverview: 'সিস্টেম ওভারভিউ', clubMembers: 'ক্লাব সদস্য', pendingTasks: 'পেন্ডিং কাজ',
+    pendingWithdraw: 'পেন্ডিং উইথড্রো', pendingPayment: 'পেন্ডিং পেমেন্ট', inactiveIds: 'নিষ্ক্রিয় আইডি',
+    pvRanking: 'এ মাসের PV র‍্যাংকিং', noPv: 'এই মাসে কোনো PV নেই',
+    clickList: 'ক্লিক করে তালিকা দেখুন →', ofTotal: '% মোট সদস্যের',
+    memberMgmt: 'মেম্বার ম্যানেজমেন্ট',
+    colName: 'নাম', colEmail: 'ইমেইল/ফোন', colPkg: 'প্যাকেজ', colBal: 'ব্যালেন্স',
+    colPv: 'PV', colStatus: 'স্ট্যাটাস', colPass: 'পাসওয়ার্ড', colAction: 'অ্যাকশন',
+    netCols: ['নাম','আপলাইন','লেভেল','টিম','আয়','ব্যালেন্স','ক্লাব'],
+    imageGallery: 'ইমেজ গ্যালারি', galleryNote: 'ওয়েবসাইটে যে ছবিগুলো দেখাবে সেগুলো এখান থেকে আপলোড করুন',
+    chooseFile: 'ছবি বেছে নিন', captionLabel: 'ক্যাপশন (ঐচ্ছিক)', noImages: 'কোনো ছবি নেই',
+    noticeBoard: 'নোটিশ বোর্ড', noticeNote: 'ওয়েবসাইটের নোটিশ বার এ যা দেখাবে সেগুলো এখান থেকে পোস্ট করুন',
+    noticeTitleLabel: 'শিরোনাম *', noticeExpiry: 'মেয়াদ শেষ (ঐচ্ছিক)', noticeDetail: 'বিস্তারিত (ঐচ্ছিক)',
+    postNotice: 'নোটিশ প্রকাশ করুন', noNotice: 'কোনো নোটিশ নেই',
+    goldPkgMgmt: 'গোল্ড প্যাকেজ ম্যানেজ',
+    gpCols: ['#','ব্যবহারকারী','ফোন','কেনার তারিখ','মেয়াদ শেষ','বাকি দিন','দৈনিক ইনকাম','স্ট্যাটাস','সম্পাদনা'],
+    catMgmt: 'ক্যাটাগরি ম্যানেজমেন্ট', newCat: 'নতুন ক্যাটাগরি',
+    shopCollections: 'শপ কালেকশন', shopColNote: 'শপ নেভিগেশন ড্রপডাউনে যা দেখাবে',
+    newCollection: '+ নতুন কালেকশন', colTitle: 'কালেকশন নাম', colDesc: 'বিবরণ (ঐচ্ছিক)',
+  },
+  en: {
+    sidebarTitle: 'Admin Panel',
+    overview: 'Overview', users: 'Member Manage', network: 'Network Table',
+    categories: 'Categories', products: 'Product Manage', content: 'Gallery / Notice',
+    gold_packages: 'Gold Packages', payments: 'Payment Verify', clubs: 'Club Distribute',
+    withdrawals: 'Withdrawals', transactions: 'Transactions', orders: 'Orders', reports: 'Reports',
+    dashTitle: 'Admin Dashboard', dashSub: 'Manage all operations',
+    refresh: 'Refresh', dailyTask: 'Daily Task', running: 'Running...',
+    totalMembers: 'Total Members', activeMembers: 'Active Members',
+    totalIncome: 'Total Income Distributed', totalWithdraw: 'Total Withdrawals',
+    approve: 'Approve', reject: 'Reject', edit: 'Edit', delete: 'Delete',
+    save: 'Save', cancel: 'Cancel', search: 'Name, email or phone...',
+    active: 'Active', inactive: 'Inactive', locked: 'Locked',
+    pending: 'Pending', approved: 'Approved', rejected: 'Rejected',
+    dealer: 'Dealer', gift: 'Gift',
+    systemOverview: 'System Overview', clubMembers: 'Club Members', pendingTasks: 'Pending Tasks',
+    pendingWithdraw: 'Pending Withdrawals', pendingPayment: 'Pending Payments', inactiveIds: 'Inactive IDs',
+    pvRanking: 'Monthly PV Ranking', noPv: 'No PV this month',
+    clickList: 'Click to view list →', ofTotal: '% of total members',
+    memberMgmt: 'Member Management',
+    colName: 'Name', colEmail: 'Email/Phone', colPkg: 'Package', colBal: 'Balance',
+    colPv: 'PV', colStatus: 'Status', colPass: 'Password', colAction: 'Action',
+    netCols: ['Name','Upline','Level','Team','Income','Balance','Club'],
+    imageGallery: 'Image Gallery', galleryNote: 'Upload images to display on the website',
+    chooseFile: 'Choose Image', captionLabel: 'Caption (optional)', noImages: 'No images',
+    noticeBoard: 'Notice Board', noticeNote: 'Post notices that appear on the website notice bar',
+    noticeTitleLabel: 'Title *', noticeExpiry: 'Expiry (optional)', noticeDetail: 'Details (optional)',
+    postNotice: 'Post Notice', noNotice: 'No notices',
+    goldPkgMgmt: 'Gold Package Management',
+    gpCols: ['#','User','Phone','Purchase Date','Expiry','Days Left','Daily Income','Status','Edit'],
+    catMgmt: 'Category Management', newCat: 'New Category',
+    shopCollections: 'Shop Collections', shopColNote: 'Appears in shop navigation dropdown',
+    newCollection: '+ New Collection', colTitle: 'Collection Name', colDesc: 'Description (optional)',
+  },
+} as const;
+
 export default function AdminDashboard() {
-  const { user } = useAuth();
-  useLang(); // subscribe to LanguageContext so Header's language toggle re-renders this page
+  const { user, loading: authLoading } = useAuth();
+  const { lang } = useLang();
+  const at = <K extends keyof typeof adminT.bn>(key: K) => (adminT[lang as 'bn' | 'en'] as typeof adminT.bn)[key];
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [users, setUsers] = useState<any[]>([]);
@@ -43,6 +115,9 @@ export default function AdminDashboard() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [shopCollections, setShopCollections] = useState<any[]>([]);
+  const [colForm, setColForm] = useState({ title: '', description: '' });
+  const [showColForm, setShowColForm] = useState(false);
   const [products, setProducts] = useState<any[]>([]);
   const [paymentVerifications, setPV] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -155,6 +230,9 @@ export default function AdminDashboard() {
 
     const { data: catsData } = await supabase.from('mlm_categories').select('*').order('sort_order');
     if (catsData) setCategories(catsData);
+
+    const { data: colsData } = await supabase.from('ecom_collections').select('*').order('title');
+    if (colsData) setShopCollections(colsData);
 
     const { data: prodsData } = await supabase.from('ecom_products').select('*').order('created_at', { ascending: false });
     if (prodsData) setProducts(prodsData);
@@ -442,6 +520,19 @@ export default function AdminDashboard() {
   const handleDeleteCategory = async (id: string) => {
     if (categories.filter(c => c.parent_id === id).length > 0) { toast.error('আগে সাব-ক্যাটাগরি মুছুন!'); return; }
     await supabase.from('mlm_categories').delete().eq('id', id);
+    toast.success('মুছে ফেলা হয়েছে!'); fetchAll();
+  };
+
+  const handleAddCollection = async () => {
+    if (!colForm.title) { toast.error('নাম দিন'); return; }
+    const handle = colForm.title.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '');
+    await supabase.from('ecom_collections').insert({ title: colForm.title, handle, description: colForm.description || null, is_visible: true });
+    toast.success('কালেকশন যোগ হয়েছে!');
+    setColForm({ title: '', description: '' }); setShowColForm(false); fetchAll();
+  };
+
+  const handleDeleteCollection = async (id: string) => {
+    await supabase.from('ecom_collections').delete().eq('id', id);
     toast.success('মুছে ফেলা হয়েছে!'); fetchAll();
   };
 
@@ -839,22 +930,27 @@ export default function AdminDashboard() {
   const parentCategories = categories.filter(c => !c.parent_id);
   const getSubCategories = (pid: string) => categories.filter(c => c.parent_id === pid);
 
+  if (authLoading) return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <Loader2 size={32} className="animate-spin text-indigo-600" />
+    </div>
+  );
   if (!user || user.role !== 'admin') return null;
 
   const sidebarItems = [
-    { id: 'overview',     label: 'ওভারভিউ',        icon: <BarChart3 size={18} /> },
-    { id: 'users',        label: 'মেম্বার ম্যানেজ', icon: <Users size={18} /> },
-    { id: 'network',      label: 'নেটওয়ার্ক টেবিল', icon: <Network size={18} /> },
-    { id: 'categories',   label: 'ক্যাটাগরি',       icon: <FolderTree size={18} /> },
-    { id: 'products',     label: 'পণ্য ম্যানেজ',    icon: <ShoppingBag size={18} /> },
-    { id: 'content',       label: 'গ্যালারি / নোটিশ',  icon: <Image size={18} /> },
-    { id: 'gold_packages', label: 'গোল্ড প্যাকেজ',    icon: <Award size={18} /> },
-    { id: 'payments',      label: 'পেমেন্ট ভেরিফাই',  icon: <CreditCard size={18} /> },
-    { id: 'clubs',        label: 'ক্লাব বন্টন',     icon: <Gift size={18} /> },
-    { id: 'withdrawals',  label: 'উইথড্রো',         icon: <Wallet size={18} /> },
-    { id: 'transactions', label: 'লেনদেন',          icon: <FileText size={18} /> },
-    { id: 'orders',       label: 'অর্ডার',           icon: <Package size={18} /> },
-    { id: 'reports',      label: 'রিপোর্ট',          icon: <BarChart3 size={18} /> },
+    { id: 'overview',     label: at('overview'),      icon: <BarChart3 size={18} /> },
+    { id: 'users',        label: at('users'),         icon: <Users size={18} /> },
+    { id: 'network',      label: at('network'),       icon: <Network size={18} /> },
+    { id: 'categories',   label: at('categories'),    icon: <FolderTree size={18} /> },
+    { id: 'products',     label: at('products'),      icon: <ShoppingBag size={18} /> },
+    { id: 'content',      label: at('content'),       icon: <Image size={18} /> },
+    { id: 'gold_packages',label: at('gold_packages'), icon: <Award size={18} /> },
+    { id: 'payments',     label: at('payments'),      icon: <CreditCard size={18} /> },
+    { id: 'clubs',        label: at('clubs'),         icon: <Gift size={18} /> },
+    { id: 'withdrawals',  label: at('withdrawals'),   icon: <Wallet size={18} /> },
+    { id: 'transactions', label: at('transactions'),  icon: <FileText size={18} /> },
+    { id: 'orders',       label: at('orders'),        icon: <Package size={18} /> },
+    { id: 'reports',      label: at('reports'),       icon: <BarChart3 size={18} /> },
   ];
 
   return (
@@ -867,7 +963,7 @@ export default function AdminDashboard() {
               className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-white/10 text-gray-400 mb-3">
               {sidebarOpen ? <ChevronDown size={18} className="rotate-90" /> : <ChevronRight size={18} />}
             </button>
-            {sidebarOpen && <p className="text-xs text-gray-500 uppercase tracking-wider px-3 mb-3">এডমিন প্যানেল</p>}
+            {sidebarOpen && <p className="text-xs text-gray-500 uppercase tracking-wider px-3 mb-3">{at('sidebarTitle')}</p>}
             <nav className="space-y-1">
               {sidebarItems.map(item => (
                 <button key={item.id} onClick={() => setActiveTab(item.id)}
@@ -892,17 +988,17 @@ export default function AdminDashboard() {
 
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-3">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">এডমিন ড্যাশবোর্ড</h1>
-              <p className="text-gray-500 text-xs">সকল কার্যক্রম পরিচালনা করুন</p>
+              <h1 className="text-xl font-bold text-gray-900">{at('dashTitle')}</h1>
+              <p className="text-gray-500 text-xs">{at('dashSub')}</p>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={fetchAll} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs hover:bg-gray-50">
-                <RefreshCw size={14} /> রিফ্রেশ
+                <RefreshCw size={14} /> {at('refresh')}
               </button>
               <button onClick={handleRunDailyCron} disabled={cronRunning}
                 className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg text-xs hover:from-orange-600 hover:to-red-600 disabled:opacity-50 shadow-lg">
                 {cronRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                {cronRunning ? 'চলছে...' : 'দৈনিক কাজ'}
+                {cronRunning ? at('running') : at('dailyTask')}
               </button>
             </div>
           </div>
@@ -922,10 +1018,10 @@ export default function AdminDashboard() {
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
             {[
-              { label: 'মোট মেম্বার',       value: stats.totalUsers,                              icon: <Users size={20} />,      color: 'from-blue-500 to-cyan-500' },
-              { label: 'সক্রিয় মেম্বার',   value: stats.activeUsers,                             icon: <CheckCircle size={20} />, color: 'from-green-500 to-emerald-500' },
-              { label: 'মোট ইনকাম বন্টিত', value: `৳${stats.totalIncome.toLocaleString()}`,       icon: <TrendingUp size={20} />, color: 'from-purple-500 to-pink-500' },
-              { label: 'মোট উইথড্রো',      value: `৳${stats.totalWithdrawals.toLocaleString()}`, icon: <DollarSign size={20} />, color: 'from-orange-500 to-red-500' },
+              { label: at('totalMembers'),  value: stats.totalUsers,                              icon: <Users size={20} />,      color: 'from-blue-500 to-cyan-500' },
+              { label: at('activeMembers'), value: stats.activeUsers,                             icon: <CheckCircle size={20} />, color: 'from-green-500 to-emerald-500' },
+              { label: at('totalIncome'),   value: `৳${stats.totalIncome.toLocaleString()}`,       icon: <TrendingUp size={20} />, color: 'from-purple-500 to-pink-500' },
+              { label: at('totalWithdraw'), value: `৳${stats.totalWithdrawals.toLocaleString()}`, icon: <DollarSign size={20} />, color: 'from-orange-500 to-red-500' },
             ].map((s, i) => (
               <div key={i} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
                 <div className={`w-10 h-10 bg-gradient-to-br ${s.color} rounded-lg flex items-center justify-center text-white mb-2`}>{s.icon}</div>
@@ -939,7 +1035,7 @@ export default function AdminDashboard() {
 
             {activeTab === 'overview' && (
               <div>
-                <h2 className="text-lg font-bold mb-4">সিস্টেম ওভারভিউ</h2>
+                <h2 className="text-lg font-bold mb-4">{at('systemOverview')}</h2>
 
                 {/* Clickable package distribution cards */}
                 <div className="grid grid-cols-3 gap-4 mb-6">
@@ -961,8 +1057,8 @@ export default function AdminDashboard() {
                         <div className="w-full h-1.5 bg-white/60 rounded-full mt-2 overflow-hidden">
                           <div className={`h-full bg-gradient-to-r ${color} rounded-full`} style={{ width: `${pct}%` }} />
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-1">{pct}% মোট সদস্যের</p>
-                        <p className={`text-[10px] font-semibold ${textColor} mt-1`}>ক্লিক করে তালিকা দেখুন →</p>
+                        <p className="text-[10px] text-gray-400 mt-1">{pct}{at('ofTotal')}</p>
+                        <p className={`text-[10px] font-semibold ${textColor} mt-1`}>{at('clickList')}</p>
                       </button>
                     );
                   })}
@@ -970,7 +1066,7 @@ export default function AdminDashboard() {
 
                 <div className="grid md:grid-cols-3 gap-6">
                   <div>
-                    <h3 className="font-semibold text-sm text-gray-700 mb-3">ক্লাব সদস্য</h3>
+                    <h3 className="font-semibold text-sm text-gray-700 mb-3">{at('clubMembers')}</h3>
                     {Object.entries(clubLabels).map(([key, label]) => {
                       const count = users.filter(u => (u as any)[`is_${key}`] && u.role !== 'admin').length;
                       return (
@@ -982,18 +1078,18 @@ export default function AdminDashboard() {
                     })}
                   </div>
                   <div>
-                    <h3 className="font-semibold text-sm text-gray-700 mb-3">পেন্ডিং কাজ</h3>
+                    <h3 className="font-semibold text-sm text-gray-700 mb-3">{at('pendingTasks')}</h3>
                     <div className="space-y-2">
                       <div className="flex justify-between items-center py-2 px-3 bg-yellow-50 rounded-lg border border-yellow-100">
-                        <span className="text-sm text-yellow-800">পেন্ডিং উইথড্রো</span>
+                        <span className="text-sm text-yellow-800">{at('pendingWithdraw')}</span>
                         <span className="font-bold text-yellow-700">{withdrawals.filter(w=>w.status==='pending').length}</span>
                       </div>
                       <div className="flex justify-between items-center py-2 px-3 bg-blue-50 rounded-lg border border-blue-100">
-                        <span className="text-sm text-blue-800">পেন্ডিং পেমেন্ট</span>
+                        <span className="text-sm text-blue-800">{at('pendingPayment')}</span>
                         <span className="font-bold text-blue-700">{paymentVerifications.filter(p=>p.status==='pending' && p.purpose!=='customer_registration').length}</span>
                       </div>
                       <div className="flex justify-between items-center py-2 px-3 bg-red-50 rounded-lg border border-red-100">
-                        <span className="text-sm text-red-800">নিষ্ক্রিয় আইডি</span>
+                        <span className="text-sm text-red-800">{at('inactiveIds')}</span>
                         <span className="font-bold text-red-700">{users.filter(u=>!u.is_active&&u.role!=='admin').length}</span>
                       </div>
                     </div>
@@ -1002,7 +1098,7 @@ export default function AdminDashboard() {
                   {/* Monthly PV leaderboard */}
                   <div>
                     <h3 className="font-semibold text-sm text-gray-700 mb-3 flex items-center gap-1.5">
-                      <Star size={14} className="text-yellow-500" /> এ মাসের PV র‍্যাংকিং
+                      <Star size={14} className="text-yellow-500" /> {at('pvRanking')}
                     </h3>
                     <div className="space-y-1.5">
                       {pvLeaders.filter(u => (u.monthly_pv_purchased || 0) > 0).slice(0, 15).map((u, i) => (
@@ -1013,11 +1109,11 @@ export default function AdminDashboard() {
                             <p className="text-gray-400">{u.phone}</p>
                           </div>
                           <span className="font-bold text-green-600 flex-shrink-0">{(u.monthly_pv_purchased||0).toLocaleString()} PV</span>
-                          <button onClick={()=>{setGiftModalUser(u);setGiftAmount('');}} className="ml-1 px-2 py-1 bg-yellow-500 text-white text-[10px] font-bold rounded-lg hover:bg-yellow-600">গিফট</button>
+                          <button onClick={()=>{setGiftModalUser(u);setGiftAmount('');}} className="ml-1 px-2 py-1 bg-yellow-500 text-white text-[10px] font-bold rounded-lg hover:bg-yellow-600">{at('gift')}</button>
                         </div>
                       ))}
                       {pvLeaders.filter(u => (u.monthly_pv_purchased || 0) > 0).length === 0 && (
-                        <p className="text-xs text-gray-400 text-center py-4">এই মাসে কোনো PV নেই</p>
+                        <p className="text-xs text-gray-400 text-center py-4">{at('noPv')}</p>
                       )}
                     </div>
                   </div>
@@ -1028,18 +1124,18 @@ export default function AdminDashboard() {
             {activeTab === 'users' && (
               <div>
                 <div className="flex items-center gap-3 mb-4">
-                  <h2 className="text-lg font-bold">মেম্বার ম্যানেজমেন্ট</h2>
+                  <h2 className="text-lg font-bold">{at('memberMgmt')}</h2>
                   <div className="flex-1 max-w-sm relative">
                     <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                      placeholder="নাম, ইমেইল বা ফোন..."
+                      placeholder={at('search')}
                       className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-500 outline-none" />
                   </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead><tr className="bg-gray-50">
-                      {['নাম','ইমেইল/ফোন','প্যাকেজ','ব্যালেন্স','PV','স্ট্যাটাস','পাসওয়ার্ড','অ্যাকশন'].map(h => (
+                      {[at('colName'),at('colEmail'),at('colPkg'),at('colBal'),at('colPv'),at('colStatus'),at('colPass'),at('colAction')].map(h => (
                         <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-500">{h}</th>
                       ))}
                     </tr></thead>
@@ -1091,11 +1187,11 @@ export default function AdminDashboard() {
 
             {activeTab === 'network' && (
               <div>
-                <h2 className="text-lg font-bold mb-4">নেটওয়ার্ক টেবিল</h2>
+                <h2 className="text-lg font-bold mb-4">{at('network')}</h2>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead><tr className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
-                      {['নাম','আপলাইন','লেভেল','টিম','আয়','ব্যালেন্স','ক্লাব'].map((h,i) => (
+                      {(at('netCols') as readonly string[]).map((h,i) => (
                         <th key={h} className={`text-left py-3 px-4 text-xs font-semibold ${i===0?'rounded-tl-lg':''} ${i===6?'rounded-tr-lg text-center':''}`}>{h}</th>
                       ))}
                     </tr></thead>
@@ -1140,11 +1236,52 @@ export default function AdminDashboard() {
             )}
 
             {activeTab === 'categories' && (
-              <div>
+              <div className="space-y-8">
+                {/* ── Shop Collections ── */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <div>
+                      <h2 className="text-lg font-bold flex items-center gap-2"><ShoppingBag size={18} className="text-indigo-600" /> {at('shopCollections')}</h2>
+                      <p className="text-xs text-gray-500 mb-3">{at('shopColNote')}</p>
+                    </div>
+                    <button onClick={() => setShowColForm(!showColForm)} className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs hover:bg-indigo-700">
+                      <Plus size={14} /> {at('newCollection')}
+                    </button>
+                  </div>
+                  {showColForm && (
+                    <div className="bg-indigo-50 rounded-xl p-4 mb-4 border border-indigo-100">
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <input value={colForm.title} onChange={e => setColForm({...colForm, title: e.target.value})} placeholder={at('colTitle')} className="px-3 py-2 rounded-lg border text-sm" />
+                        <input value={colForm.description} onChange={e => setColForm({...colForm, description: e.target.value})} placeholder={at('colDesc')} className="px-3 py-2 rounded-lg border text-sm" />
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={handleAddCollection} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs hover:bg-indigo-700">
+                          <Save size={14} className="inline mr-1" /> {at('save')}
+                        </button>
+                        <button onClick={() => setShowColForm(false)} className="px-4 py-2 border border-gray-200 rounded-lg text-xs hover:bg-gray-50">{at('cancel')}</button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    {shopCollections.map(col => (
+                      <div key={col.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+                        <div>
+                          <p className="font-semibold text-gray-800 text-sm">{col.title}</p>
+                          <p className="text-xs text-gray-400">/{col.handle}</p>
+                        </div>
+                        <button onClick={() => handleDeleteCollection(col.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-500"><Trash2 size={14} /></button>
+                      </div>
+                    ))}
+                    {shopCollections.length === 0 && <p className="text-xs text-gray-400 text-center py-4">{lang === 'en' ? 'No collections yet' : 'কোনো কালেকশন নেই'}</p>}
+                  </div>
+                </div>
+
+                {/* ── Product Categories ── */}
+                <div>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold">ক্যাটাগরি ম্যানেজমেন্ট</h2>
+                  <h2 className="text-lg font-bold">{at('catMgmt')}</h2>
                   <button onClick={() => setShowCatForm(!showCatForm)} className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs hover:bg-indigo-700">
-                    <Plus size={14} /> নতুন ক্যাটাগরি
+                    <Plus size={14} /> {at('newCat')}
                   </button>
                 </div>
                 {showCatForm && (
@@ -1194,6 +1331,7 @@ export default function AdminDashboard() {
                     </div>
                   ))}
                 </div>
+                </div>
               </div>
             )}
 
@@ -1205,17 +1343,17 @@ export default function AdminDashboard() {
               <div className="space-y-8">
                 {/* ── Image Gallery ── */}
                 <div>
-                  <h2 className="text-lg font-bold mb-1 flex items-center gap-2"><Image size={20} className="text-indigo-600" /> ইমেজ গ্যালারি</h2>
-                  <p className="text-xs text-gray-500 mb-4">ওয়েবসাইটে যে ছবিগুলো দেখাবে সেগুলো এখান থেকে আপলোড করুন</p>
+                  <h2 className="text-lg font-bold mb-1 flex items-center gap-2"><Image size={20} className="text-indigo-600" /> {at('imageGallery')}</h2>
+                  <p className="text-xs text-gray-500 mb-4">{at('galleryNote')}</p>
                   <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-4">
                     <div className="grid md:grid-cols-3 gap-3 items-end">
                       <div>
-                        <label className="text-xs font-medium text-gray-600 mb-1 block">ছবি বেছে নিন</label>
+                        <label className="text-xs font-medium text-gray-600 mb-1 block">{at('chooseFile')}</label>
                         <input ref={galleryFileRef} type="file" accept="image/*" onChange={handleGalleryUpload}
                           className="w-full text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer" />
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-gray-600 mb-1 block">ক্যাপশন (ঐচ্ছিক)</label>
+                        <label className="text-xs font-medium text-gray-600 mb-1 block">{at('captionLabel')}</label>
                         <input value={galleryCaption} onChange={e => setGalleryCaption(e.target.value)}
                           placeholder="ছবির বিবরণ..." className="w-full px-3 py-2 rounded-lg border text-sm" />
                       </div>
@@ -1240,7 +1378,7 @@ export default function AdminDashboard() {
                         {!item.is_visible && <div className="absolute top-1 right-1 bg-gray-700/70 text-white text-[9px] px-1.5 py-0.5 rounded">লুকানো</div>}
                       </div>
                     ))}
-                    {galleryItems.length === 0 && <p className="col-span-4 text-center text-sm text-gray-400 py-8">কোনো ছবি নেই</p>}
+                    {galleryItems.length === 0 && <p className="col-span-4 text-center text-sm text-gray-400 py-8">{at('noImages')}</p>}
                   </div>
                 </div>
 
@@ -1248,29 +1386,29 @@ export default function AdminDashboard() {
 
                 {/* ── Notice Board ── */}
                 <div>
-                  <h2 className="text-lg font-bold mb-1 flex items-center gap-2"><Bell size={20} className="text-orange-600" /> নোটিশ বোর্ড</h2>
-                  <p className="text-xs text-gray-500 mb-4">ওয়েবসাইটের নোটিশ বার এ যা দেখাবে সেগুলো এখান থেকে পোস্ট করুন</p>
+                  <h2 className="text-lg font-bold mb-1 flex items-center gap-2"><Bell size={20} className="text-orange-600" /> {at('noticeBoard')}</h2>
+                  <p className="text-xs text-gray-500 mb-4">{at('noticeNote')}</p>
                   <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 mb-4">
                     <div className="grid md:grid-cols-2 gap-3 mb-3">
                       <div>
-                        <label className="text-xs font-medium text-gray-600 mb-1 block">শিরোনাম *</label>
+                        <label className="text-xs font-medium text-gray-600 mb-1 block">{at('noticeTitleLabel')}</label>
                         <input value={noticeTitle} onChange={e => setNoticeTitle(e.target.value)}
                           placeholder="নোটিশের শিরোনাম..." className="w-full px-3 py-2 rounded-lg border text-sm" />
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-gray-600 mb-1 block">মেয়াদ শেষ (ঐচ্ছিক)</label>
+                        <label className="text-xs font-medium text-gray-600 mb-1 block">{at('noticeExpiry')}</label>
                         <input type="datetime-local" value={noticeExpiry} onChange={e => setNoticeExpiry(e.target.value)}
                           className="w-full px-3 py-2 rounded-lg border text-sm" />
                       </div>
                     </div>
                     <div className="mb-3">
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">বিস্তারিত (ঐচ্ছিক)</label>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">{at('noticeDetail')}</label>
                       <textarea value={noticeContent} onChange={e => setNoticeContent(e.target.value)} rows={2}
                         placeholder="নোটিশের বিস্তারিত তথ্য..." className="w-full px-3 py-2 rounded-lg border text-sm resize-none" />
                     </div>
                     <button onClick={handleSaveNotice} disabled={noticeSaving}
                       className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700 disabled:opacity-50">
-                      {noticeSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} নোটিশ প্রকাশ করুন
+                      {noticeSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} {at('postNotice')}
                     </button>
                   </div>
                   <div className="space-y-2">
@@ -1293,7 +1431,7 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                     ))}
-                    {notices.length === 0 && <p className="text-center text-sm text-gray-400 py-6">কোনো নোটিশ নেই</p>}
+                    {notices.length === 0 && <p className="text-center text-sm text-gray-400 py-6">{at('noNotice')}</p>}
                   </div>
                 </div>
               </div>
@@ -1301,11 +1439,11 @@ export default function AdminDashboard() {
 
             {activeTab === 'gold_packages' && (
               <div>
-                <h2 className="text-lg font-bold mb-4">গোল্ড প্যাকেজ ম্যানেজ</h2>
+                <h2 className="text-lg font-bold mb-4">{at('goldPkgMgmt')}</h2>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead><tr className="bg-yellow-50">
-                      {['#','ব্যবহারকারী','ফোন','কেনার তারিখ','মেয়াদ শেষ','বাকি দিন','দৈনিক ইনকাম','স্ট্যাটাস','সম্পাদনা'].map(h=>(
+                      {(at('gpCols') as readonly string[]).map(h=>(
                         <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-600">{h}</th>
                       ))}
                     </tr></thead>
