@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 
+const WORKER_URL = "https://gold-price-proxy.khondokartowsif171.workers.dev";
 const CACHE_KEY = "gp_live_cache";
 const CACHE_TTL = 15 * 60 * 1000;
 
@@ -20,27 +21,19 @@ async function fetchLiveGoldPrice(): Promise<LiveGoldPrice | null> {
       if (Date.now() - ts < CACHE_TTL) return data as LiveGoldPrice;
     }
 
-    const [goldRes, rateRes] = await Promise.all([
-      fetch("https://data-asg.goldprice.org/dbXRates/USD"),
-      fetch("https://open.er-api.com/v6/latest/USD"),
-    ]);
+    const res = await fetch(WORKER_URL);
+    if (!res.ok) return null;
 
-    if (!goldRes.ok || !rateRes.ok) return null;
-
-    const goldData = await goldRes.json();
-    const rateData = await rateRes.json();
-
-    const usdPerOz: number = goldData.items[0].xauPrice;
-    const bdtRate: number = rateData.rates.BDT;
-    const bdtPerGram24k = (usdPerOz / 31.1035) * bdtRate;
+    const data = await res.json();
+    if (!data.ok) return null;
 
     const result: LiveGoldPrice = {
-      usdPerOz,
-      bdtPer24kGram: Math.round(bdtPerGram24k),
-      bdtPer22kGram: Math.round(bdtPerGram24k * 0.916),
-      bdtPer18kGram: Math.round(bdtPerGram24k * 0.75),
-      bdtRate: Math.round(bdtRate),
-      updatedAt: new Date().toISOString(),
+      usdPerOz: data.usdPerOz,
+      bdtPer24kGram: data.bdtPer24kGram,
+      bdtPer22kGram: data.bdtPer22kGram,
+      bdtPer18kGram: data.bdtPer18kGram,
+      bdtRate: data.bdtRate,
+      updatedAt: data.updatedAt,
     };
 
     localStorage.setItem(CACHE_KEY, JSON.stringify({ data: result, ts: Date.now() }));
