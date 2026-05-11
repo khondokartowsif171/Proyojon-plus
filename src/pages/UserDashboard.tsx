@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { hashPassword } from '@/lib/crypto';
+import { useLiveGoldPrice, minutesAgo } from '@/utils/goldPrice';
 
 function GoldCountdown({ startDate, t }: { startDate: string; t: (k: any) => string }) {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
@@ -47,6 +48,7 @@ export default function UserDashboard() {
   const navigate = useNavigate();
   const { user, loading: authLoading, logout, refreshUser } = useAuth();
   const { t } = useLang();
+  const { price: liveGold, loading: gpLoading, error: gpError, refresh: gpRefresh } = useLiveGoldPrice();
 
   const [activeTab,        setActiveTab]        = useState('overview');
   const [sidebarOpen,     setSidebarOpen]      = useState(true);
@@ -643,6 +645,41 @@ export default function UserDashboard() {
           {/* OVERVIEW */}
           {activeTab==='overview'&&(
             <div>
+              {/* International Gold Price */}
+              <div className="mb-5 bg-gradient-to-r from-yellow-400 to-amber-500 rounded-xl p-4 text-white shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🌍</span>
+                    <span className="text-sm font-semibold">আন্তর্জাতিক স্বর্ণ বাজার মূল্য</span>
+                    {!gpLoading && !gpError && <span className="text-[10px] bg-white/30 px-2 py-0.5 rounded-full">LIVE</span>}
+                  </div>
+                  <button onClick={gpRefresh} className="text-white/80 hover:text-white text-xs transition-colors">↻ রিফ্রেশ</button>
+                </div>
+                {gpLoading ? (
+                  <p className="text-white/80 text-xs">লোড হচ্ছে...</p>
+                ) : gpError || !liveGold ? (
+                  <p className="text-white/80 text-xs">মূল্য পাওয়া যাচ্ছে না</p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-white/20 rounded-lg px-3 py-1.5 text-center">
+                      <p className="text-[10px] text-white/70">24K/গ্রাম</p>
+                      <p className="text-sm font-bold">৳{liveGold.bdtPer24kGram.toLocaleString()}</p>
+                    </div>
+                    <div className="bg-white/20 rounded-lg px-3 py-1.5 text-center">
+                      <p className="text-[10px] text-white/70">22K/গ্রাম</p>
+                      <p className="text-sm font-bold">৳{liveGold.bdtPer22kGram.toLocaleString()}</p>
+                    </div>
+                    <div className="bg-white/20 rounded-lg px-3 py-1.5 text-center">
+                      <p className="text-[10px] text-white/70">আন্তর্জাতিক</p>
+                      <p className="text-sm font-bold">${liveGold.usdPerOz.toLocaleString()}/oz</p>
+                    </div>
+                  </div>
+                )}
+                {liveGold && !gpLoading && (
+                  <p className="text-[10px] text-white/60 mt-1.5">আপডেট: {minutesAgo(liveGold.updatedAt)} • তথ্যসূত্র: আন্তর্জাতিক বাজার (goldprice.org)</p>
+                )}
+              </div>
+
               <div className="flex items-center gap-3 mb-5">
                 <h2 className="text-lg font-bold">{t('myId')}</h2>
                 {user.is_dealer && (
