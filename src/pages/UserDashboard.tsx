@@ -14,6 +14,7 @@ import {
 import { toast } from 'sonner';
 import { hashPassword } from '@/lib/crypto';
 import { useLiveGoldPrice, minutesAgo } from '@/utils/goldPrice';
+import { processOrderCommissionsForUser } from '@/lib/mlm-business-logic';
 
 function GoldCountdown({ startDate, t }: { startDate: string; t: (k: any) => string }) {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
@@ -125,6 +126,15 @@ export default function UserDashboard() {
   const [bakeyaPayAmt,     setBakeyaPayAmt]     = useState('');
   const [bakeyaPayLoading, setBakeyaPayLoading] = useState(false);
 
+  // Dealer state
+  const [dealerProducts,    setDealerProducts]    = useState<any[]>([]);
+  const [dealerStock,       setDealerStock]       = useState<any[]>([]);
+  const [dealerOrders,      setDealerOrders]      = useState<any[]>([]);
+  const [dealerReqs,        setDealerReqs]        = useState<any[]>([]);
+  const [dealerReqForm,     setDealerReqForm]     = useState({ product_id: '', quantity: 1 });
+  const [dealerReqLoading,  setDealerReqLoading]  = useState(false);
+  const [acceptingOrderId,  setAcceptingOrderId]  = useState<string|null>(null);
+
   useEffect(() => {
     if (authLoading) return;
     if (!user) { navigate('/login'); return; }
@@ -162,6 +172,93 @@ export default function UserDashboard() {
     }
     await buildGenerationTable();
     setLoading(false);
+  };
+
+  const fetchDealerData = async () => {
+    if (!user) return;
+    const [prodsRes, stockRes, ordersRes, reqsRes] = await Promise.all([
+      supabase.from('ecom_products').select('id, title, metadata').eq('is_visible', true).order('title'),
+      supabase.from('dealer_stock').select('*').eq('dealer_id', user.id),
+      supabase.from('ecom_orders')
+        .select('*, order_items:ecom_order_items(*)')
+        .eq('dealer_id', user.id)
+        .eq('dealer_status', 'pending')
+        .order('created_at', { ascending: false }),
+      supabase.from('dealer_requisitions').select('*').eq('dealer_id', user.id).order('created_at', { ascending: false }).limit(20),
+    ]);
+    if (prodsRes.data) setDealerProducts(prodsRes.data);
+    if (stockRes.data) setDealerStock(stockRes.data);
+    if (ordersRes.data) setDealerOrders(ordersRes.data);
+    if (reqsRes.data)  setDealerReqs(reqsRes.data);
+  };
+
+  useEffect(() => { if (activeTab === 'dealer') fetchDealerData(); }, [activeTab]);
+
+  const handleSubmitRequisition = async () => {
+    if (!user || !dealerReqForm.product_id) { toast.error('পণ্য বেছে নিন'); return; }
+    if (dealerReqForm.quantity < 1) { toast.error('পরিমাণ কমপক্ষে ১'); return; }
+    const product = dealerProducts.find(p => p.id === dealerReqForm.product_id);
+    if (!product) return;
+    setDealerReqLoading(true);
+    const pvPerUnit = product.metadata?.pv_points || 0;
+    const totalPv   = pvPerUnit * dealerReqForm.quantity;
+    const commission = Math.floor(totalPv * 0.05);
+    const { error } = await supabase.from('dealer_requisitions').insert({
+      dealer_id:         user.id,
+      product_id:        product.id,
+      product_name:      product.title,
+      quantity:          dealerReqForm.quantity,
+      pv_per_unit:       pvPerUnit,
+      total_pv:          totalPv,
+      commission_amount: commission,
+    });
+    if (error) { toast.error('সমস্যা: ' + error.message); setDealerReqLoading(false); return; }
+    toast.success('✅ রিকুইজিশন জমা হয়েছে! Admin অনুমোদনের পর স্টক ও কমিশন পাবেন।');
+    setDealerReqForm({ product_id: '', quantity: 1 });
+    setDealerReqLoading(false);
+    fetchDealerData();
+  };
+
+  const handleAcceptDealerOrder = async (order: any) => {
+    if (!user) return;
+    setAcceptingOrderId(order.id);
+    const items = order.order_items || [];
+
+    // Build stock map
+    const stockMap: Record<string, number> = {};
+    dealerStock.forEach((s: any) => { stockMap[s.product_id] = s.quantity; });
+
+    // Validate stock per item
+    let totalPv = 0;
+    for (const item of items) {
+      const available = stockMap[item.product_id] || 0;
+      if (available < item.quantity) {
+        toast.error(`স্টক অপর্যাপ্ত: ${item.product_title || item.product_id} — ${available}টি আছে, ${item.quantity}টি দরকার`);
+        setAcceptingOrderId(null);
+        return;
+      }
+      // Fetch product PV
+      const { data: prod } = await supabase.from('ecom_products').select('metadata').eq('id', item.product_id).single();
+      totalPv += (prod?.metadata?.pv_points || 0) * item.quantity;
+    }
+
+    // Decrement dealer stock
+    for (const item of items) {
+      const stockRow = dealerStock.find((s: any) => s.product_id === item.product_id);
+      if (stockRow) {
+        await supabase.from('dealer_stock').update({ quantity: stockRow.quantity - item.quantity, updated_at: new Date().toISOString() }).eq('id', stockRow.id);
+      }
+    }
+
+    // Accept order
+    await supabase.from('ecom_orders').update({ dealer_status: 'accepted', status: 'paid' }).eq('id', order.id);
+
+    // Distribute commissions for customer
+    if (totalPv > 0) await processOrderCommissionsForUser(order.user_id, totalPv);
+
+    toast.success('✅ অর্ডার গ্রহণ হয়েছে, কমিশন বন্টন হয়েছে!');
+    setAcceptingOrderId(null);
+    fetchDealerData();
   };
 
   const buildGenerationTable = async () => {
@@ -403,6 +500,7 @@ export default function UserDashboard() {
     {id:'transfer',    label:t('transfer'),    icon:<ArrowRightLeft size={18}/>},
     {id:'history',     label:t('history'),     icon:<History size={18}/>},
     {id:'profile',     label:t('profile'),     icon:<Camera size={18}/>},
+    ...(user?.is_dealer ? [{id:'dealer', label:'ডিলার', icon:<Star size={18}/>}] : []),
   ];
 
   const purposeLabel = (p: string) =>
@@ -1246,6 +1344,143 @@ export default function UserDashboard() {
                     {pwLoading ? 'আপডেট হচ্ছে...' : '🔒 পাসওয়ার্ড পরিবর্তন করুন'}
                   </button>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* ── Dealer Tab ── */}
+          {activeTab === 'dealer' && user?.is_dealer && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-gray-900">ডিলার ড্যাশবোর্ড</h2>
+
+              {/* Section 1: রিকুইজিশন */}
+              <div className="bg-orange-50 rounded-2xl p-5 border border-orange-100">
+                <h3 className="font-semibold text-orange-800 mb-3">📦 পণ্য রিকুইজিশন দিন</h3>
+                <div className="grid sm:grid-cols-3 gap-3 mb-3">
+                  <div className="sm:col-span-2">
+                    <label className="text-xs text-gray-500 mb-1 block">পণ্য বেছে নিন</label>
+                    <select value={dealerReqForm.product_id} onChange={e=>setDealerReqForm(f=>({...f,product_id:e.target.value}))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-orange-200 text-sm bg-white focus:border-orange-500 outline-none">
+                      <option value="">-- পণ্য বেছে নিন --</option>
+                      {dealerProducts.map(p=>(
+                        <option key={p.id} value={p.id}>{p.title} ({p.metadata?.pv_points||0} PV/unit)</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">পরিমাণ</label>
+                    <input type="number" min={1} value={dealerReqForm.quantity} onChange={e=>setDealerReqForm(f=>({...f,quantity:parseInt(e.target.value)||1}))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-orange-200 text-sm bg-white focus:border-orange-500 outline-none"/>
+                  </div>
+                </div>
+                {dealerReqForm.product_id && (() => {
+                  const prod = dealerProducts.find(p=>p.id===dealerReqForm.product_id);
+                  const pv = (prod?.metadata?.pv_points||0) * dealerReqForm.quantity;
+                  const comm = Math.floor(pv * 0.05);
+                  return <p className="text-xs text-orange-600 mb-3">মোট PV: {pv} → কমিশন: ৳{comm}</p>;
+                })()}
+                <button onClick={handleSubmitRequisition} disabled={dealerReqLoading||!dealerReqForm.product_id}
+                  className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 text-white rounded-xl text-sm font-bold hover:from-orange-600 hover:to-amber-700 disabled:opacity-50 transition-all">
+                  {dealerReqLoading ? 'জমা হচ্ছে...' : 'রিকুইজিশন দিন'}
+                </button>
+              </div>
+
+              {/* Section 2: স্টক */}
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                <h3 className="font-semibold text-gray-800 mb-3">🗄️ আমার স্টক</h3>
+                {dealerStock.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-4 text-center">কোনো স্টক নেই — রিকুইজিশন দিন</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b text-xs text-gray-500"><th className="pb-2 text-left">পণ্য</th><th className="pb-2 text-right">পরিমাণ</th></tr></thead>
+                    <tbody>
+                      {dealerStock.map(s=>(
+                        <tr key={s.id} className="border-b border-gray-50">
+                          <td className="py-2.5">{s.product_name}</td>
+                          <td className="py-2.5 text-right font-bold">{s.quantity}টি</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Section 3: পেন্ডিং অর্ডার */}
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                <h3 className="font-semibold text-gray-800 mb-3">🛒 পেন্ডিং অর্ডার</h3>
+                {dealerOrders.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-4 text-center">কোনো পেন্ডিং অর্ডার নেই</p>
+                ) : (
+                  <div className="space-y-4">
+                    {dealerOrders.map(order => {
+                      const items = order.order_items || [];
+                      const stockMap: Record<string, number> = {};
+                      dealerStock.forEach((s:any) => { stockMap[s.product_id] = s.quantity; });
+                      const hasStock = items.every((item:any) => (stockMap[item.product_id] || 0) >= item.quantity);
+                      return (
+                        <div key={order.id} className="border border-gray-100 rounded-xl p-4">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <p className="font-medium text-sm">{order.shipping_address?.name || 'কাস্টমার'}</p>
+                              <p className="text-xs text-gray-400">{order.shipping_address?.phone} • {new Date(order.created_at).toLocaleDateString('bn-BD')}</p>
+                            </div>
+                            <p className="font-bold text-gray-900">৳{((order.total_price||0)/100).toLocaleString()}</p>
+                          </div>
+                          <div className="text-xs text-gray-600 space-y-1 mb-3">
+                            {items.map((item:any,i:number) => {
+                              const avail = stockMap[item.product_id] || 0;
+                              const ok = avail >= item.quantity;
+                              return (
+                                <div key={i} className="flex justify-between">
+                                  <span>{item.product_title || 'পণ্য'} × {item.quantity}</span>
+                                  <span className={ok ? 'text-green-600' : 'text-red-500'}>{ok ? `✅ স্টক আছে (${avail}টি)` : `❌ অপর্যাপ্ত (${avail}টি)`}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {hasStock ? (
+                            <button onClick={() => handleAcceptDealerOrder(order)} disabled={acceptingOrderId === order.id}
+                              className="w-full py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg text-sm font-bold hover:from-green-600 hover:to-emerald-700 disabled:opacity-50 transition-all">
+                              {acceptingOrderId === order.id ? 'প্রসেস হচ্ছে...' : '✅ এক্সেপ্ট করুন'}
+                            </button>
+                          ) : (
+                            <div className="w-full py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium text-center">❌ স্টক অপর্যাপ্ত</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Section 4: রিকুইজিশন ইতিহাস */}
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                <h3 className="font-semibold text-gray-800 mb-3">📋 রিকুইজিশন ইতিহাস</h3>
+                {dealerReqs.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-4 text-center">কোনো রিকুইজিশন নেই</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b text-xs text-gray-500 text-left">
+                      <th className="pb-2">পণ্য</th><th className="pb-2 text-right">পরিমাণ</th>
+                      <th className="pb-2 text-right">কমিশন</th><th className="pb-2 text-center">অবস্থা</th><th className="pb-2 text-right">তারিখ</th>
+                    </tr></thead>
+                    <tbody>
+                      {dealerReqs.map(r=>(
+                        <tr key={r.id} className="border-b border-gray-50">
+                          <td className="py-2.5">{r.product_name}</td>
+                          <td className="py-2.5 text-right">{r.quantity}</td>
+                          <td className="py-2.5 text-right text-green-600 font-medium">৳{r.commission_amount}</td>
+                          <td className="py-2.5 text-center">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${r.status==='accepted'?'bg-green-100 text-green-700':r.status==='rejected'?'bg-red-100 text-red-700':'bg-yellow-100 text-yellow-700'}`}>
+                              {r.status==='accepted'?'অনুমোদিত':r.status==='rejected'?'বাতিল':'পেন্ডিং'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-right text-gray-400 text-xs">{new Date(r.created_at).toLocaleDateString('bn-BD')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           )}

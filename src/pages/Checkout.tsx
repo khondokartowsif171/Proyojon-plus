@@ -79,6 +79,13 @@ export default function Checkout() {
   const [mobileSuccess,  setMobileSuccess]  = useState(false);
   const [balanceLoading, setBalanceLoading] = useState(false);
 
+  // Delivery type
+  const [deliveryType,      setDeliveryType]      = useState<'company' | 'dealer'>('company');
+  const [dealers,           setDealers]           = useState<any[]>([]);
+  const [selectedDealerId,  setSelectedDealerId]  = useState('');
+  const [dealerStockMap,    setDealerStockMap]    = useState<Record<string, number>>({});
+  const [dealerStockLoading,setDealerStockLoading]= useState(false);
+
   const [shippingAddress, setShippingAddress] = useState({
     name:           user?.name  || '',
     email:          user?.email || '',
@@ -94,6 +101,27 @@ export default function Checkout() {
   const userBalance        = user?.current_balance || 0;
   const cartTotalInTaka    = Math.round(cartTotal / 100); // cart total টাকায়
   const canPayWithBalance  = userBalance >= cartTotalInTaka && cartTotalInTaka > 0;
+
+  // Fetch active dealers
+  useEffect(() => {
+    supabase.from('mlm_users').select('id, name, dealer_area')
+      .eq('is_dealer', true).eq('is_active', true)
+      .then(({ data }) => { if (data) setDealers(data); });
+  }, []);
+
+  // Fetch dealer stock when dealer selected
+  useEffect(() => {
+    if (!selectedDealerId) { setDealerStockMap({}); return; }
+    setDealerStockLoading(true);
+    supabase.from('dealer_stock').select('product_id, quantity')
+      .eq('dealer_id', selectedDealerId)
+      .then(({ data }) => {
+        const map: Record<string, number> = {};
+        (data || []).forEach((row: any) => { map[row.product_id] = row.quantity; });
+        setDealerStockMap(map);
+        setDealerStockLoading(false);
+      });
+  }, [selectedDealerId]);
 
   useEffect(() => {
     if (cart.length === 0) { navigate('/cart'); return; }
@@ -294,6 +322,8 @@ export default function Checkout() {
       total:                    cartTotal,
       shipping_address:         shippingAddress,
       stripe_payment_intent_id: paymentRef,
+      dealer_id:                deliveryType === 'dealer' ? selectedDealerId : null,
+      dealer_status:            deliveryType === 'dealer' ? 'pending' : null,
       notes: shippingAddress.referrer_name
         ? `রেফারার: ${shippingAddress.referrer_name} (${shippingAddress.referrer_phone})`
         : null,
@@ -315,8 +345,9 @@ export default function Checkout() {
       );
     }
 
-    // ✅ Fix 4: শুধু customer package এর জন্য PV process করো
-    if (addPvNow && user && user.package_type === 'customer' && totalPvPoints > 0) {
+    // PV process: dealer order-এ PV defer করা হয় (dealer acceptance-এ হবে)
+    const shouldAddPvNow = addPvNow && deliveryType === 'company';
+    if (shouldAddPvNow && user && user.package_type === 'customer' && totalPvPoints > 0) {
       await processPvForCustomer(totalPvPoints);
     } else if (addPvNow) {
       await refreshUser();
@@ -328,6 +359,9 @@ export default function Checkout() {
 
   // ── Card payment ──────────────────────────────────────────────────────────
   const handlePaymentSuccess = async (paymentIntent: any) => {
+    if (deliveryType === 'dealer' && !selectedDealerId) {
+      toast.error('একজন ডিলার বেছে নিন'); return;
+    }
     try {
       await createOrder(paymentIntent.id, true);
     } catch (err) {
@@ -345,6 +379,10 @@ export default function Checkout() {
     }
     setMobileLoading(true);
 
+    if (deliveryType === 'dealer' && !selectedDealerId) {
+      toast.error('একজন ডিলার বেছে নিন'); setMobileLoading(false); return;
+    }
+
     if (user) {
       await supabase.from('mlm_payment_verifications').insert({
         user_id:       user.id,
@@ -353,7 +391,7 @@ export default function Checkout() {
         trx_id:        trxId.trim(),
         sender_number: senderNumber.trim() || null,
         purpose:       'product_purchase',
-        pv_points:     user.package_type === 'customer' ? totalPvPoints : 0,
+        pv_points:     (deliveryType === 'company' && user.package_type === 'customer') ? totalPvPoints : 0,
         status:        'pending',
       });
     }
@@ -373,6 +411,9 @@ export default function Checkout() {
     }
     if (!shippingAddress.name || !shippingAddress.phone || !shippingAddress.address) {
       toast.error('শিপিং তথ্য পূরণ করুন'); return;
+    }
+    if (deliveryType === 'dealer' && !selectedDealerId) {
+      toast.error('একজন ডিলার বেছে নিন'); return;
     }
 
     setBalanceLoading(true);
@@ -489,6 +530,73 @@ export default function Checkout() {
                   <input value={shippingAddress.referrer_phone} onChange={e => setShippingAddress({...shippingAddress, referrer_phone: e.target.value})}
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none" placeholder="রেফারকারীর ফোন" />
                 </div>
+              </div>
+            </div>
+
+            {/* Delivery Point */}
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                🏪 ডেলিভারি পয়েন্ট
+              </h2>
+              <div className="space-y-3">
+                <label className="flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all select-none"
+                  style={{ borderColor: deliveryType === 'company' ? '#4f46e5' : '#e5e7eb', background: deliveryType === 'company' ? '#eef2ff' : '#fff' }}>
+                  <input type="radio" name="delivery" value="company" checked={deliveryType === 'company'} onChange={() => { setDeliveryType('company'); setSelectedDealerId(''); }}
+                    className="accent-indigo-600" />
+                  <div>
+                    <p className="font-medium text-sm">কোম্পানি থেকে সরাসরি</p>
+                    <p className="text-xs text-gray-400">অর্ডার দেওয়ার সাথে সাথে PV বন্টন হবে</p>
+                  </div>
+                </label>
+                <label className="flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all select-none"
+                  style={{ borderColor: deliveryType === 'dealer' ? '#4f46e5' : '#e5e7eb', background: deliveryType === 'dealer' ? '#eef2ff' : '#fff' }}>
+                  <input type="radio" name="delivery" value="dealer" checked={deliveryType === 'dealer'} onChange={() => setDeliveryType('dealer')}
+                    className="accent-indigo-600" />
+                  <div>
+                    <p className="font-medium text-sm">ডিলার পয়েন্ট থেকে</p>
+                    <p className="text-xs text-gray-400">ডিলার এক্সেপ্ট করলে PV ও কমিশন বন্টন হবে</p>
+                  </div>
+                </label>
+
+                {deliveryType === 'dealer' && (
+                  <div className="mt-2">
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">ডিলার বেছে নিন *</label>
+                    {dealers.length === 0 ? (
+                      <p className="text-sm text-gray-400 py-2">কোনো সক্রিয় ডিলার নেই</p>
+                    ) : (
+                      <select value={selectedDealerId} onChange={e => setSelectedDealerId(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 text-sm focus:border-indigo-500 outline-none bg-white">
+                        <option value="">-- ডিলার বেছে নিন --</option>
+                        {dealers.map((d: any) => (
+                          <option key={d.id} value={d.id}>{d.name}{d.dealer_area ? ` — ${d.dealer_area}` : ''}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    {/* Dealer stock preview */}
+                    {selectedDealerId && (
+                      <div className="mt-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                        <p className="text-xs font-medium text-gray-600 mb-2">📦 ডিলারের স্টক (আপনার কার্টের সাথে):</p>
+                        {dealerStockLoading ? (
+                          <p className="text-xs text-gray-400">স্টক চেক হচ্ছে...</p>
+                        ) : cart.map((item: any, i: number) => {
+                          const avail = dealerStockMap[item.product_id] || 0;
+                          const ok    = avail >= item.quantity;
+                          const low   = avail > 0 && avail < item.quantity;
+                          return (
+                            <div key={i} className="flex justify-between items-center text-xs py-1">
+                              <span className="text-gray-700">{item.name} × {item.quantity}</span>
+                              <span className={ok ? 'text-green-600 font-medium' : low ? 'text-yellow-600 font-medium' : 'text-red-500 font-medium'}>
+                                {ok ? `✅ ${avail}টি আছে` : low ? `⚠️ ${avail}টি (কম)` : '❌ স্টক নেই'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <p className="text-[10px] text-gray-400 mt-2">ℹ️ স্টক না থাকলে ডিলার রিজেক্ট করতে পারেন</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

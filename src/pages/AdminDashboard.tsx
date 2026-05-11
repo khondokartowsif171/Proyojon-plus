@@ -66,6 +66,7 @@ const adminT = {
     catMgmt: 'ক্যাটাগরি ম্যানেজমেন্ট', newCat: 'নতুন ক্যাটাগরি',
     shopCollections: 'শপ কালেকশন', shopColNote: 'শপ নেভিগেশন ড্রপডাউনে যা দেখাবে',
     newCollection: '+ নতুন কালেকশন', colTitle: 'কালেকশন নাম', colDesc: 'বিবরণ (ঐচ্ছিক)',
+    dealerReq: 'ডিলার রিকুইজিশন',
   },
   en: {
     sidebarTitle: 'Admin Panel',
@@ -100,6 +101,7 @@ const adminT = {
     catMgmt: 'Category Management', newCat: 'New Category',
     shopCollections: 'Shop Collections', shopColNote: 'Appears in shop navigation dropdown',
     newCollection: '+ New Collection', colTitle: 'Collection Name', colDesc: 'Description (optional)',
+    dealerReq: 'Dealer Requisitions',
   },
 } as const;
 
@@ -164,6 +166,7 @@ export default function AdminDashboard() {
   const [dealerFormUser,  setDealerFormUser]  = useState<any>(null);
   const [dealerFormType,  setDealerFormType]  = useState('');
   const [dealerFormNotes, setDealerFormNotes] = useState('');
+  const [requisitions,    setRequisitions]    = useState<any[]>([]);
 
   // Gold packages admin (#15)
   const [adminGoldPkgs,  setAdminGoldPkgs]  = useState<any[]>([]);
@@ -260,6 +263,13 @@ export default function AdminDashboard() {
       .select('*, user:mlm_users(name,phone)')
       .order('purchased_at', { ascending: false });
     if (goldPkgsData) setAdminGoldPkgs(goldPkgsData);
+
+    const { data: reqData } = await supabase
+      .from('dealer_requisitions')
+      .select('*, dealer:dealer_id(name, phone, dealer_area)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+    if (reqData) setRequisitions(reqData);
   };
 
   // ── Daily cron ───────────────────────────────────────────────────────────────
@@ -390,11 +400,54 @@ export default function AdminDashboard() {
     fetchAll();
   };
 
-  const handleToggleDealer = async (userId: string, makeDealer: boolean) => {
-    const { error } = await supabase.from('mlm_users').update({ is_dealer: makeDealer }).eq('id', userId);
+  const handleToggleDealer = async (userId: string, makeDealer: boolean, area?: string) => {
+    const payload: any = { is_dealer: makeDealer };
+    if (makeDealer) payload.dealer_area = area?.trim() || null;
+    else payload.dealer_area = null;
+    const { error } = await supabase.from('mlm_users').update(payload).eq('id', userId);
     if (error) { toast.error('সমস্যা: ' + error.message); return; }
     toast.success(makeDealer ? '✅ ডিলার মনোনীত করা হয়েছে' : '❌ ডিলার মর্যাদা বাতিল');
     setDealerFormUser(null); setDealerFormType(''); setDealerFormNotes('');
+    fetchAll();
+  };
+
+  const handleAcceptRequisition = async (req: any) => {
+    setLoading(true);
+    // 1. Mark requisition accepted
+    await supabase.from('dealer_requisitions').update({ status: 'accepted', processed_at: new Date().toISOString() }).eq('id', req.id);
+
+    // 2. Upsert dealer_stock (increment or insert)
+    const { data: existing } = await supabase.from('dealer_stock')
+      .select('id, quantity').eq('dealer_id', req.dealer_id).eq('product_id', req.product_id).maybeSingle();
+    if (existing) {
+      await supabase.from('dealer_stock').update({ quantity: existing.quantity + req.quantity, updated_at: new Date().toISOString() }).eq('id', existing.id);
+    } else {
+      await supabase.from('dealer_stock').insert({ dealer_id: req.dealer_id, product_id: req.product_id, product_name: req.product_name, quantity: req.quantity });
+    }
+
+    // 3. Credit commission to dealer
+    const commission = req.commission_amount || 0;
+    if (commission > 0) {
+      const { data: dealer } = await supabase.from('mlm_users').select('current_balance, total_income').eq('id', req.dealer_id).single();
+      if (dealer) {
+        await supabase.from('mlm_users').update({
+          current_balance: Number(dealer.current_balance || 0) + commission,
+          total_income:    Number(dealer.total_income    || 0) + commission,
+        }).eq('id', req.dealer_id);
+        await supabase.from('mlm_transactions').insert({
+          user_id: req.dealer_id, type: 'dealer_commission', amount: commission,
+          description: `ডিলার রিকুইজিশন কমিশন — ${req.product_name} (${req.quantity}টি, ৳${commission})`,
+        });
+      }
+    }
+
+    toast.success(`✅ রিকুইজিশন গ্রহণ — ${req.product_name} (${req.quantity}টি) স্টকে যোগ হয়েছে`);
+    fetchAll(); setLoading(false);
+  };
+
+  const handleRejectRequisition = async (id: string) => {
+    await supabase.from('dealer_requisitions').update({ status: 'rejected', processed_at: new Date().toISOString() }).eq('id', id);
+    toast.success('রিকুইজিশন বাতিল করা হয়েছে');
     fetchAll();
   };
 
@@ -628,6 +681,17 @@ export default function AdminDashboard() {
 
       // ══ CASE 1: Product purchase ══════════════════════════════════════════
       if (pv.purpose === 'product_purchase') {
+        // Check if this is a dealer order — if so, skip PV (PV deferred to dealer acceptance)
+        const { data: dealerOrder } = await supabase
+          .from('ecom_orders')
+          .select('dealer_id')
+          .ilike('stripe_payment_intent_id', `mobile_${pv.method}_${pv.trx_id}`)
+          .maybeSingle();
+        if (dealerOrder?.dealer_id) {
+          toast.success('✅ পেমেন্ট অনুমোদিত। PV ডিলার এক্সেপ্ট করলে বন্টন হবে।');
+          fetchAll(); setLoading(false); return;
+        }
+
         const { data: userData } = await supabase.from('mlm_users')
           .select('pv_points, monthly_pv_purchased, referrer_id, package_type, is_active')
           .eq('id', pv.user_id).single();
@@ -950,6 +1014,7 @@ export default function AdminDashboard() {
     { id: 'withdrawals',  label: at('withdrawals'),   icon: <Wallet size={18} /> },
     { id: 'transactions', label: at('transactions'),  icon: <FileText size={18} /> },
     { id: 'orders',       label: at('orders'),        icon: <Package size={18} /> },
+    { id: 'dealer-req',   label: at('dealerReq'),     icon: <Star size={18} /> },
     { id: 'reports',      label: at('reports'),       icon: <BarChart3 size={18} /> },
   ];
 
@@ -1731,6 +1796,60 @@ export default function AdminDashboard() {
               </div>
             )}
 
+            {activeTab === 'dealer-req' && (
+              <div>
+                <h2 className="text-lg font-bold mb-4">ডিলার রিকুইজিশন (পেন্ডিং)</h2>
+                {requisitions.length === 0 ? (
+                  <div className="text-center py-16 text-gray-400">
+                    <Star size={40} className="mx-auto mb-3 opacity-30" />
+                    <p>কোনো পেন্ডিং রিকুইজিশন নেই</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
+                          <th className="pb-2 pr-3">ডিলার</th>
+                          <th className="pb-2 pr-3">অঞ্চল</th>
+                          <th className="pb-2 pr-3">পণ্য</th>
+                          <th className="pb-2 pr-3 text-right">পরিমাণ</th>
+                          <th className="pb-2 pr-3 text-right">মোট PV</th>
+                          <th className="pb-2 pr-3 text-right">কমিশন</th>
+                          <th className="pb-2 pr-3">তারিখ</th>
+                          <th className="pb-2">অ্যাকশন</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {requisitions.map(req => (
+                          <tr key={req.id} className="border-b border-gray-50 hover:bg-gray-50">
+                            <td className="py-3 pr-3 font-medium">{req.dealer?.name || '-'}</td>
+                            <td className="py-3 pr-3 text-gray-500">{req.dealer?.dealer_area || '-'}</td>
+                            <td className="py-3 pr-3">{req.product_name}</td>
+                            <td className="py-3 pr-3 text-right">{req.quantity}</td>
+                            <td className="py-3 pr-3 text-right text-indigo-600 font-medium">{req.total_pv}</td>
+                            <td className="py-3 pr-3 text-right text-green-600 font-bold">৳{req.commission_amount}</td>
+                            <td className="py-3 pr-3 text-gray-400 text-xs">{new Date(req.created_at).toLocaleDateString('bn-BD')}</td>
+                            <td className="py-3">
+                              <div className="flex gap-2">
+                                <button onClick={() => handleAcceptRequisition(req)} disabled={loading}
+                                  className="px-3 py-1.5 bg-green-100 text-green-700 hover:bg-green-200 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+                                  ✅ গ্রহণ
+                                </button>
+                                <button onClick={() => handleRejectRequisition(req.id)} disabled={loading}
+                                  className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+                                  ❌ বাতিল
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeTab === 'reports' && (
               <div>
                 <h2 className="text-lg font-bold mb-4">রিপোর্ট ও বিশ্লেষণ</h2>
@@ -1863,10 +1982,10 @@ export default function AdminDashboard() {
                 </div>
               ))}
               <div>
-                <label className="text-xs font-medium text-gray-500 mb-1 block">ডিলার ধরন (ঐচ্ছিক)</label>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">ডিলার অঞ্চল (ঐচ্ছিক)</label>
                 <input value={dealerFormType} onChange={e=>setDealerFormType(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-500 outline-none"
-                  placeholder="যেমন: আঞ্চলিক ডিলার"/>
+                  placeholder="যেমন: ঢাকা, চট্টগ্রাম, সিলেট"/>
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-500 mb-1 block">মন্তব্য (ঐচ্ছিক)</label>
@@ -1877,7 +1996,7 @@ export default function AdminDashboard() {
             </div>
             <div className="flex gap-3">
               <button onClick={()=>setDealerFormUser(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50">বাতিল</button>
-              <button onClick={()=>handleToggleDealer(dealerFormUser.id, true)}
+              <button onClick={()=>handleToggleDealer(dealerFormUser.id, true, dealerFormType)}
                 className="flex-1 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 text-white rounded-xl text-sm font-bold hover:from-orange-600 hover:to-amber-700">
                 ডিলার মনোনীত করুন
               </button>

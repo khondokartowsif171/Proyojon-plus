@@ -225,6 +225,82 @@ export const processDealerCommission = async (
 };
 
 
+// ── Customer order via dealer: PV + MLM commission chain ─────────────────────
+// Called when dealer accepts a customer's order (deferred from checkout)
+export const processOrderCommissionsForUser = async (
+  userId: string,
+  pvAmount: number,
+): Promise<void> => {
+  if (pvAmount <= 0) return;
+  const { data: u } = await supabase.from('mlm_users').select('*').eq('id', userId).single();
+  if (!u || u.package_type !== 'customer') return;
+
+  const priorPvTotal = u.pv_points || 0;
+  const newTotalPv   = priorPvTotal + pvAmount;
+  const newMonthly   = (u.monthly_pv_purchased || 0) + pvAmount;
+  const isFirstTime  = priorPvTotal < CUSTOMER_PV_TO_ACTIVATE;
+  const wasInactive  = !u.is_active;
+
+  const updates: any = { pv_points: newTotalPv, monthly_pv_purchased: newMonthly };
+  const expiry = new Date(); expiry.setDate(expiry.getDate() + 30);
+
+  if (!u.is_active) {
+    if (isFirstTime && newTotalPv >= CUSTOMER_PV_TO_ACTIVATE) {
+      updates.is_active    = true;
+      updates.expires_at   = expiry.toISOString();
+      updates.activated_at = new Date().toISOString();
+      updates.is_daily_club = true;
+    } else if (!isFirstTime && newMonthly >= MONTHLY_PV_TO_RENEW) {
+      updates.is_active    = true;
+      updates.expires_at   = expiry.toISOString();
+      updates.is_daily_club = true;
+    }
+  } else if (u.is_active && newMonthly >= MONTHLY_PV_TO_RENEW) {
+    updates.expires_at    = expiry.toISOString();
+    updates.is_daily_club = true;
+  }
+
+  await supabase.from('mlm_users').update(updates).eq('id', userId);
+  await supabase.from('mlm_pv_log').insert({ user_id: userId, amount: pvAmount, source: 'dealer_order' }).catch(() => {});
+
+  // Referral commission — only on first activation
+  const justFirstActivated = wasInactive && isFirstTime && updates.is_active === true;
+  if (justFirstActivated && u.referrer_id) {
+    const commission = Math.floor(CUSTOMER_PV_TO_ACTIVATE * CUSTOMER_REFERRAL_PCT);
+    const { data: ref } = await supabase.from('mlm_users')
+      .select('id, current_balance, total_income, is_active, direct_referrals_count, is_weekly_club, is_insurance_club')
+      .eq('id', u.referrer_id).single();
+    if (ref && ref.is_active) {
+      const newCount = (ref.direct_referrals_count || 0) + 1;
+      const refUpd: any = {
+        direct_referrals_count: newCount,
+        current_balance: Number(ref.current_balance || 0) + commission,
+        total_income:    Number(ref.total_income    || 0) + commission,
+      };
+      if (newCount >= 15 && !ref.is_weekly_club) refUpd.is_weekly_club = true;
+      if (!ref.is_insurance_club) {
+        const { data: directs } = await supabase.from('mlm_users')
+          .select('is_weekly_club').eq('referrer_id', ref.id).eq('is_active', true);
+        if (((directs || []) as any[]).filter((r: any) => r.is_weekly_club).length >= 15) {
+          refUpd.is_insurance_club = true; refUpd.is_pension_club = true;
+        }
+      }
+      await supabase.from('mlm_users').update(refUpd).eq('id', ref.id);
+      await supabase.from('mlm_transactions').insert({
+        user_id: ref.id, type: 'referral_income', amount: commission,
+        description: `কাস্টমার রেফার কমিশন ৫% — ডিলার অর্ডার (৳${commission})`,
+        related_user_id: userId,
+      });
+    }
+  }
+
+  const isNowActive = u.is_active || updates.is_active === true;
+  if (isNowActive && u.referrer_id && pvAmount > 0)
+    await distributeGenerationBonus(u.referrer_id, pvAmount, userId, 1);
+  if (pvAmount >= 1) await addToClubPools(pvAmount);
+};
+
+
 // ── Build activation payload for package ─────────────────────────────────────
 export const buildPackageActivationPayload = (
   packageType: 'customer' | 'shareholder' | 'gold',
