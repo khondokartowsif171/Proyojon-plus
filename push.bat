@@ -1,4 +1,5 @@
 cd "D:\proyojon plus"
 git add .
-git commit -m "fix: add missing functions and daily cron bakeya"
+git commit -m "feat: international gold price widget in user dashboard"
 git push
+pause
