@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '@/lib/supabase';
-import { processDealerCommission, processDealerPurchasePv } from '@/lib/mlm-business-logic';
+import { processDealerCommission, processDealerPurchasePv, addToClubPools } from '@/lib/mlm-business-logic';
 import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
@@ -20,14 +20,6 @@ const stripePromise =
       )
     : null;
 
-// ── Club pool percentages ────────────────────────────────────────────────────
-const PV_CLUB_PCTS: Record<string, number> = {
-  daily_club:       0.30,
-  weekly_club:      0.025,
-  insurance_club:   0.0125,
-  pension_club:     0.0125,
-  shareholder_club: 0.10,
-};
 
 // ── Stripe Payment Form ──────────────────────────────────────────────────────
 function PaymentForm({ onSuccess }: { onSuccess: (pi: any) => void }) {
@@ -138,22 +130,6 @@ export default function Checkout() {
       }
     }
   }, [paymentMethod]);
-
-  // ── Club pool helper ──────────────────────────────────────────────────────
-  const addToClubPools = async (pvAmount: number) => {
-    for (const [clubType, pct] of Object.entries(PV_CLUB_PCTS)) {
-      const amt = Math.floor(pvAmount * pct);
-      if (amt <= 0) continue;
-      const { data: pool } = await supabase
-        .from('mlm_club_pools').select('id, total_amount')
-        .eq('club_type', clubType).single();
-      if (pool) {
-        await supabase.from('mlm_club_pools')
-          .update({ total_amount: (pool.total_amount || 0) + amt })
-          .eq('id', pool.id);
-      }
-    }
-  };
 
   // ── Generation bonus chain — শুধু customer package এর PV sales এ ──────────
   const processGenerationBonusChain = async (

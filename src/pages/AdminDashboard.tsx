@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
-import { processDealerCommission, processDealerPurchasePv } from '@/lib/mlm-business-logic';
+import { processDealerCommission, processDealerPurchasePv, addToClubPools, PV_CLUB_PCTS } from '@/lib/mlm-business-logic';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import AdminProductManager from '@/components/AdminProductManager';
@@ -23,14 +23,6 @@ const clubLabels: Record<string, string> = {
   shareholder_club: 'শেয়ারহোল্ডার ক্লাব',
 };
 
-// Club pool percentages — শুধু PV sales থেকে
-const PV_CLUB_PCTS: Record<string, number> = {
-  daily_club:       0.30,
-  weekly_club:      0.025,
-  insurance_club:   0.0125,
-  pension_club:     0.0125,
-  shareholder_club: 0.10,
-};
 
 const adminT = {
   bn: {
@@ -656,16 +648,6 @@ export default function AdminDashboard() {
       await supabase.from('mlm_transactions').insert({ user_id: userId, type: 'generation_bonus', amount: bonus, description: `জেনারেশন ${gen} বোনাস (PV: ${pvPoints})`, related_user_id: sourceId });
     }
     if (u.referrer_id) await distributeGenerationBonus(u.referrer_id, pvPoints, sourceId, gen + 1);
-  };
-
-  // ── Club pool helper ─────────────────────────────────────────────────────
-  const addToClubPools = async (pvAmount: number) => {
-    for (const [clubType, pct] of Object.entries(PV_CLUB_PCTS)) {
-      const amt = Math.floor(pvAmount * pct);
-      if (amt <= 0) continue;
-      const { data: pool } = await supabase.from('mlm_club_pools').select('id, total_amount').eq('club_type', clubType).single();
-      if (pool) await supabase.from('mlm_club_pools').update({ total_amount: (pool.total_amount || 0) + amt }).eq('id', pool.id);
-    }
   };
 
   // ── Payment approve ──────────────────────────────────────────────────────
@@ -1629,7 +1611,7 @@ export default function AdminDashboard() {
               <div>
                 <h2 className="text-lg font-bold mb-1">ক্লাব বোনাস বন্টন</h2>
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-xs text-blue-800 space-y-1">
-                  <p>📌 Customer package + PV sales → Daily 30% • Weekly 2.5% • Insurance 1.25% • Pension 1.25% • Shareholder 10%</p>
+                  <p>📌 Customer package + PV sales → Daily 30% • Weekly 2.5% • Insurance 2.5% • Pension 2.5% • Shareholder 10%</p>
                   <p>📌 Shareholder club → শুধু shareholder package holders পাবেন</p>
                 </div>
                 <div className="grid md:grid-cols-2 gap-4 mb-6">
@@ -1663,7 +1645,7 @@ export default function AdminDashboard() {
                       : pool.club_type==='pension_club'     ? users.filter(u=>u.is_pension_club).length
                       : pool.club_type==='shareholder_club' ? users.filter(u=>u.is_shareholder_club&&u.package_type==='shareholder').length : 0;
                     const perMember = memberCount>0&&pool.total_amount>0 ? Math.floor(pool.total_amount/memberCount) : 0;
-                    const pctLabel = pool.club_type==='daily_club'?'৩০%':pool.club_type==='shareholder_club'?'১০%':pool.club_type==='weekly_club'?'২.৫%':'১.২৫%';
+                    const pctLabel = pool.club_type==='daily_club'?'৩০%':pool.club_type==='shareholder_club'?'১০%':pool.club_type==='weekly_club'?'২.৫%':'২.৫%';
                     return (
                       <div key={pool.id} className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 border border-gray-200">
                         <h3 className="font-bold text-gray-800 mb-1">{clubLabels[pool.club_type]||pool.club_type}</h3>
