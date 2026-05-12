@@ -160,6 +160,7 @@ export default function AdminDashboard() {
   const [dealerFormType,  setDealerFormType]  = useState('');
   const [dealerFormNotes, setDealerFormNotes] = useState('');
   const [requisitions,    setRequisitions]    = useState<any[]>([]);
+  const [processingReqId, setProcessingReqId] = useState<string | null>(null);
 
   // Gold packages admin (#15)
   const [adminGoldPkgs,  setAdminGoldPkgs]  = useState<any[]>([]);
@@ -405,42 +406,47 @@ export default function AdminDashboard() {
   };
 
   const handleAcceptRequisition = async (req: any) => {
-    setLoading(true);
-    // 1. Mark requisition accepted
-    await supabase.from('dealer_requisitions').update({ status: 'accepted', processed_at: new Date().toISOString() }).eq('id', req.id);
+    if (processingReqId === req.id) return; // double-click guard
+    setProcessingReqId(req.id);
+    try {
+      // 1. Mark requisition accepted
+      await supabase.from('dealer_requisitions').update({ status: 'accepted', processed_at: new Date().toISOString() }).eq('id', req.id);
 
-    // 2. Upsert dealer_stock (increment or insert)
-    const { data: existing } = await supabase.from('dealer_stock')
-      .select('id, quantity').eq('dealer_id', req.dealer_id).eq('product_id', req.product_id).maybeSingle();
-    if (existing) {
-      await supabase.from('dealer_stock').update({ quantity: existing.quantity + req.quantity, updated_at: new Date().toISOString() }).eq('id', existing.id);
-    } else {
-      await supabase.from('dealer_stock').insert({ dealer_id: req.dealer_id, product_id: req.product_id, product_name: req.product_name, quantity: req.quantity });
-    }
-
-    // 3. Credit commission to dealer
-    const commission = req.commission_amount || 0;
-    if (commission > 0) {
-      const { data: dealer } = await supabase.from('mlm_users').select('current_balance, total_income').eq('id', req.dealer_id).single();
-      if (dealer) {
-        await supabase.from('mlm_users').update({
-          current_balance: Number(dealer.current_balance || 0) + commission,
-          total_income:    Number(dealer.total_income    || 0) + commission,
-        }).eq('id', req.dealer_id);
-        await supabase.from('mlm_transactions').insert({
-          user_id: req.dealer_id, type: 'dealer_commission', amount: commission,
-          description: `ডিলার রিকুইজিশন কমিশন — ${req.product_name} (${req.quantity}টি, ৳${commission})`,
-        });
+      // 2. Upsert dealer_stock (increment or insert)
+      const { data: existing } = await supabase.from('dealer_stock')
+        .select('id, quantity').eq('dealer_id', req.dealer_id).eq('product_id', req.product_id).maybeSingle();
+      if (existing) {
+        await supabase.from('dealer_stock').update({ quantity: existing.quantity + req.quantity, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      } else {
+        await supabase.from('dealer_stock').insert({ dealer_id: req.dealer_id, product_id: req.product_id, product_name: req.product_name, quantity: req.quantity });
       }
-    }
 
-    // PV chain: dealer's upline gets generation bonus + club pools contribution
-    if (req.total_pv > 0) {
-      await processDealerPurchasePv(req.dealer_id, req.total_pv);
-    }
+      // 3. Credit commission to dealer
+      const commission = req.commission_amount || 0;
+      if (commission > 0) {
+        const { data: dealer } = await supabase.from('mlm_users').select('current_balance, total_income').eq('id', req.dealer_id).single();
+        if (dealer) {
+          await supabase.from('mlm_users').update({
+            current_balance: Number(dealer.current_balance || 0) + commission,
+            total_income:    Number(dealer.total_income    || 0) + commission,
+          }).eq('id', req.dealer_id);
+          await supabase.from('mlm_transactions').insert({
+            user_id: req.dealer_id, type: 'dealer_commission', amount: commission,
+            description: `ডিলার রিকুইজিশন কমিশন — ${req.product_name} (${req.quantity}টি, ৳${commission})`,
+          });
+        }
+      }
 
-    toast.success(`✅ রিকুইজিশন গ্রহণ — ${req.product_name} (${req.quantity}টি) স্টকে যোগ হয়েছে`);
-    fetchAll(); setLoading(false);
+      // PV chain: dealer's upline gets generation bonus + club pools contribution
+      if (req.total_pv > 0) {
+        await processDealerPurchasePv(req.dealer_id, req.total_pv);
+      }
+
+      toast.success(`✅ রিকুইজিশন গ্রহণ — ${req.product_name} (${req.quantity}টি) স্টকে যোগ হয়েছে`);
+      await fetchAll();
+    } finally {
+      setProcessingReqId(null);
+    }
   };
 
   const handleRejectRequisition = async (id: string) => {
@@ -1934,11 +1940,15 @@ export default function AdminDashboard() {
                             <td className="py-3 pr-3 text-gray-400 text-xs">{new Date(req.created_at).toLocaleDateString('bn-BD')}</td>
                             <td className="py-3">
                               <div className="flex gap-2">
-                                <button onClick={() => handleAcceptRequisition(req)} disabled={loading}
+                                <button
+                                  onClick={() => handleAcceptRequisition(req)}
+                                  disabled={processingReqId === req.id}
                                   className="px-3 py-1.5 bg-green-100 text-green-700 hover:bg-green-200 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
-                                  ✅ গ্রহণ
+                                  {processingReqId === req.id ? '⏳...' : '✅ গ্রহণ'}
                                 </button>
-                                <button onClick={() => handleRejectRequisition(req.id)} disabled={loading}
+                                <button
+                                  onClick={() => handleRejectRequisition(req.id)}
+                                  disabled={processingReqId === req.id}
                                   className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
                                   ❌ বাতিল
                                 </button>
