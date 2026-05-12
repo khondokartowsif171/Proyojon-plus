@@ -176,11 +176,11 @@ export default function UserDashboard() {
 
   const fetchDealerData = async () => {
     if (!user) return;
-    const [prodsRes, stockRes, ordersRes, reqsRes] = await Promise.all([
+    const [prodsRes, stockRes, rawOrdersRes, reqsRes] = await Promise.all([
       supabase.from('ecom_products').select('id, name, metadata').eq('status', 'active').order('name'),
       supabase.from('dealer_stock').select('*').eq('dealer_id', user.id),
       supabase.from('ecom_orders')
-        .select('*, order_items:ecom_order_items(*)')
+        .select('*')
         .eq('dealer_id', user.id)
         .eq('dealer_status', 'pending')
         .order('created_at', { ascending: false }),
@@ -188,8 +188,23 @@ export default function UserDashboard() {
     ]);
     if (prodsRes.data) setDealerProducts(prodsRes.data);
     if (stockRes.data) setDealerStock(stockRes.data);
-    if (ordersRes.data) setDealerOrders(ordersRes.data);
     if (reqsRes.data)  setDealerReqs(reqsRes.data);
+
+    // order_items আলাদা fetch করি — FK join silently empty দিতে পারে
+    if (rawOrdersRes.data && rawOrdersRes.data.length > 0) {
+      const orderIds = rawOrdersRes.data.map((o: any) => o.id);
+      const { data: itemsRaw } = await supabase
+        .from('ecom_order_items')
+        .select('*')
+        .in('order_id', orderIds);
+      const merged = rawOrdersRes.data.map((o: any) => ({
+        ...o,
+        order_items: (itemsRaw || []).filter((i: any) => i.order_id === o.id),
+      }));
+      setDealerOrders(merged);
+    } else {
+      setDealerOrders([]);
+    }
   };
 
   useEffect(() => { if (activeTab === 'dealer') fetchDealerData(); }, [activeTab]);

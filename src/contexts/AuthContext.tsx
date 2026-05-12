@@ -119,43 +119,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Login: Phone অথবা Email যেকোনো একটা দিয়ে ────────────────────────────
   const login = async (identifier: string, password: string) => {
     try {
-      // identifier এ @ থাকলে email, না থাকলে phone
       const field = isEmail(identifier) ? 'email' : 'phone';
 
-      // ── প্রথমে plain-text password দিয়ে try (নতুন সব user plain-text) ────
-      let { data, error } = await supabase
+      // Step 1: phone/email দিয়ে user খুঁজি (password check নেই)
+      const { data: userData } = await supabase
         .from('mlm_users')
         .select('*')
         .eq(field, identifier.trim())
-        .eq('password_hash', password)
-        .single();
+        .maybeSingle();
 
-      // ── পুরনো hashed password backward compat ──────────────────────────────
-      if (!data || error) {
-        const hashedPassword = await hashPassword(password);
-        const { data: hashData, error: hashError } = await supabase
-          .from('mlm_users')
-          .select('*')
-          .eq(field, identifier.trim())
-          .eq('password_hash', hashedPassword)
-          .single();
-
-        if (!hashError && hashData) {
-          data = hashData;
-          error = null;
-        }
-      }
-
-      if (error || !data) {
+      if (!userData) {
         return { success: false, error: 'মোবাইল নম্বর/ইমেইল অথবা পাসওয়ার্ড ভুল হয়েছে' };
       }
 
-      if (data.is_locked) {
+      // Step 2: password locally compare — plain text OR hash (পুরনো account)
+      const stored = userData.password_hash || '';
+      const hashedInput = await hashPassword(password);
+      const matches = stored === password || stored === hashedInput;
+
+      if (!matches) {
+        return { success: false, error: 'মোবাইল নম্বর/ইমেইল অথবা পাসওয়ার্ড ভুল হয়েছে' };
+      }
+
+      if (userData.is_locked) {
         return { success: false, error: 'আপনার আইডি লক করা হয়েছে। এডমিনের সাথে যোগাযোগ করুন।' };
       }
 
-      setUser(data as User);
-      localStorage.setItem('mlm_user_id', data.id);
+      setUser(userData as User);
+      localStorage.setItem('mlm_user_id', userData.id);
       return { success: true };
     } catch (e) {
       return { success: false, error: 'লগইন করতে সমস্যা হয়েছে' };
