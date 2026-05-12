@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
-import { processDealerCommission } from '@/lib/mlm-business-logic';
+import { processDealerCommission, processDealerPurchasePv } from '@/lib/mlm-business-logic';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import AdminProductManager from '@/components/AdminProductManager';
@@ -441,6 +441,11 @@ export default function AdminDashboard() {
       }
     }
 
+    // PV chain: dealer's upline gets generation bonus + club pools contribution
+    if (req.total_pv > 0) {
+      await processDealerPurchasePv(req.dealer_id, req.total_pv);
+    }
+
     toast.success(`✅ রিকুইজিশন গ্রহণ — ${req.product_name} (${req.quantity}টি) স্টকে যোগ হয়েছে`);
     fetchAll(); setLoading(false);
   };
@@ -780,8 +785,8 @@ export default function AdminDashboard() {
             }
           }
 
-          // Generation bonus — customer package only
-          if (userData.package_type === 'customer' && userData.referrer_id && pvToAdd > 0) {
+          // Generation bonus — all package types
+          if (userData.referrer_id && pvToAdd > 0) {
             await distributeGenerationBonus(userData.referrer_id, pvToAdd, pv.user_id, 1);
           }
 

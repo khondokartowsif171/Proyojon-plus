@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '@/lib/supabase';
-import { processDealerCommission } from '@/lib/mlm-business-logic';
+import { processDealerCommission, processDealerPurchasePv } from '@/lib/mlm-business-logic';
 import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
@@ -353,6 +353,10 @@ export default function Checkout() {
     if (shouldAddPvNow && user?.is_dealer && totalPvPoints > 0) {
       await processDealerCommission(user.id, totalPvPoints);
     }
+    // Non-customer upline chain (dealer, admin, shareholder, gold) — generation bonus + clubs
+    if (shouldAddPvNow && user && user.package_type !== 'customer' && totalPvPoints > 0) {
+      await processDealerPurchasePv(user.id, totalPvPoints);
+    }
 
     clearCart();
     navigate('/order-confirmation?id=' + (order?.id || ''));
@@ -360,6 +364,9 @@ export default function Checkout() {
 
   // ── Card payment ──────────────────────────────────────────────────────────
   const handlePaymentSuccess = async (paymentIntent: any) => {
+    if (deliveryType === 'dealer' && !user) {
+      toast.error('ডিলার থেকে কিনতে অ্যাকাউন্টে লগইন করুন'); return;
+    }
     if (deliveryType === 'dealer' && !selectedDealerId) {
       toast.error('একজন ডিলার বেছে নিন'); return;
     }
@@ -380,6 +387,9 @@ export default function Checkout() {
     }
     setMobileLoading(true);
 
+    if (deliveryType === 'dealer' && !user) {
+      toast.error('ডিলার থেকে কিনতে অ্যাকাউন্টে লগইন করুন'); setMobileLoading(false); return;
+    }
     if (deliveryType === 'dealer' && !selectedDealerId) {
       toast.error('একজন ডিলার বেছে নিন'); setMobileLoading(false); return;
     }
@@ -392,7 +402,7 @@ export default function Checkout() {
         trx_id:        trxId.trim(),
         sender_number: senderNumber.trim() || null,
         purpose:       'product_purchase',
-        pv_points:     (deliveryType === 'company' && user.package_type === 'customer') ? totalPvPoints : 0,
+        pv_points:     deliveryType === 'company' ? totalPvPoints : 0,
         status:        'pending',
       });
     }

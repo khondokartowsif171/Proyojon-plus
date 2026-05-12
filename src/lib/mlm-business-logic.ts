@@ -225,6 +225,36 @@ export const processDealerCommission = async (
 };
 
 
+// ── Non-customer product purchase: pv_points + upline generation chain ───────
+// Used for: dealer direct checkout, dealer requisition approval,
+// admin/shareholder/gold company-direct purchases
+export const processDealerPurchasePv = async (
+  userId: string,
+  pvAmount: number,
+): Promise<void> => {
+  if (pvAmount <= 0) return;
+  const { data: u } = await supabase
+    .from('mlm_users')
+    .select('pv_points, referrer_id')
+    .eq('id', userId)
+    .single();
+  if (!u) return;
+
+  await supabase.from('mlm_users')
+    .update({ pv_points: Number(u.pv_points || 0) + pvAmount })
+    .eq('id', userId);
+
+  await supabase.from('mlm_pv_log')
+    .insert({ user_id: userId, amount: pvAmount, source: 'direct_purchase' })
+    .catch(() => {});
+
+  if (u.referrer_id)
+    await distributeGenerationBonus(u.referrer_id, pvAmount, userId, 1);
+
+  await addToClubPools(pvAmount);
+};
+
+
 // ── Customer order via dealer: PV + MLM commission chain ─────────────────────
 // Called when dealer accepts a customer's order (deferred from checkout)
 export const processOrderCommissionsForUser = async (
