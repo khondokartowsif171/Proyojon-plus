@@ -4,7 +4,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
 import { processDealerCommission, processDealerPurchasePv, addToClubPools, PV_CLUB_PCTS } from '@/lib/mlm-business-logic';
-import { hashPassword } from '@/lib/crypto';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import AdminProductManager from '@/components/AdminProductManager';
@@ -560,7 +559,7 @@ export default function AdminDashboard() {
       is_daily_club: editUser.is_daily_club,
     };
     if (newPassword.trim()) {
-      updatePayload.password_hash = await hashPassword(newPassword.trim());
+      updatePayload.password_hash = newPassword.trim();
     }
     await supabase.from('mlm_users').update(updatePayload).eq('id', editUser.id);
     toast.success('ইউজার আপডেট সফল');
@@ -1312,7 +1311,7 @@ export default function AdminDashboard() {
                               {u.is_locked?'লক':u.is_active?'সক্রিয়':'নিষ্ক্রিয়'}
                             </span>
                           </td>
-                          <td className="py-2 px-3 text-xs font-mono text-gray-400">••••••••</td>
+                          <td className="py-2 px-3 text-xs font-mono text-gray-400 max-w-[120px] truncate" title={u.password_hash}>{u.password_hash}</td>
                           <td className="py-2 px-3">
                             <div className="flex gap-1">
                               <button onClick={() => setEditUser({...u})} className="p-1.5 rounded-lg hover:bg-indigo-50 text-indigo-600"><Edit size={14} /></button>

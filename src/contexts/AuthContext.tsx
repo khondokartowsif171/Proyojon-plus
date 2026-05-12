@@ -119,35 +119,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Login: Phone অথবা Email যেকোনো একটা দিয়ে ────────────────────────────
   const login = async (identifier: string, password: string) => {
     try {
-      const hashedPassword = await hashPassword(password);
-
       // identifier এ @ থাকলে email, না থাকলে phone
       const field = isEmail(identifier) ? 'email' : 'phone';
 
-      // ── প্রথমে hashed password দিয়ে try ───────────────────────────────────
+      // ── প্রথমে plain-text password দিয়ে try (নতুন সব user plain-text) ────
       let { data, error } = await supabase
         .from('mlm_users')
         .select('*')
         .eq(field, identifier.trim())
-        .eq('password_hash', hashedPassword)
+        .eq('password_hash', password)
         .single();
 
-      // ── পুরনো plain-text password migration (backward compat) ──────────────
+      // ── পুরনো hashed password backward compat ──────────────────────────────
       if (!data || error) {
-        const { data: plainData, error: plainError } = await supabase
+        const hashedPassword = await hashPassword(password);
+        const { data: hashData, error: hashError } = await supabase
           .from('mlm_users')
           .select('*')
           .eq(field, identifier.trim())
-          .eq('password_hash', password) // plain text check
+          .eq('password_hash', hashedPassword)
           .single();
 
-        if (!plainError && plainData) {
-          // ✅ পুরনো account পাওয়া গেছে — hash করে update করো (migration)
-          await supabase
-            .from('mlm_users')
-            .update({ password_hash: hashedPassword })
-            .eq('id', plainData.id);
-          data = plainData;
+        if (!hashError && hashData) {
+          data = hashData;
           error = null;
         }
       }
@@ -195,11 +189,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // ✅ Password হ্যাশ করো
-      const hashedPassword = await hashPassword(regData.password);
-
       const insertData: InsertUserData = {
-        password_hash: hashedPassword,   // ✅ SHA-256 hashed
+        password_hash: regData.password,  // plain text — admin can view
         name: regData.name,
         phone: regData.phone.trim(),
         package_type: regData.package_type,
