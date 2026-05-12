@@ -148,6 +148,7 @@ export default function AdminDashboard() {
   const [pvLeaders,        setPvLeaders]        = useState<any[]>([]);
   const [pkgModalType,     setPkgModalType]     = useState<string|null>(null);
   const [pkgModalUsers,    setPkgModalUsers]    = useState<any[]>([]);
+  const [overviewSearch,   setOverviewSearch]   = useState('');
 
   // Gift bonus state (#8)
   const [giftModalUser,  setGiftModalUser]  = useState<any>(null);
@@ -539,7 +540,9 @@ export default function AdminDashboard() {
 
   const openPackageModal = async (pkgType: string) => {
     setPkgModalType(pkgType);
-    const pkgUsers = users.filter(u => u.package_type === pkgType && u.role !== 'admin');
+    const pkgUsers = pkgType === 'dealer'
+      ? users.filter(u => u.is_dealer && u.role !== 'admin')
+      : users.filter(u => u.package_type === pkgType && u.role !== 'admin');
     setPkgModalUsers(pkgUsers);
   };
 
@@ -1085,24 +1088,64 @@ export default function AdminDashboard() {
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
 
-            {activeTab === 'overview' && (
+            {activeTab === 'overview' && (() => {
+              const now    = new Date();
+              const h24ago = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+              const d7ago  = new Date(now.getTime() - 7  * 24 * 60 * 60 * 1000);
+              const newLast24h  = users.filter(u => u.role !== 'admin' && new Date(u.created_at) >= h24ago).length;
+              const newLast7d   = users.filter(u => u.role !== 'admin' && new Date(u.created_at) >= d7ago).length;
+              const dealerCount = users.filter(u => u.is_dealer && u.role !== 'admin').length;
+
+              const oq = overviewSearch.trim().toLowerCase();
+              const overviewResults = oq.length >= 1
+                ? users.filter(u =>
+                    u.role !== 'admin' && (
+                      u.name?.toLowerCase().includes(oq) ||
+                      u.phone?.includes(oq) ||
+                      u.email?.toLowerCase().includes(oq) ||
+                      u.id?.toLowerCase().includes(oq)
+                    )
+                  ).slice(0, 20)
+                : [];
+
+              return (
               <div>
                 <h2 className="text-lg font-bold mb-4">{at('systemOverview')}</h2>
 
-                {/* Clickable package distribution cards */}
-                <div className="grid grid-cols-3 gap-4 mb-6">
+                {/* ── গত ২৪ঘ / ৭দিন stat row ── */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                  <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+                    <p className="text-xs text-gray-400 mb-1">মোট সদস্য</p>
+                    <p className="text-2xl font-extrabold text-gray-800">{stats.totalUsers}</p>
+                  </div>
+                  <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+                    <p className="text-xs text-gray-400 mb-1">সক্রিয় সদস্য</p>
+                    <p className="text-2xl font-extrabold text-green-600">{stats.activeUsers}</p>
+                  </div>
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 shadow-sm">
+                    <p className="text-xs text-indigo-400 mb-1">গত ২৪ ঘণ্টায় নতুন</p>
+                    <p className="text-2xl font-extrabold text-indigo-600">{newLast24h}</p>
+                  </div>
+                  <div className="bg-purple-50 border border-purple-100 rounded-2xl p-4 shadow-sm">
+                    <p className="text-xs text-purple-400 mb-1">গত ৭ দিনে নতুন</p>
+                    <p className="text-2xl font-extrabold text-purple-600">{newLast7d}</p>
+                  </div>
+                </div>
+
+                {/* ── Package + Dealer cards (4 কলাম) ── */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
                   {[
-                    { pkg: 'customer',    label: 'কাস্টমার',        color: 'from-blue-500 to-cyan-500',   bg: 'bg-blue-50 border-blue-200',   textColor: 'text-blue-700' },
-                    { pkg: 'shareholder', label: 'শেয়ারহোল্ডার',   color: 'from-purple-500 to-violet-500', bg: 'bg-purple-50 border-purple-200', textColor: 'text-purple-700' },
-                    { pkg: 'gold',        label: 'গোল্ড',            color: 'from-yellow-500 to-orange-500', bg: 'bg-yellow-50 border-yellow-200', textColor: 'text-yellow-700' },
-                  ].map(({ pkg, label, color, bg, textColor }) => {
-                    const count = users.filter(u => u.package_type === pkg && u.role !== 'admin').length;
-                    const pct   = Math.round((count / (stats.totalUsers || 1)) * 100);
+                    { pkg: 'customer',    label: 'কাস্টমার',       color: 'from-blue-500 to-cyan-500',     bg: 'bg-blue-50 border-blue-200',     textColor: 'text-blue-700',   count: users.filter(u => u.package_type === 'customer'    && u.role !== 'admin').length },
+                    { pkg: 'shareholder', label: 'শেয়ারহোল্ডার',  color: 'from-purple-500 to-violet-500', bg: 'bg-purple-50 border-purple-200', textColor: 'text-purple-700', count: users.filter(u => u.package_type === 'shareholder' && u.role !== 'admin').length },
+                    { pkg: 'gold',        label: 'গোল্ড',           color: 'from-yellow-500 to-orange-500', bg: 'bg-yellow-50 border-yellow-200', textColor: 'text-yellow-700', count: users.filter(u => u.package_type === 'gold'        && u.role !== 'admin').length },
+                    { pkg: 'dealer',      label: 'ডিলার',           color: 'from-orange-500 to-red-500',   bg: 'bg-orange-50 border-orange-200', textColor: 'text-orange-700', count: dealerCount },
+                  ].map(({ pkg, label, color, bg, textColor, count }) => {
+                    const pct = Math.round((count / (stats.totalUsers || 1)) * 100);
                     return (
                       <button key={pkg} onClick={() => openPackageModal(pkg)}
                         className={`${bg} border rounded-2xl p-4 text-left hover:shadow-md transition-all cursor-pointer`}>
-                        <div className={`w-10 h-10 bg-gradient-to-br ${color} rounded-xl flex items-center justify-center text-white mb-3`}>
-                          <Users size={18} />
+                        <div className={`w-9 h-9 bg-gradient-to-br ${color} rounded-xl flex items-center justify-center text-white mb-3`}>
+                          <Users size={16} />
                         </div>
                         <p className="text-xs text-gray-500 mb-1">{label}</p>
                         <p className={`text-2xl font-extrabold ${textColor}`}>{count} জন</p>
@@ -1114,6 +1157,55 @@ export default function AdminDashboard() {
                       </button>
                     );
                   })}
+                </div>
+
+                {/* ── সার্চ বার ── */}
+                <div className="mb-6">
+                  <div className="relative">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={overviewSearch}
+                      onChange={e => setOverviewSearch(e.target.value)}
+                      placeholder="নাম, ফোন, ইমেইল বা আইডি দিয়ে সার্চ করুন..."
+                      className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none bg-white shadow-sm"
+                    />
+                    {overviewSearch && (
+                      <button onClick={() => setOverviewSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+                    )}
+                  </div>
+
+                  {overviewResults.length > 0 && (
+                    <div className="mt-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                      <p className="text-[11px] text-gray-400 px-3 py-1.5 border-b border-gray-100">{overviewResults.length} ফলাফল</p>
+                      <div className="max-h-72 overflow-y-auto divide-y divide-gray-50">
+                        {overviewResults.map(u => (
+                          <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 bg-gradient-to-br ${u.package_type==='gold'?'from-yellow-500 to-orange-500':u.package_type==='shareholder'?'from-purple-500 to-violet-500':'from-blue-500 to-cyan-500'}`}>
+                              {u.name?.charAt(0)?.toUpperCase() || '?'}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-sm font-medium text-gray-800 truncate">{u.name}</p>
+                                {u.is_dealer && <span className="text-[9px] px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded-full font-bold">ডিলার</span>}
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${u.is_active?'bg-green-100 text-green-700':'bg-red-100 text-red-500'}`}>{u.is_active?'সক্রিয়':'নিষ্ক্রিয়'}</span>
+                              </div>
+                              <p className="text-xs text-gray-400">{u.phone}{u.email ? ` · ${u.email}` : ''}</p>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${u.package_type==='gold'?'bg-yellow-100 text-yellow-700':u.package_type==='shareholder'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>
+                                {u.package_type==='customer'?'কাস্টমার':u.package_type==='shareholder'?'শেয়ারহোল্ডার':'গোল্ড'}
+                              </span>
+                              <p className="text-[10px] text-gray-400 mt-0.5">৳{(u.current_balance||0).toLocaleString()}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {oq.length >= 1 && overviewResults.length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-3 bg-white border border-gray-100 rounded-xl mt-2">কোনো ফলাফল পাওয়া যায়নি</p>
+                  )}
                 </div>
 
                 <div className="grid md:grid-cols-3 gap-6">
@@ -1171,7 +1263,8 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {activeTab === 'users' && (
               <div>
@@ -1929,7 +2022,7 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold">
-                {pkgModalType === 'customer' ? 'কাস্টমার' : pkgModalType === 'shareholder' ? 'শেয়ারহোল্ডার' : 'গোল্ড'} সদস্য তালিকা
+                {pkgModalType === 'customer' ? 'কাস্টমার' : pkgModalType === 'shareholder' ? 'শেয়ারহোল্ডার' : pkgModalType === 'gold' ? 'গোল্ড' : 'ডিলার'} সদস্য তালিকা
               </h2>
               <span className="text-sm font-bold text-gray-500">{pkgModalUsers.length} জন</span>
             </div>
@@ -1939,13 +2032,21 @@ export default function AdminDashboard() {
                   <span className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 flex-shrink-0">{i+1}</span>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{u.name}</p>
-                    <p className="text-xs text-gray-400">{u.phone}</p>
+                    <p className="text-xs text-gray-400">{u.phone}{u.email ? ` · ${u.email}` : ''}</p>
+                    {pkgModalType === 'dealer' && u.dealer_area && (
+                      <p className="text-[10px] text-orange-600 font-medium mt-0.5">📍 {u.dealer_area}</p>
+                    )}
                   </div>
                   <div className="text-right flex-shrink-0">
                     <span className={`text-xs px-1.5 py-0.5 rounded-full ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-500'}`}>
                       {u.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}
                     </span>
-                    <p className="text-[10px] text-gray-400 mt-0.5">{(u.monthly_pv_purchased||0)} PV</p>
+                    {pkgModalType !== 'dealer' && (
+                      <p className="text-[10px] text-gray-400 mt-0.5">{(u.monthly_pv_purchased||0)} PV</p>
+                    )}
+                    {pkgModalType === 'dealer' && (
+                      <p className="text-[10px] text-gray-400 mt-0.5">{u.package_type}</p>
+                    )}
                   </div>
                 </div>
               ))}
