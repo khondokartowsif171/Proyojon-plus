@@ -236,53 +236,75 @@ export default function UserDashboard() {
 
   const handleAcceptDealerOrder = async (order: any) => {
     if (!user) return;
+    if (acceptingOrderId === order.id) return;
     setAcceptingOrderId(order.id);
-    const items = order.order_items || [];
+
+    const items: any[] = order.order_items || [];
+    if (items.length === 0) {
+      toast.error('এই অর্ডারে কোনো পণ্য নেই');
+      setAcceptingOrderId(null);
+      return;
+    }
+
     try {
-      // DB থেকে fresh stock নাও — stale state ব্যবহার করলে deduction miss হয়
+      // ── Step 1: DB থেকে fresh stock নাও ────────────────────────────────────
       const { data: freshStock } = await supabase
-        .from('dealer_stock')
-        .select('*')
-        .eq('dealer_id', user.id);
+        .from('dealer_stock').select('*').eq('dealer_id', user.id);
+      const stockMap: Record<string, any> = {};
+      (freshStock || []).forEach((s: any) => { stockMap[s.product_id] = s; });
 
-      const stockRowMap: Record<string, any> = {};
-      (freshStock || []).forEach((s: any) => { stockRowMap[s.product_id] = s; });
-
-      let totalPv = 0;
+      // ── Step 2: সব item এর stock validate করো ──────────────────────────────
       for (const item of items) {
-        if (!item.product_id) { toast.error('সমস্যা: একটি আইটেমে product_id নেই'); return; }
-        const stockRow = stockRowMap[item.product_id];
-        if (!stockRow) { toast.error(`স্টক রেকর্ড নেই: ${item.product_name || item.product_id}`); return; }
-        if (stockRow.quantity < item.quantity) {
-          toast.error(`স্টক অপর্যাপ্ত: ${item.product_name || item.product_id} — ${stockRow.quantity}টি আছে, ${item.quantity}টি দরকার`);
+        if (!item.product_id) { toast.error('পণ্য ID নেই'); return; }
+        const row = stockMap[item.product_id];
+        if (!row) {
+          toast.error(`স্টক নেই: ${item.product_name || item.product_id}`);
           return;
         }
-        const { data: prod } = await supabase.from('ecom_products').select('metadata').eq('id', item.product_id).single();
-        totalPv += (prod?.metadata?.pv_points || 0) * item.quantity;
-      }
-
-      // প্রতিটি item এর জন্য DB থেকে current quantity নিয়ে deduct করো
-      for (const item of items) {
-        const { data: currentStock } = await supabase
-          .from('dealer_stock')
-          .select('id, quantity')
-          .eq('dealer_id', user.id)
-          .eq('product_id', item.product_id)
-          .single();
-        if (currentStock) {
-          await supabase.from('dealer_stock')
-            .update({ quantity: currentStock.quantity - item.quantity, updated_at: new Date().toISOString() })
-            .eq('id', currentStock.id);
+        if (row.quantity < item.quantity) {
+          toast.error(`স্টক অপর্যাপ্ত: ${item.product_name} — আছে ${row.quantity}টি, দরকার ${item.quantity}টি`);
+          return;
         }
       }
 
-      await supabase.from('ecom_orders').update({ dealer_status: 'accepted', status: 'paid' }).eq('id', order.id);
-      if (totalPv > 0) await processOrderCommissionsForUser(order.user_id, totalPv);
+      // ── Step 3: PV calculate করো ────────────────────────────────────────────
+      // metadata.pv_points থাকলে সেটা, না হলে unit_price (১ PV = ১ টাকা)
+      let totalPv = 0;
+      for (const item of items) {
+        const { data: prod } = await supabase
+          .from('ecom_products').select('metadata').eq('id', item.product_id).maybeSingle();
+        const pvPerUnit = (prod?.metadata?.pv_points > 0)
+          ? prod.metadata.pv_points
+          : (item.unit_price || 0);
+        totalPv += pvPerUnit * item.quantity;
+      }
 
-      toast.success('✅ অর্ডার গ্রহণ হয়েছে, কমিশন বন্টন হয়েছে!');
+      // ── Step 4: প্রতিটি item এর stock live DB থেকে deduct করো ─────────────
+      for (const item of items) {
+        const { data: cur } = await supabase
+          .from('dealer_stock').select('id, quantity')
+          .eq('dealer_id', user.id).eq('product_id', item.product_id).single();
+        if (cur) {
+          await supabase.from('dealer_stock')
+            .update({ quantity: cur.quantity - item.quantity, updated_at: new Date().toISOString() })
+            .eq('id', cur.id);
+        }
+      }
+
+      // ── Step 5: Order accepted mark করো ─────────────────────────────────────
+      await supabase.from('ecom_orders')
+        .update({ dealer_status: 'accepted', status: 'paid' })
+        .eq('id', order.id);
+
+      // ── Step 6: Customer এর PV + সব commission বন্টন করো ───────────────────
+      if (totalPv > 0 && order.user_id) {
+        await processOrderCommissionsForUser(order.user_id, totalPv);
+      }
+
+      toast.success('✅ অর্ডার গ্রহণ! স্টক কমেছে, PV ও কমিশন বন্টন সম্পন্ন।');
       fetchDealerData();
     } catch (err: any) {
-      toast.error('ত্রুটি: ' + err.message);
+      toast.error('ত্রুটি: ' + (err?.message || 'অজানা সমস্যা'));
     } finally {
       setAcceptingOrderId(null);
     }
