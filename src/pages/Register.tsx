@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import { ShoppingBag, Crown, Award, Eye, EyeOff, Smartphone, CheckCircle, ArrowRight, Wallet } from 'lucide-react';
+import { ShoppingBag, Crown, Award, Eye, EyeOff, Smartphone, CheckCircle, ArrowRight, Wallet, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Register() {
@@ -12,7 +12,7 @@ export default function Register() {
   const [searchParams] = useSearchParams();
   const [step, setStep] = useState(1); // 1: form, 2: payment, 3: success
   const [form, setForm] = useState({
-    name: '', phone: '', password: '', confirmPassword: '',
+    name: '', phone: '', email: '', password: '', confirmPassword: '',
     package_type: 'customer',
     referrer_id: searchParams.get('ref') || '',
   });
@@ -75,6 +75,7 @@ export default function Register() {
     const result = await register({
       name: form.name.trim(),
       phone: phoneClean,
+      email: form.email.trim() || undefined,
       password: form.password,
       package_type: form.package_type,
       referrer_id: form.referrer_id.trim() || undefined,
@@ -471,6 +472,20 @@ export default function Register() {
                   <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} required
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm" placeholder="০১XXXXXXXXX" />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+                  <Mail size={14} className="text-gray-400" /> ইমেইল
+                  <span className="text-[10px] font-normal text-gray-400 ml-1">(ঐচ্ছিক)</span>
+                </label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={e => setForm({ ...form, email: e.target.value })}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm"
+                  placeholder="example@email.com (না দিলেও চলবে)"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
