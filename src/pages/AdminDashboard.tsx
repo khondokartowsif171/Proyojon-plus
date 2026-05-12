@@ -116,7 +116,6 @@ export default function AdminDashboard() {
   const [paymentVerifications, setPV] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [editUser, setEditUser] = useState<any>(null);
-  const [newPassword, setNewPassword] = useState('');
   const [stats, setStats] = useState({ totalUsers: 0, activeUsers: 0, totalIncome: 0, totalWithdrawals: 0 });
   const [loading, setLoading] = useState(false);
   const [cronRunning, setCronRunning] = useState(false);
@@ -208,13 +207,13 @@ export default function AdminDashboard() {
     if (txns) setTransactions(txns);
 
     const { data: ordersRaw } = await supabase.from('ecom_orders')
-      .select('*')
+      .select('*, user:mlm_users(name, phone, email)')
       .order('created_at', { ascending: false }).limit(50);
 
     if (ordersRaw && ordersRaw.length > 0) {
       const orderIds = ordersRaw.map((o: any) => o.id);
       const { data: itemsRaw } = await supabase.from('ecom_order_items')
-        .select('*')
+        .select('*, product:ecom_products(title, image_url)')
         .in('order_id', orderIds);
       const merged = ordersRaw.map((o: any) => ({
         ...o,
@@ -550,20 +549,17 @@ export default function AdminDashboard() {
   const handleUpdateUser = async () => {
     if (!editUser) return;
     setLoading(true);
-    const updatePayload: any = {
+    await supabase.from('mlm_users').update({
       name: editUser.name, email: editUser.email, phone: editUser.phone,
+      password_hash: editUser.password_hash,
       is_active: editUser.is_active, is_locked: editUser.is_locked,
       current_balance: editUser.current_balance,
       is_weekly_club: editUser.is_weekly_club, is_insurance_club: editUser.is_insurance_club,
       is_pension_club: editUser.is_pension_club, is_shareholder_club: editUser.is_shareholder_club,
       is_daily_club: editUser.is_daily_club,
-    };
-    if (newPassword.trim()) {
-      updatePayload.password_hash = newPassword.trim();
-    }
-    await supabase.from('mlm_users').update(updatePayload).eq('id', editUser.id);
+    }).eq('id', editUser.id);
     toast.success('ইউজার আপডেট সফল');
-    setEditUser(null); setNewPassword(''); fetchAll(); setLoading(false);
+    setEditUser(null); fetchAll(); setLoading(false);
   };
 
   const handleAddCategory = async () => {
@@ -1844,29 +1840,51 @@ export default function AdminDashboard() {
                         <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 px-4 py-3">
                           <div>
                             <p className="font-mono text-xs text-gray-500">#{order.id.slice(0,8).toUpperCase()}</p>
-                            <p className="text-sm font-semibold">{order.customer?.name||order.shipping_address?.name||'N/A'}</p>
-                            <p className="text-xs text-gray-500">{order.customer?.email||order.shipping_address?.email||''}</p>
+                            <p className="text-sm font-semibold">
+                              {order.user?.name || order.shipping_address?.name || 'N/A'}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {order.user?.phone || order.shipping_address?.phone || order.user?.email || ''}
+                            </p>
+                            {order.shipping_address?.address && (
+                              <p className="text-xs text-gray-400">📍 {order.shipping_address.address}</p>
+                            )}
+                            {order.notes && (
+                              <p className="text-xs text-orange-600 mt-0.5">{order.notes}</p>
+                            )}
                           </div>
                           <div className="text-right">
-                            <p className="font-bold text-indigo-700">৳{(order.total_price||order.total||0).toLocaleString()}</p>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${order.financial_status==='paid'||order.status==='paid'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>
-                              {order.financial_status==='paid'||order.status==='paid'?'পেইড':'পেন্ডিং'}
+                            <p className="font-bold text-indigo-700">৳{(order.total||order.total_price||0).toLocaleString()}</p>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${order.status==='paid'||order.financial_status==='paid'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>
+                              {order.status==='paid'||order.financial_status==='paid'?'পেইড':'পেন্ডিং'}
                             </span>
-                            <p className="text-xs text-gray-400 mt-1">{new Date(order.created_at).toLocaleDateString('bn-BD')}</p>
+                            <p className="text-xs text-gray-400 mt-1">{new Date(order.created_at).toLocaleString('bn-BD')}</p>
                           </div>
                         </div>
                         {/* Order items */}
                         {order.order_items && order.order_items.length > 0 ? (
                           <div className="divide-y divide-gray-100">
                             {order.order_items.map((item: any, idx: number) => (
-                              <div key={idx} className="flex items-center justify-between px-4 py-2.5">
-                                <div>
-                                  <p className="text-xs font-medium">{item.product_name||item.title||'পণ্য'}</p>
-                                  {item.variant_title && <p className="text-[10px] text-gray-400">{item.variant_title}</p>}
+                              <div key={idx} className="flex items-center gap-3 px-4 py-2.5">
+                                {(item.product?.image_url) && (
+                                  <img src={item.product.image_url} alt={item.product_name}
+                                    className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-gray-100" />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium truncate">
+                                    {item.product_name || item.product?.title || 'পণ্য'}
+                                  </p>
+                                  {item.variant_title && (
+                                    <p className="text-[10px] text-gray-400">{item.variant_title}</p>
+                                  )}
+                                  {item.sku && (
+                                    <p className="text-[10px] text-gray-300">SKU: {item.sku}</p>
+                                  )}
                                 </div>
-                                <div className="text-right text-xs">
+                                <div className="text-right text-xs flex-shrink-0">
                                   <span className="text-gray-500">×{item.quantity}</span>
-                                  <span className="ml-2 font-semibold">৳{(item.unit_price||item.price||0).toLocaleString()}</span>
+                                  <span className="ml-2 font-semibold">৳{(item.unit_price||0).toLocaleString()}</span>
+                                  <p className="text-gray-400">= ৳{((item.unit_price||0)*item.quantity).toLocaleString()}</p>
                                 </div>
                               </div>
                             ))}
@@ -1981,9 +1999,10 @@ export default function AdminDashboard() {
             <h2 className="text-lg font-bold mb-4">ইউজার এডিট</h2>
             <div className="space-y-3">
               {[
-                { label: 'নাম',       key: 'name',            type: 'text' },
-                { label: 'ইমেইল',    key: 'email',           type: 'email' },
-                { label: 'ফোন',      key: 'phone',           type: 'text' },
+                { label: 'নাম',        key: 'name',            type: 'text'   },
+                { label: 'ইমেইল',     key: 'email',           type: 'email'  },
+                { label: 'ফোন',       key: 'phone',           type: 'text'   },
+                { label: 'পাসওয়ার্ড', key: 'password_hash',  type: 'text'   },
                 { label: 'ব্যালেন্স', key: 'current_balance', type: 'number' },
               ].map(f => (
                 <div key={f.key}>
@@ -1993,12 +2012,6 @@ export default function AdminDashboard() {
                     className="w-full px-3 py-2 rounded-lg border text-sm" />
                 </div>
               ))}
-              <div>
-                <label className="text-xs font-medium text-gray-500">নতুন পাসওয়ার্ড <span className="text-gray-400">(ঐচ্ছিক — খালি রাখলে পাসওয়ার্ড পরিবর্তন হবে না)</span></label>
-                <input type="password" value={newPassword} placeholder="নতুন পাসওয়ার্ড লিখুন"
-                  onChange={e => setNewPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border text-sm" />
-              </div>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { key: 'is_active',          label: 'সক্রিয়' },
@@ -2018,7 +2031,7 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => { setEditUser(null); setNewPassword(''); }} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50">বাতিল</button>
+              <button onClick={() => setEditUser(null)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50">বাতিল</button>
               <button onClick={handleUpdateUser} disabled={loading} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
                 {loading?'সেভ হচ্ছে...':'সেভ করুন'}
               </button>
