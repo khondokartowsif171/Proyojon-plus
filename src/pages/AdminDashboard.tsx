@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
 import { processDealerCommission, processDealerPurchasePv, addToClubPools, PV_CLUB_PCTS } from '@/lib/mlm-business-logic';
+import { hashPassword } from '@/lib/crypto';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import AdminProductManager from '@/components/AdminProductManager';
@@ -116,6 +117,7 @@ export default function AdminDashboard() {
   const [paymentVerifications, setPV] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [editUser, setEditUser] = useState<any>(null);
+  const [newPassword, setNewPassword] = useState('');
   const [stats, setStats] = useState({ totalUsers: 0, activeUsers: 0, totalIncome: 0, totalWithdrawals: 0 });
   const [loading, setLoading] = useState(false);
   const [cronRunning, setCronRunning] = useState(false);
@@ -549,16 +551,20 @@ export default function AdminDashboard() {
   const handleUpdateUser = async () => {
     if (!editUser) return;
     setLoading(true);
-    await supabase.from('mlm_users').update({
+    const updatePayload: any = {
       name: editUser.name, email: editUser.email, phone: editUser.phone,
-      password_hash: editUser.password_hash, is_active: editUser.is_active,
-      is_locked: editUser.is_locked, current_balance: editUser.current_balance,
+      is_active: editUser.is_active, is_locked: editUser.is_locked,
+      current_balance: editUser.current_balance,
       is_weekly_club: editUser.is_weekly_club, is_insurance_club: editUser.is_insurance_club,
       is_pension_club: editUser.is_pension_club, is_shareholder_club: editUser.is_shareholder_club,
       is_daily_club: editUser.is_daily_club,
-    }).eq('id', editUser.id);
+    };
+    if (newPassword.trim()) {
+      updatePayload.password_hash = await hashPassword(newPassword.trim());
+    }
+    await supabase.from('mlm_users').update(updatePayload).eq('id', editUser.id);
     toast.success('ইউজার আপডেট সফল');
-    setEditUser(null); fetchAll(); setLoading(false);
+    setEditUser(null); setNewPassword(''); fetchAll(); setLoading(false);
   };
 
   const handleAddCategory = async () => {
@@ -1306,7 +1312,7 @@ export default function AdminDashboard() {
                               {u.is_locked?'লক':u.is_active?'সক্রিয়':'নিষ্ক্রিয়'}
                             </span>
                           </td>
-                          <td className="py-2 px-3 text-xs font-mono text-gray-400">{u.password_hash}</td>
+                          <td className="py-2 px-3 text-xs font-mono text-gray-400">••••••••</td>
                           <td className="py-2 px-3">
                             <div className="flex gap-1">
                               <button onClick={() => setEditUser({...u})} className="p-1.5 rounded-lg hover:bg-indigo-50 text-indigo-600"><Edit size={14} /></button>
@@ -1979,7 +1985,6 @@ export default function AdminDashboard() {
                 { label: 'নাম',       key: 'name',            type: 'text' },
                 { label: 'ইমেইল',    key: 'email',           type: 'email' },
                 { label: 'ফোন',      key: 'phone',           type: 'text' },
-                { label: 'পাসওয়ার্ড', key: 'password_hash', type: 'text' },
                 { label: 'ব্যালেন্স', key: 'current_balance', type: 'number' },
               ].map(f => (
                 <div key={f.key}>
@@ -1989,6 +1994,12 @@ export default function AdminDashboard() {
                     className="w-full px-3 py-2 rounded-lg border text-sm" />
                 </div>
               ))}
+              <div>
+                <label className="text-xs font-medium text-gray-500">নতুন পাসওয়ার্ড <span className="text-gray-400">(ঐচ্ছিক — খালি রাখলে পাসওয়ার্ড পরিবর্তন হবে না)</span></label>
+                <input type="password" value={newPassword} placeholder="নতুন পাসওয়ার্ড লিখুন"
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border text-sm" />
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { key: 'is_active',          label: 'সক্রিয়' },
@@ -2008,7 +2019,7 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setEditUser(null)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50">বাতিল</button>
+              <button onClick={() => { setEditUser(null); setNewPassword(''); }} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50">বাতিল</button>
               <button onClick={handleUpdateUser} disabled={loading} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
                 {loading?'সেভ হচ্ছে...':'সেভ করুন'}
               </button>
