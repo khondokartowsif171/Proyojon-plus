@@ -224,26 +224,41 @@ export default function UserDashboard() {
     setAcceptingOrderId(order.id);
     const items = order.order_items || [];
     try {
-      const stockMap: Record<string, number> = {};
+      // DB থেকে fresh stock নাও — stale state ব্যবহার করলে deduction miss হয়
+      const { data: freshStock } = await supabase
+        .from('dealer_stock')
+        .select('*')
+        .eq('dealer_id', user.id);
+
       const stockRowMap: Record<string, any> = {};
-      dealerStock.forEach((s: any) => { stockMap[s.product_id] = s.quantity; stockRowMap[s.product_id] = s; });
+      (freshStock || []).forEach((s: any) => { stockRowMap[s.product_id] = s; });
 
       let totalPv = 0;
       for (const item of items) {
         if (!item.product_id) { toast.error('সমস্যা: একটি আইটেমে product_id নেই'); return; }
-        if (!stockRowMap[item.product_id]) { toast.error(`স্টক রেকর্ড নেই: ${item.product_title || ''}`); return; }
-        const available = stockMap[item.product_id] || 0;
-        if (available < item.quantity) {
-          toast.error(`স্টক অপর্যাপ্ত: ${item.product_title || item.product_id} — ${available}টি আছে, ${item.quantity}টি দরকার`);
+        const stockRow = stockRowMap[item.product_id];
+        if (!stockRow) { toast.error(`স্টক রেকর্ড নেই: ${item.product_name || item.product_id}`); return; }
+        if (stockRow.quantity < item.quantity) {
+          toast.error(`স্টক অপর্যাপ্ত: ${item.product_name || item.product_id} — ${stockRow.quantity}টি আছে, ${item.quantity}টি দরকার`);
           return;
         }
         const { data: prod } = await supabase.from('ecom_products').select('metadata').eq('id', item.product_id).single();
         totalPv += (prod?.metadata?.pv_points || 0) * item.quantity;
       }
 
+      // প্রতিটি item এর জন্য DB থেকে current quantity নিয়ে deduct করো
       for (const item of items) {
-        const stockRow = stockRowMap[item.product_id];
-        await supabase.from('dealer_stock').update({ quantity: stockRow.quantity - item.quantity, updated_at: new Date().toISOString() }).eq('id', stockRow.id);
+        const { data: currentStock } = await supabase
+          .from('dealer_stock')
+          .select('id, quantity')
+          .eq('dealer_id', user.id)
+          .eq('product_id', item.product_id)
+          .single();
+        if (currentStock) {
+          await supabase.from('dealer_stock')
+            .update({ quantity: currentStock.quantity - item.quantity, updated_at: new Date().toISOString() })
+            .eq('id', currentStock.id);
+        }
       }
 
       await supabase.from('ecom_orders').update({ dealer_status: 'accepted', status: 'paid' }).eq('id', order.id);
@@ -919,8 +934,8 @@ export default function UserDashboard() {
                 {([
                   {key:'daily_club',       label:'ডেইলি ক্লাব',        desc:'PV এর ৩০%',   flag:user.is_daily_club,       color:'from-orange-500 to-red-500',    cond:'Customer package হলেই',      icon:<ShoppingBag size={18}/>},
                   {key:'weekly_club',      label:'উইকলি ক্লাব',         desc:'PV এর ২.৫%',  flag:user.is_weekly_club,      color:'from-green-500 to-emerald-600',cond:'১৫ ডিরেক্ট Customer রেফার', icon:<Users size={18}/>},
-                  {key:'insurance_club',   label:'ইনসুরেন্স ক্লাব',     desc:'PV এর ২.৫%',  flag:user.is_insurance_club,   color:'from-blue-500 to-indigo-600',  cond:'১৫ জন Weekly club member',   icon:<Shield size={18}/>},
-                  {key:'pension_club',     label:'পেনশন ক্লাব',         desc:'PV এর ২.৫%',  flag:user.is_pension_club,     color:'from-teal-500 to-cyan-600',    cond:'ইনসুরেন্সের সাথেই পাবেন',  icon:<Award size={18}/>},
+                  {key:'insurance_club',   label:'ইনসুরেন্স ক্লাব',     desc:'PV এর ১.২৫%', flag:user.is_insurance_club,   color:'from-blue-500 to-indigo-600',  cond:'১৫ জন Weekly club member',   icon:<Shield size={18}/>},
+                  {key:'pension_club',     label:'পেনশন ক্লাব',         desc:'PV এর ১.২৫%', flag:user.is_pension_club,     color:'from-teal-500 to-cyan-600',    cond:'ইনসুরেন্সের সাথেই পাবেন',  icon:<Award size={18}/>},
                   {key:'shareholder_club', label:'শেয়ারহোল্ডার ক্লাব',  desc:'PV এর ১০%',   flag:user.is_shareholder_club, color:'from-purple-500 to-violet-600',cond:'Shareholder package holders',icon:<Crown size={18}/>},
                 ]).map(club=>(
                   <div key={club.key} className={`rounded-xl p-5 border-2 transition-all ${club.flag?'border-green-300 bg-green-50':'border-gray-200 bg-gray-50'}`}>

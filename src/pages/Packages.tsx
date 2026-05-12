@@ -80,8 +80,8 @@ const commissionRows = [
   { label: 'জেনারেশন বোনাস', customer: 'PV এর ১% × ৫', shareholder: 'PV এর ১% × ৫', gold: 'PV এর ১% × ৫' },
   { label: 'ডেইলি ক্লাব (৩০%)', customer: '✓', shareholder: '✗', gold: '✗' },
   { label: 'উইকলি ক্লাব (২.৫%)', customer: '১৫ রেফারে', shareholder: '✗', gold: '✗' },
-  { label: 'ইনসুরেন্স ক্লাব (২.৫%)', customer: '১৫ weekly refs', shareholder: '✗', gold: '✗' },
-  { label: 'পেনশন ক্লাব (২.৫%)', customer: '১৫ weekly refs', shareholder: '✗', gold: '✗' },
+  { label: 'ইনসুরেন্স ক্লাব (১.২৫%)', customer: '১৫ weekly refs', shareholder: '✗', gold: '✗' },
+  { label: 'পেনশন ক্লাব (১.২৫%)', customer: '১৫ weekly refs', shareholder: '✗', gold: '✗' },
   { label: 'শেয়ারহোল্ডার ক্লাব (১০%)', customer: '✗', shareholder: '✓', gold: '✗' },
   { label: 'মেয়াদ', customer: '৩০ দিন', shareholder: 'আজীবন', gold: '৩৬৫ দিন / প্যাকেজ' },
   { label: 'রিনিউ শর্ত', customer: 'মাসে ১০০ PV', shareholder: 'রিনিউ লাগে না', gold: 'নতুন প্যাকেজ কিনুন' },
@@ -109,7 +109,7 @@ const clubInfo = [
   {
     icon: <Shield size={22} />,
     name: 'ইনসুরেন্স ক্লাব',
-    pct: '২.৫%',
+    pct: '১.২৫%',
     desc: 'আপনার রেফার করা ১৫ জন weekly club সদস্য হলে আপনি এই ক্লাবে যোগ দিতে পারবেন।',
     color: 'from-purple-500 to-pink-500',
     who: '১৫ রেফারি weekly হলে',
@@ -118,7 +118,7 @@ const clubInfo = [
   {
     icon: <TrendingUp size={22} />,
     name: 'পেনশন ক্লাব',
-    pct: '২.৫%',
+    pct: '১.২৫%',
     desc: 'ইনসুরেন্স ক্লাবের মতো একই শর্ত — দুটো একসাথে পাওয়া যায়।',
     color: 'from-orange-500 to-red-500',
     who: '১৫ রেফারি weekly হলে',
@@ -366,8 +366,8 @@ export default function Packages() {
             {[
               { label: 'ডেইলি', pct: '৩০%', color: 'bg-blue-100 text-blue-700' },
               { label: 'উইকলি', pct: '২.৫%', color: 'bg-green-100 text-green-700' },
-              { label: 'ইনসুরেন্স', pct: '২.৫%', color: 'bg-purple-100 text-purple-700' },
-              { label: 'পেনশন', pct: '২.৫%', color: 'bg-orange-100 text-orange-700' },
+              { label: 'ইনসুরেন্স', pct: '১.২৫%', color: 'bg-purple-100 text-purple-700' },
+              { label: 'পেনশন', pct: '১.২৫%', color: 'bg-orange-100 text-orange-700' },
               { label: 'শেয়ারহোল্ডার', pct: '১০%', color: 'bg-yellow-100 text-yellow-700' },
             ].map((p, i) => (
               <div key={i} className={`${p.color} rounded-xl px-4 py-2 text-center`}>

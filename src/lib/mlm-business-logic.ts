@@ -25,12 +25,11 @@ export const MONTHLY_PV_TO_RENEW     = 100;
 export const WITHDRAW_CHARGE_PCT     = 0.05;
 export const TRANSFER_MIN            = 100;
 
-// ✅ FIX #2: Insurance 2.5%, Pension 2.5% (আগে 1.25% ছিল — ভুল ছিল)
 export const PV_CLUB_PCTS: Record<string, number> = {
   daily_club:       0.30,    // ৩০%
   weekly_club:      0.025,   // ২.৫%
-  insurance_club:   0.025,   // ✅ ২.৫% (আগে 0.0125 ছিল)
-  pension_club:     0.025,   // ✅ ২.৫% (আগে 0.0125 ছিল)
+  insurance_club:   0.0125,  // ১.২৫%
+  pension_club:     0.0125,  // ১.২৫%
   shareholder_club: 0.10,    // ১০%
 };
 
