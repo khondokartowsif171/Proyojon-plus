@@ -303,7 +303,7 @@ export default function Checkout() {
     }).select('id').single();
 
     if (order) {
-      await supabase.from('ecom_order_items').insert(
+      const { error: itemsErr } = await supabase.from('ecom_order_items').insert(
         cart.map(item => ({
           order_id:      order.id,
           product_id:    item.product_id,
@@ -316,6 +316,11 @@ export default function Checkout() {
           total:         item.price * item.quantity,
         })),
       );
+      if (itemsErr) {
+        console.error('ecom_order_items insert error:', itemsErr);
+        toast.error('অর্ডার আইটেম সেভ হয়নি: ' + itemsErr.message);
+        return;
+      }
     }
 
     // PV process: dealer order-এ PV defer করা হয় (dealer acceptance-এ হবে)
