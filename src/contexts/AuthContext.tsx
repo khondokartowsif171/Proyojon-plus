@@ -120,25 +120,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (identifier: string, password: string) => {
     try {
       const field = isEmail(identifier) ? 'email' : 'phone';
+      const hashedInput = await hashPassword(password);
 
-      // Step 1: phone/email দিয়ে user খুঁজি (password check নেই)
-      const { data: userData } = await supabase
+      // সব matching user fetch করি (.single/.maybeSingle এড়াতে)
+      // duplicate phone থাকলেও সঠিক password-ওয়ালাটা খুঁজে পাব
+      const { data: candidates, error: fetchErr } = await supabase
         .from('mlm_users')
         .select('*')
-        .eq(field, identifier.trim())
-        .maybeSingle();
+        .eq(field, identifier.trim());
 
-      if (!userData) {
-        return { success: false, error: 'মোবাইল নম্বর/ইমেইল অথবা পাসওয়ার্ড ভুল হয়েছে' };
+      if (fetchErr) {
+        return { success: false, error: 'লগইন করতে সমস্যা হয়েছে। একটু পরে আবার চেষ্টা করুন।' };
       }
 
-      // Step 2: password locally compare — plain text OR hash (পুরনো account)
-      const stored = userData.password_hash || '';
-      const hashedInput = await hashPassword(password);
-      const matches = stored === password || stored === hashedInput;
+      if (!candidates || candidates.length === 0) {
+        return { success: false, error: 'মোবাইল নম্বর/ইমেইল পাওয়া যায়নি' };
+      }
 
-      if (!matches) {
-        return { success: false, error: 'মোবাইল নম্বর/ইমেইল অথবা পাসওয়ার্ড ভুল হয়েছে' };
+      // password মেলে এমন user খুঁজি (plain text অথবা SHA-256 hash)
+      const userData = candidates.find((u: any) => {
+        const stored = u.password_hash || '';
+        return stored === password || stored === hashedInput;
+      });
+
+      if (!userData) {
+        return { success: false, error: 'পাসওয়ার্ড ভুল হয়েছে' };
       }
 
       if (userData.is_locked) {
