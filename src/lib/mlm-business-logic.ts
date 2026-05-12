@@ -291,6 +291,10 @@ export const processOrderCommissionsForUser = async (
 
   await supabase.from('mlm_users').update(updates).eq('id', userId);
   await supabase.from('mlm_pv_log').insert({ user_id: userId, amount: pvAmount, source: 'dealer_order' }).catch(() => {});
+  await supabase.from('mlm_transactions').insert({
+    user_id: userId, type: 'product_purchase', amount: pvAmount,
+    description: `পণ্য ক্রয় (ডিলার) — ${pvAmount} PV মূল্যের পণ্য`,
+  }).catch(() => {});
 
   // Referral commission — only on first activation
   const justFirstActivated = wasInactive && isFirstTime && updates.is_active === true;

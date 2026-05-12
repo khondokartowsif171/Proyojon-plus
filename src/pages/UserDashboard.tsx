@@ -301,7 +301,30 @@ export default function UserDashboard() {
         await processOrderCommissionsForUser(order.user_id, totalPv);
       }
 
+      // ── Step 6b: Dealer সেল কমিশন ৫% ───────────────────────────────────────
+      if (totalPv > 0) {
+        const dealerComm = Math.floor(totalPv * 0.05);
+        if (dealerComm > 0) {
+          const { data: freshDealer } = await supabase
+            .from('mlm_users').select('current_balance, total_income').eq('id', user.id).single();
+          if (freshDealer) {
+            await supabase.from('mlm_users').update({
+              current_balance: (freshDealer.current_balance || 0) + dealerComm,
+              total_income:    (freshDealer.total_income    || 0) + dealerComm,
+            }).eq('id', user.id);
+            await supabase.from('mlm_transactions').insert({
+              user_id:         user.id,
+              type:            'dealer_sale_commission',
+              amount:          dealerComm,
+              description:     `ডিলার সেল কমিশন ৫% — ${totalPv} PV এর বিক্রয়`,
+              related_user_id: order.user_id,
+            });
+          }
+        }
+      }
+
       toast.success('✅ অর্ডার গ্রহণ! স্টক কমেছে, PV ও কমিশন বন্টন সম্পন্ন।');
+      await refreshUser();
       fetchDealerData();
     } catch (err: any) {
       toast.error('ত্রুটি: ' + (err?.message || 'অজানা সমস্যা'));

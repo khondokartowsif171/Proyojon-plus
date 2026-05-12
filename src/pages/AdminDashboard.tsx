@@ -685,6 +685,15 @@ export default function AdminDashboard() {
           .ilike('stripe_payment_intent_id', `mobile_${pv.method}_${pv.trx_id}`)
           .maybeSingle();
         if (dealerOrder?.dealer_id) {
+          await supabase.from('mlm_transactions').insert({
+            user_id:     pv.user_id,
+            type:        'payment_verified',
+            amount:      pv.amount || 0,
+            description: `পেমেন্ট যাচাই — ডিলার অর্ডার ৳${pv.amount}। PV ডিলার এক্সেপ্ট করলে বন্টন হবে।`,
+          });
+          await supabase.from('ecom_orders')
+            .update({ status: 'paid' })
+            .ilike('stripe_payment_intent_id', `mobile_${pv.method}_${pv.trx_id}`);
           toast.success('✅ পেমেন্ট অনুমোদিত। PV ডিলার এক্সেপ্ট করলে বন্টন হবে।');
           fetchAll(); setLoading(false); return;
         }

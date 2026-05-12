@@ -207,6 +207,10 @@ export default function Checkout() {
     await supabase.from('mlm_pv_log').insert({
       user_id: user.id, amount: pvToAdd, source: 'product_purchase',
     }).catch(() => {});
+    await supabase.from('mlm_transactions').insert({
+      user_id: user.id, type: 'product_purchase', amount: pvToAdd,
+      description: `পণ্য ক্রয় (কোম্পানি সরাসরি) — ${pvToAdd} PV মূল্যের পণ্য`,
+    }).catch(() => {});
 
     // ── প্রথম activation এ referrer এর commission + count + club promotion ──
     const justFirstActivated = wasInactive && isFirstTime && updates.is_active === true;
