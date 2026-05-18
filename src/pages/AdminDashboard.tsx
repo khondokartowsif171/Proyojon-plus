@@ -169,9 +169,10 @@ export default function AdminDashboard() {
   const [goldEditLoading,setGoldEditLoading]= useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user || user.role !== 'admin') { navigate('/login'); return; }
     fetchAll();
-  }, [user]);
+  }, [user, authLoading]);
 
   const fetchAll = async () => {
     const { data: usersData } = await supabase.from('mlm_users').select('*').order('created_at', { ascending: false });
