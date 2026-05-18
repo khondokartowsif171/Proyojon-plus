@@ -173,6 +173,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'এই মোবাইল নম্বর দিয়ে আগেই রেজিস্ট্রেশন করা হয়েছে' };
       }
 
+      // Referrer ID বাধ্যতামূলক এবং DB-তে থাকতে হবে
+      if (!regData.referrer_id || !regData.referrer_id.trim()) {
+        return { success: false, error: 'রেফারার আইডি বাধ্যতামূলক। সঠিক রেফারেল লিংক ব্যবহার করুন।' };
+      }
+      const { data: referrerExists } = await supabase
+        .from('mlm_users')
+        .select('id')
+        .eq('id', regData.referrer_id.trim())
+        .maybeSingle();
+      if (!referrerExists) {
+        return { success: false, error: 'রেফারার আইডি সঠিক নয়। সঠিক রেফারেল লিংক ব্যবহার করুন।' };
+      }
+
       // Email uniqueness check (ঐচ্ছিক — দিলে unique হতে হবে)
       if (regData.email && regData.email.trim()) {
         const { data: existingEmail } = await supabase
