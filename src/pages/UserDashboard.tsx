@@ -89,6 +89,10 @@ export default function UserDashboard() {
   const [profNidBackFile,  setProfNidBackFile]  = useState<File|null>(null);
   const [profLoading,      setProfLoading]      = useState(false);
 
+  // Package sub-tab
+  const [pkgSubTab, setPkgSubTab] = useState<'buy'|'history'>('buy');
+  const [shareholderHistory, setShareholderHistory] = useState<any[]>([]);
+
   // Package purchase
   const [pkgSelected, setPkgSelected] = useState<'shareholder'|'gold'|null>(null);
   const [pkgMethod,   setPkgMethod]   = useState('bkash');
@@ -148,14 +152,15 @@ export default function UserDashboard() {
   const fetchData = async () => {
     if (!user) return;
     setLoading(true);
-    const [txRes, wdRes, poolRes, goldRes, pvRes, dirRes, lockerRes] = await Promise.all([
+    const [txRes, wdRes, poolRes, goldRes, pvRes, dirRes, lockerRes, shRes] = await Promise.all([
       supabase.from('mlm_transactions').select('*').eq('user_id', user.id).order('created_at',{ascending:false}).limit(50),
       supabase.from('mlm_withdrawals').select('*').eq('user_id', user.id).order('created_at',{ascending:false}).limit(20),
       supabase.from('mlm_club_pools').select('*'),
-      supabase.from('mlm_gold_packages').select('*').eq('user_id', user.id).order('created_at',{ascending:false}),
+      supabase.from('mlm_gold_packages').select('*').eq('user_id', user.id).order('purchased_at',{ascending:false}),
       supabase.from('mlm_payment_verifications').select('*').eq('user_id', user.id).order('created_at',{ascending:false}).limit(10),
       supabase.from('mlm_users').select('id,name,is_active,package_type,is_weekly_club').eq('referrer_id', user.id),
       supabase.from('mlm_payment_verifications').select('locker_image_url').eq('user_id', user.id).eq('purpose','gold_package').eq('status','approved').not('locker_image_url','is',null),
+      supabase.from('mlm_payment_verifications').select('id,amount,created_at').eq('user_id', user.id).eq('purpose','shareholder_package').eq('status','approved').order('created_at',{ascending:true}),
     ]);
     if (txRes.data)  setTransactions(txRes.data);
     if (wdRes.data)  setWithdrawals(wdRes.data);
@@ -164,6 +169,7 @@ export default function UserDashboard() {
     if (pvRes.data)  setPendingPayments(pvRes.data.filter((p:any) => p.status === 'pending'));
     if (dirRes.data) setDirectCustomers(dirRes.data);
     if (lockerRes.data) setGoldLockerImages(lockerRes.data.map((p:any)=>p.locker_image_url).filter(Boolean));
+    if (shRes.data)  setShareholderHistory(shRes.data);
     // Referral purchases feed
     const directIds = (dirRes.data||[]).map((u:any)=>u.id);
     if (directIds.length > 0) {
@@ -583,7 +589,7 @@ export default function UserDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header />
+      <Header isDashboard={true} />
       <div className="flex">
 
         {/* ── Sidebar (Desktop) ── */}
@@ -850,6 +856,17 @@ export default function UserDashboard() {
                 )}
               </div>
 
+              {/* Quick shop CTA */}
+              <div className="flex items-center gap-3 mb-5 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100">
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-indigo-900">পণ্য কিনুন ও PV অর্জন করুন</p>
+                  <p className="text-xs text-indigo-600 mt-0.5">শপ থেকে কেনাকাটা করলে PV পয়েন্ট ও ক্লাব বোনাস পাবেন</p>
+                </div>
+                <Link to="/shop" className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md">
+                  <ShoppingBag size={16} /> শপে যান
+                </Link>
+              </div>
+
               <div className="flex items-center gap-3 mb-5">
                 <h2 className="text-lg font-bold">{t('myId')}</h2>
                 {user.is_dealer && (
@@ -1051,7 +1068,119 @@ export default function UserDashboard() {
           {/* PACKAGES */}
           {activeTab==='packages'&&(
             <div>
-              <h2 className="text-lg font-bold mb-2">{t('buyPackage')}</h2>
+              <h2 className="text-lg font-bold mb-4">{t('buyPackage')}</h2>
+
+              {/* Sub-tabs */}
+              <div className="flex gap-2 mb-6 border-b border-gray-100 pb-3">
+                <button onClick={()=>setPkgSubTab('buy')} className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all ${pkgSubTab==='buy'?'bg-indigo-600 text-white shadow':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  নতুন কিনুন
+                </button>
+                <button onClick={()=>setPkgSubTab('history')} className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all ${pkgSubTab==='history'?'bg-indigo-600 text-white shadow':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  আমার প্যাকেজসমূহ
+                </button>
+              </div>
+
+              {/* Package history sub-tab */}
+              {pkgSubTab==='history'&&(
+                <div>
+                  {user.package_type==='customer'&&(
+                    <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5">
+                      <p className="font-bold text-blue-900 mb-3">কাস্টমার প্যাকেজ</p>
+                      <div className="space-y-2 text-sm text-blue-800">
+                        <div className="flex justify-between py-2 border-b border-blue-100">
+                          <span>সক্রিয় হয়েছে</span>
+                          <span className="font-semibold">{user.activated_at?new Date(user.activated_at).toLocaleDateString('bn-BD'):'—'}</span>
+                        </div>
+                        <div className="flex justify-between py-2 border-b border-blue-100">
+                          <span>এই মাসে PV</span>
+                          <span className="font-semibold">{user.monthly_pv_purchased||0} / 100</span>
+                        </div>
+                        <div className="flex justify-between py-2">
+                          <span>মোট PV</span>
+                          <span className="font-semibold">{user.pv_points||0}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {user.package_type==='shareholder'&&(
+                    <div>
+                      {shareholderHistory.length===0?(
+                        <p className="text-gray-400 text-sm text-center py-8">কোনো অনুমোদিত শেয়ারহোল্ডার প্যাকেজ নেই</p>
+                      ):(
+                        <div className="space-y-3">
+                          {shareholderHistory.map((sh:any,i:number)=>(
+                            <div key={sh.id} className="flex items-center justify-between bg-purple-50 border border-purple-100 rounded-xl px-5 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center text-white text-xs font-bold">{i+1}</div>
+                                <div>
+                                  <p className="font-semibold text-sm text-gray-900">শেয়ারহোল্ডার #{i+1}</p>
+                                  <p className="text-xs text-gray-500">কেনা: {new Date(sh.created_at).toLocaleDateString('bn-BD')}</p>
+                                </div>
+                              </div>
+                              <p className="font-bold text-purple-700">৳{(sh.amount||5000).toLocaleString()}</p>
+                            </div>
+                          ))}
+                          <div className="flex justify-between items-center px-5 py-3 bg-purple-100 rounded-xl font-semibold text-purple-900 text-sm">
+                            <span>মোট: {shareholderHistory.length}টি</span>
+                            <span>মোট বিনিয়োগ: ৳{shareholderHistory.reduce((s:number,sh:any)=>s+(sh.amount||5000),0).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {user.package_type==='gold'&&(
+                    <div>
+                      {goldPackages.length===0?(
+                        <p className="text-gray-400 text-sm text-center py-8">কোনো গোল্ড প্যাকেজ নেই</p>
+                      ):(
+                        <div className="space-y-3">
+                          {goldPackages.map((gp:any,i:number)=>{
+                            const daysLeft = Math.max(0,Math.ceil((new Date(gp.expires_at).getTime()-Date.now())/86400000));
+                            return (
+                              <div key={gp.id} className="bg-yellow-50 border border-yellow-200 rounded-xl px-5 py-4">
+                                <div className="flex items-start justify-between mb-2">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-xl flex items-center justify-center text-white text-xs font-bold">{i+1}</div>
+                                    <div>
+                                      <p className="font-semibold text-sm text-gray-900">গোল্ড #{i+1}</p>
+                                      <p className="text-xs text-gray-500">কেনা: {gp.purchased_at?new Date(gp.purchased_at).toLocaleDateString('bn-BD'):'—'}</p>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="font-bold text-yellow-700">৳{(gp.amount||0).toLocaleString()}</p>
+                                    <p className="text-xs text-gray-500">বিনিয়োগ</p>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-3 text-xs mt-3">
+                                  <div className="bg-white rounded-lg p-2 text-center border border-yellow-100">
+                                    <p className="text-gray-400">বাকি দিন</p>
+                                    <p className="font-bold text-orange-600">{daysLeft}</p>
+                                  </div>
+                                  <div className="bg-white rounded-lg p-2 text-center border border-yellow-100">
+                                    <p className="text-gray-400">মুক্তি পেয়েছে</p>
+                                    <p className="font-bold text-green-600">৳{(gp.income_released||0).toLocaleString()}</p>
+                                  </div>
+                                  <div className="bg-white rounded-lg p-2 text-center border border-yellow-100">
+                                    <p className="text-gray-400">দৈনিক ইনকাম</p>
+                                    <p className="font-bold text-indigo-600">৳{(gp.daily_income||0).toFixed(2)}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div className="flex justify-between items-center px-5 py-3 bg-yellow-100 rounded-xl font-semibold text-yellow-900 text-sm">
+                            <span>মোট: {goldPackages.length}টি</span>
+                            <span>মোট বিনিয়োগ: ৳{goldPackages.reduce((s:number,g:any)=>s+(g.amount||0),0).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {pkgSubTab==='buy'&&(
+              <div>
               <p className="text-xs text-gray-500 mb-5">{t('buyPackageNote')}</p>
               <div className="grid md:grid-cols-2 gap-4 mb-6">
                 <button onClick={()=>{setPkgSelected(pkgSelected==='shareholder'?null:'shareholder');setPkgQuantity(1);}} className={`text-left p-5 rounded-2xl border-2 transition-all ${pkgSelected==='shareholder'?'border-purple-500 bg-purple-50':'border-gray-200 hover:border-purple-300 bg-white'}`}>
@@ -1185,6 +1314,8 @@ export default function UserDashboard() {
                     })}
                   </div>
                 </div>
+              )}
+              </div>
               )}
             </div>
           )}
@@ -1562,7 +1693,7 @@ export default function UserDashboard() {
           </div>
         </main>
       </div>
-      <Footer/>
+      <div className="text-center py-4 text-xs text-gray-400 border-t border-gray-100 bg-white mt-4">Proyojon Plus &copy; {new Date().getFullYear()}</div>
     </div>
   );
 }

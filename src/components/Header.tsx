@@ -6,7 +6,7 @@ import { useLang } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
 import { ShoppingCart, User, Menu, X, LogOut, LayoutDashboard, Store, ChevronDown } from 'lucide-react';
 
-export default function Header() {
+export default function Header({ isDashboard = false }: { isDashboard?: boolean }) {
   const { user, logout } = useAuth();
   const { cartCount } = useCart();
   const { lang, setLang, t } = useLang();
@@ -48,41 +48,43 @@ export default function Header() {
           </Link>
 
           {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-1">
-            <Link to="/" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
-              {t('home')}
-            </Link>
-            
-            {/* Shop Dropdown */}
-            <div className="relative" onMouseEnter={() => setShopDropdown(true)} onMouseLeave={() => setShopDropdown(false)}>
-              <Link to="/shop" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium flex items-center gap-1">
-                <Store size={16} />
-                {t('shop')}
-                <ChevronDown size={14} />
+          {!isDashboard && (
+            <nav className="hidden md:flex items-center gap-1">
+              <Link to="/" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
+                {t('home')}
               </Link>
-              {shopDropdown && (
-                <div className="absolute top-full left-0 mt-1 bg-white text-gray-800 rounded-xl shadow-2xl py-2 min-w-[200px] border border-gray-100">
-                  {collections.map(col => (
-                    <Link
-                      key={col.id}
-                      to={`/collections/${col.handle}`}
-                      className="block px-4 py-2.5 hover:bg-indigo-50 text-sm transition-colors"
-                      onClick={() => setShopDropdown(false)}
-                    >
-                      {col.title}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
 
-            <Link to="/packages" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
-              {t('packages')}
-            </Link>
-            <Link to="/gallery" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
-              গ্যালারি
-            </Link>
-          </nav>
+              {/* Shop Dropdown */}
+              <div className="relative" onMouseEnter={() => setShopDropdown(true)} onMouseLeave={() => setShopDropdown(false)}>
+                <Link to="/shop" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium flex items-center gap-1">
+                  <Store size={16} />
+                  {t('shop')}
+                  <ChevronDown size={14} />
+                </Link>
+                {shopDropdown && (
+                  <div className="absolute top-full left-0 mt-1 bg-white text-gray-800 rounded-xl shadow-2xl py-2 min-w-[200px] border border-gray-100">
+                    {collections.map(col => (
+                      <Link
+                        key={col.id}
+                        to={`/collections/${col.handle}`}
+                        className="block px-4 py-2.5 hover:bg-indigo-50 text-sm transition-colors"
+                        onClick={() => setShopDropdown(false)}
+                      >
+                        {col.title}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <Link to="/packages" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
+                {t('packages')}
+              </Link>
+              <Link to="/gallery" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
+                গ্যালারি
+              </Link>
+            </nav>
+          )}
 
           {/* Right side */}
           <div className="flex items-center gap-3">
@@ -175,15 +177,19 @@ export default function Header() {
         {/* Mobile Nav */}
         {mobileOpen && (
           <div className="md:hidden pb-4 border-t border-white/10 mt-2 pt-4 space-y-2">
-            <Link to="/" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>হোম</Link>
-            <Link to="/shop" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>শপ</Link>
-            {collections.map(col => (
-              <Link key={col.id} to={`/collections/${col.handle}`} className="block px-6 py-2 rounded-lg hover:bg-white/10 text-xs text-gray-300" onClick={() => setMobileOpen(false)}>
-                {col.title}
-              </Link>
-            ))}
-            <Link to="/packages" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>প্যাকেজ</Link>
-            <Link to="/gallery" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>গ্যালারি</Link>
+            {!isDashboard && (
+              <>
+                <Link to="/" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>হোম</Link>
+                <Link to="/shop" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>শপ</Link>
+                {collections.map(col => (
+                  <Link key={col.id} to={`/collections/${col.handle}`} className="block px-6 py-2 rounded-lg hover:bg-white/10 text-xs text-gray-300" onClick={() => setMobileOpen(false)}>
+                    {col.title}
+                  </Link>
+                ))}
+                <Link to="/packages" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>প্যাকেজ</Link>
+                <Link to="/gallery" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>গ্যালারি</Link>
+              </>
+            )}
           </div>
         )}
       </div>

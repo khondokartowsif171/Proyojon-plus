@@ -155,111 +155,45 @@ export default function AppLayout() {
         </div>
       </section>
 
-      {/* Packages Section */}
-      <section className="py-20 bg-white">
+      {/* Vision & Mission */}
+      <section className="py-20 bg-gradient-to-br from-indigo-50 via-purple-50 to-white">
         <div className="max-w-7xl mx-auto px-4">
           <div className="text-center mb-14">
-            <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">জয়েনিং প্যাকেজ সমূহ</h2>
-            <p className="text-gray-500 max-w-2xl mx-auto">আপনার বাজেট ও লক্ষ্য অনুযায়ী প্যাকেজ বেছে নিন</p>
+            <span className="inline-block bg-indigo-100 text-indigo-700 text-sm font-semibold px-4 py-1.5 rounded-full mb-4">আমাদের পরিচয়</span>
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">আমাদের দর্শন ও লক্ষ্য</h2>
+            <p className="text-gray-500 max-w-2xl mx-auto">প্রয়োজন প্লাস — বাংলাদেশের প্রতিটি পরিবারের পাশে</p>
           </div>
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-2 gap-10">
+            <div className="bg-white rounded-2xl shadow-lg p-8 border border-indigo-100 hover:shadow-xl transition-shadow">
+              <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center mb-6 shadow-lg">
+                <span className="text-2xl">🔭</span>
+              </div>
+              <h3 className="text-2xl font-bold text-indigo-900 mb-4">আমাদের দর্শন (Vision)</h3>
+              <p className="text-gray-600 leading-relaxed text-base">
+                প্রয়োজন প্লাস স্বপ্ন দেখে এমন একটি বাংলাদেশের, যেখানে প্রতিটি পরিবার সাশ্রয়ী মূল্যে মানসম্পন্ন পণ্য পাবে এবং সামুদায়িক বাণিজ্যের মাধ্যমে টেকসই আয় করতে পারবে। আমরা বিশ্বাস করি, সঠিক সুযোগ পেলে বাংলাদেশের প্রতিটি মানুষ আর্থিক স্বাধীনতা অর্জন করতে সক্ষম।
+              </p>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-8 border border-purple-100 hover:shadow-xl transition-shadow">
+              <div className="w-14 h-14 bg-gradient-to-br from-orange-400 to-yellow-500 rounded-xl flex items-center justify-center mb-6 shadow-lg">
+                <span className="text-2xl">🎯</span>
+              </div>
+              <h3 className="text-2xl font-bold text-purple-900 mb-4">আমাদের লক্ষ্য (Mission)</h3>
+              <p className="text-gray-600 leading-relaxed text-base">
+                আমাদের লক্ষ্য হলো বাংলাদেশের পরিবারগুলোকে ক্ষমতায়িত করা — উন্নতমানের ভোগ্যপণ্য সরবরাহের পাশাপাশি একটি স্বচ্ছ ও নৈতিক আয়ের সুযোগ তৈরি করা। দলগত প্রচেষ্টা, পারস্পরিক বিশ্বাস এবং সততার ভিত্তিতে আমরা গড়ে তুলছি এমন একটি নেটওয়ার্ক যেখানে প্রতিটি সদস্যের সাফল্যই আমাদের সাফল্য।
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-10">
             {[
-              {
-                name: 'কাস্টমার প্যাকেজ',
-                priceDisplay: null, // ✅ No cash price
-                pvLabel: '১,০০০ PV এর পণ্য কিনুন',
-                subtext: '',
-                unit: 'PV',
-                color: 'from-blue-500 to-cyan-600',
-                shadow: 'shadow-blue-500/20',
-                icon: <ShoppingBag size={32} />,
-                features: [
-                  '৫% রেফার কমিশন (আইডি সক্রিয় হলেই)',
-                  '১% জেনারেশন বোনাস (৫ লেভেল, PV এর উপর)',
-                  'ডেইলি ক্লাব বোনাস (PV এর ৩০%)',
-                  'উইকলি ক্লাব (১৫ ডিরেক্ট রেফারে)',
-                  '৩০ দিনের মেয়াদ (মাসে ১০০ PV কিনলে রিনিউ)',
-                ],
-                popular: false,
-                btnLabel: 'বিনামূল্যে জয়েন করুন',
-              },
-              {
-                name: 'শেয়ারহোল্ডার প্যাকেজ',
-                priceDisplay: '৳৫,০০০',
-                pvLabel: '৫,০০০ SP',
-                subtext: '',
-                unit: 'SP',
-                color: 'from-purple-500 to-pink-600',
-                shadow: 'shadow-purple-500/20',
-                icon: <Crown size={32} />,
-                features: [
-                  '২.৫% রেফার কমিশন (আইডি সক্রিয় হলেই)',
-                  'শেয়ারহোল্ডার ক্লাব সদস্যপদ (PV এর ১০%)',
-                  'কোনো PV নেই — শুধু Shareholder club income',
-                  'আজীবন মেয়াদ — কোনো রিনিউ লাগে না',
-                  '১% জেনারেশন বোনাস (৫ লেভেল)',
-                ],
-                popular: true,
-                btnLabel: 'এখনই জয়েন করুন',
-              },
-              {
-                name: 'গোল্ড প্যাকেজ',
-                priceDisplay: '৳৫,০০০+',
-                pvLabel: 'বিনিয়োগ অনুযায়ী GP',
-                subtext: '',
-                unit: 'GP',
-                color: 'from-yellow-500 to-orange-600',
-                shadow: 'shadow-yellow-500/20',
-                icon: <Award size={32} />,
-                features: [
-                  'রেফারার পায় বিনিয়োগের ১.৮% (৩৬৫ দিনে)',
-                  'বায়ারের বকেয়া — বিনিয়োগের ৩৬% (৩৬৫ দিনে)',
-                  '৩৬৫ দিনের কাউন্টডাউন টাইমার',
-                  'গোল্ড লকার ইমেজ সিস্টেম',
-                  '১% জেনারেশন বোনাস (৫ লেভেল)',
-                ],
-                popular: false,
-                btnLabel: 'এখনই জয়েন করুন',
-              },
-            ].map((pkg, i) => (
-              <div key={i} className={`relative bg-white rounded-3xl p-8 border-2 flex flex-col ${pkg.popular ? 'border-purple-500 shadow-2xl ' + pkg.shadow : 'border-gray-100 shadow-lg'} hover:shadow-2xl transition-all duration-300 hover:-translate-y-2`}>
-                {pkg.popular && (
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold px-4 py-1.5 rounded-full">
-                    সবচেয়ে জনপ্রিয়
-                  </div>
-                )}
-                <div className={`w-16 h-16 bg-gradient-to-br ${pkg.color} rounded-2xl flex items-center justify-center text-white mb-6`}>{pkg.icon}</div>
-                <h3 className="text-xl font-bold text-gray-900 mb-1">{pkg.name}</h3>
-                {pkg.subtext && <p className="text-xs text-gray-400 mb-3">{pkg.subtext}</p>}
-
-                {/* ✅ Customer: no ৳ price, show PV purchase instruction */}
-                {pkg.priceDisplay ? (
-                  <div className="flex items-baseline gap-2 mb-1">
-                    <span className="text-4xl font-extrabold text-gray-900">{pkg.priceDisplay}</span>
-                    <span className="text-gray-400 text-sm">/ {pkg.pvLabel}</span>
-                  </div>
-                ) : (
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-1">
-                    <p className="text-blue-800 font-bold text-sm">{pkg.pvLabel}</p>
-                    <p className="text-blue-600 text-xs mt-0.5">পণ্য কিনলেই আইডি সক্রিয় — কোনো নগদ নয়!</p>
-                  </div>
-                )}
-
-                <ul className="space-y-3 mt-4 flex-1">
-                  {pkg.features.map((f, j) => (
-                    <li key={j} className="flex items-start gap-2 text-sm text-gray-600">
-                      <div className={`w-5 h-5 bg-gradient-to-br ${pkg.color} rounded-full flex items-center justify-center flex-shrink-0 mt-0.5`}>
-                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link to="/register" className={`block text-center py-3 mt-8 rounded-xl font-bold transition-all ${pkg.popular ? `bg-gradient-to-r ${pkg.color} text-white hover:shadow-lg` : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}>
-                  {pkg.btnLabel}
-                </Link>
+              { icon: '🤝', title: 'বিশ্বাস', desc: 'পারস্পরিক আস্থা ও সততা' },
+              { icon: '💎', title: 'গুণমান', desc: 'সর্বোচ্চ মানের পণ্য' },
+              { icon: '🌱', title: 'বিকাশ', desc: 'প্রতিটি সদস্যের উন্নতি' },
+              { icon: '🇧🇩', title: 'দেশপ্রেম', desc: 'দেশীয় অর্থনীতি মজবুত' },
+            ].map(v => (
+              <div key={v.title} className="bg-white rounded-xl p-5 text-center shadow border border-gray-100">
+                <div className="text-3xl mb-2">{v.icon}</div>
+                <p className="font-bold text-gray-800 text-sm">{v.title}</p>
+                <p className="text-gray-500 text-xs mt-1">{v.desc}</p>
               </div>
             ))}
           </div>

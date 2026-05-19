@@ -54,7 +54,7 @@ const adminT = {
     noticeTitleLabel: 'শিরোনাম *', noticeExpiry: 'মেয়াদ শেষ (ঐচ্ছিক)', noticeDetail: 'বিস্তারিত (ঐচ্ছিক)',
     postNotice: 'নোটিশ প্রকাশ করুন', noNotice: 'কোনো নোটিশ নেই',
     goldPkgMgmt: 'গোল্ড প্যাকেজ ম্যানেজ',
-    gpCols: ['#','ব্যবহারকারী','ফোন','কেনার তারিখ','মেয়াদ শেষ','বাকি দিন','দৈনিক ইনকাম','স্ট্যাটাস','সম্পাদনা'],
+    gpCols: ['#','ব্যবহারকারী','ফোন','বিনিয়োগ','কেনার তারিখ','মেয়াদ শেষ','বাকি দিন','দৈনিক ইনকাম','স্ট্যাটাস','সম্পাদনা'],
     catMgmt: 'ক্যাটাগরি ম্যানেজমেন্ট', newCat: 'নতুন ক্যাটাগরি',
     shopCollections: 'শপ কালেকশন', shopColNote: 'শপ নেভিগেশন ড্রপডাউনে যা দেখাবে',
     newCollection: '+ নতুন কালেকশন', colTitle: 'কালেকশন নাম', colDesc: 'বিবরণ (ঐচ্ছিক)',
@@ -887,6 +887,7 @@ export default function AdminDashboard() {
         for (let i = 0; i < quantity; i++) {
           const { error: gpInsertError } = await supabase.from('mlm_gold_packages').insert({
             user_id:                 pv.user_id,
+            amount:                  amtPerPkg,
             purchased_at:            new Date().toISOString(),
             expires_at:              goldExpiry.toISOString(),
             daily_income:            dailyIncomePkg,
@@ -1617,6 +1618,7 @@ export default function AdminDashboard() {
                             <td className="py-2 px-3 text-xs text-gray-400">{i+1}</td>
                             <td className="py-2 px-3 font-medium text-xs">{pkg.user?.name||'—'}</td>
                             <td className="py-2 px-3 text-xs text-gray-500">{pkg.user?.phone||'—'}</td>
+                            <td className="py-2 px-3 text-xs font-bold text-indigo-700">৳{(pkg.amount||0).toLocaleString()}</td>
                             <td className="py-2 px-3 text-xs">{pkg.purchased_at?new Date(pkg.purchased_at).toLocaleDateString('bn-BD'):'—'}</td>
                             <td className="py-2 px-3 text-xs">{pkg.expires_at?new Date(pkg.expires_at).toLocaleDateString('bn-BD'):'—'}</td>
                             <td className="py-2 px-3 text-xs font-bold text-orange-600">{remaining}</td>
@@ -2050,6 +2052,43 @@ export default function AdminDashboard() {
                 ))}
               </div>
             </div>
+            {/* Package summary */}
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-xs font-semibold text-gray-600 mb-2">📦 প্যাকেজ সারাংশ</p>
+              {editUser.package_type === 'customer' && (
+                <div className="bg-blue-50 rounded-xl p-3 text-xs text-blue-800 space-y-1">
+                  <p>কাস্টমার প্যাকেজ</p>
+                  <p>এই মাসে PV: <span className="font-bold">{editUser.monthly_pv_purchased||0}</span> / 100</p>
+                  <p>মোট PV: <span className="font-bold">{editUser.pv_points||0}</span></p>
+                </div>
+              )}
+              {editUser.package_type === 'shareholder' && (
+                <div className="bg-purple-50 rounded-xl p-3 text-xs text-purple-800 space-y-1">
+                  <p>শেয়ারহোল্ডার: <span className="font-bold">{editUser.shareholder_count||1}টি</span> × ৳৫,০০০ = <span className="font-bold">৳{((editUser.shareholder_count||1)*5000).toLocaleString()}</span></p>
+                </div>
+              )}
+              {editUser.package_type === 'gold' && (() => {
+                const userGold = adminGoldPkgs.filter((g:any) => g.user_id === editUser.id);
+                const totalInvest = userGold.reduce((s:number,g:any)=>s+(g.amount||0),0);
+                return (
+                  <div className="bg-yellow-50 rounded-xl p-3 text-xs space-y-1">
+                    {userGold.length === 0 && <p className="text-yellow-700">কোনো গোল্ড প্যাকেজ নেই</p>}
+                    {userGold.map((g:any, i:number) => (
+                      <p key={g.id} className="text-yellow-700">
+                        গোল্ড #{i+1}: <span className="font-bold">৳{(g.amount||0).toLocaleString()}</span>
+                        {' — '}{Math.max(0,Math.ceil((new Date(g.expires_at).getTime()-Date.now())/86400000))} দিন বাকি
+                      </p>
+                    ))}
+                    {userGold.length > 0 && (
+                      <p className="font-semibold text-yellow-800 border-t border-yellow-200 pt-1 mt-1">
+                        মোট: {userGold.length}টি | মোট বিনিয়োগ: ৳{totalInvest.toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
             <div className="flex gap-3 mt-6">
               <button onClick={() => setEditUser(null)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50">বাতিল</button>
               <button onClick={handleUpdateUser} disabled={loading} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
