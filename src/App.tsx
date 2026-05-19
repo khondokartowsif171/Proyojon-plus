@@ -22,6 +22,7 @@ import OrderConfirmation from "./pages/OrderConfirmation";
 import CollectionPage from "./pages/CollectionPage";
 import Packages from "./pages/Packages";
 import Gallery from "./pages/Gallery";
+import About from "./pages/About";
 
 const queryClient = new QueryClient();
 
@@ -50,6 +51,7 @@ const App = () => (
                 <Route path="/collections/:handle" element={<CollectionPage />} />
                 <Route path="/packages" element={<Packages />} />
                 <Route path="/gallery" element={<Gallery />} />
+                <Route path="/about" element={<About />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>

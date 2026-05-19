@@ -136,51 +136,6 @@ export default function AppLayout() {
         </div>
       </section>
 
-      {/* Vision & Mission */}
-      <section className="py-20 bg-gradient-to-br from-indigo-50 via-purple-50 to-white">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="text-center mb-14">
-            <span className="inline-block bg-indigo-100 text-indigo-700 text-sm font-semibold px-4 py-1.5 rounded-full mb-4">আমাদের পরিচয়</span>
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">আমাদের দর্শন ও লক্ষ্য</h2>
-            <p className="text-gray-500 max-w-2xl mx-auto">প্রয়োজন প্লাস — বাংলাদেশের প্রতিটি পরিবারের পাশে</p>
-          </div>
-          <div className="grid md:grid-cols-2 gap-10">
-            <div className="bg-white rounded-2xl shadow-lg p-8 border border-indigo-100 hover:shadow-xl transition-shadow">
-              <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center mb-6 shadow-lg">
-                <span className="text-2xl">🔭</span>
-              </div>
-              <h3 className="text-2xl font-bold text-indigo-900 mb-4">আমাদের দর্শন (Vision)</h3>
-              <p className="text-gray-600 leading-relaxed text-base">
-                প্রয়োজন প্লাস স্বপ্ন দেখে এমন একটি বাংলাদেশের, যেখানে প্রতিটি পরিবার সাশ্রয়ী মূল্যে মানসম্পন্ন পণ্য পাবে এবং সামুদায়িক বাণিজ্যের মাধ্যমে টেকসই আয় করতে পারবে। আমরা বিশ্বাস করি, সঠিক সুযোগ পেলে বাংলাদেশের প্রতিটি মানুষ আর্থিক স্বাধীনতা অর্জন করতে সক্ষম।
-              </p>
-            </div>
-            <div className="bg-white rounded-2xl shadow-lg p-8 border border-purple-100 hover:shadow-xl transition-shadow">
-              <div className="w-14 h-14 bg-gradient-to-br from-orange-400 to-yellow-500 rounded-xl flex items-center justify-center mb-6 shadow-lg">
-                <span className="text-2xl">🎯</span>
-              </div>
-              <h3 className="text-2xl font-bold text-purple-900 mb-4">আমাদের লক্ষ্য (Mission)</h3>
-              <p className="text-gray-600 leading-relaxed text-base">
-                আমাদের লক্ষ্য হলো বাংলাদেশের পরিবারগুলোকে ক্ষমতায়িত করা — উন্নতমানের ভোগ্যপণ্য সরবরাহের পাশাপাশি একটি স্বচ্ছ ও নৈতিক আয়ের সুযোগ তৈরি করা। দলগত প্রচেষ্টা, পারস্পরিক বিশ্বাস এবং সততার ভিত্তিতে আমরা গড়ে তুলছি এমন একটি নেটওয়ার্ক যেখানে প্রতিটি সদস্যের সাফল্যই আমাদের সাফল্য।
-              </p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-10">
-            {[
-              { icon: '🤝', title: 'বিশ্বাস', desc: 'পারস্পরিক আস্থা ও সততা' },
-              { icon: '💎', title: 'গুণমান', desc: 'সর্বোচ্চ মানের পণ্য' },
-              { icon: '🌱', title: 'বিকাশ', desc: 'প্রতিটি সদস্যের উন্নতি' },
-              { icon: '🇧🇩', title: 'দেশপ্রেম', desc: 'দেশীয় অর্থনীতি মজবুত' },
-            ].map(v => (
-              <div key={v.title} className="bg-white rounded-xl p-5 text-center shadow border border-gray-100">
-                <div className="text-3xl mb-2">{v.icon}</div>
-                <p className="font-bold text-gray-800 text-sm">{v.title}</p>
-                <p className="text-gray-500 text-xs mt-1">{v.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Products */}
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4">
