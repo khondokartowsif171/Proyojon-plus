@@ -136,6 +136,38 @@ export default function AppLayout() {
         </div>
       </section>
 
+      {/* Notice Board */}
+      {notices.length > 0 && (
+        <section className="bg-amber-50 border-t-4 border-amber-400">
+          <div className="max-w-7xl mx-auto py-10 px-4">
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-amber-800">📋 নোটিশ বোর্ড</h2>
+              <p className="text-amber-600 text-sm mt-1">সর্বশেষ বিজ্ঞপ্তি</p>
+            </div>
+            <div className="space-y-3">
+              {notices.map((n) => (
+                <div key={n.id} className="bg-white rounded-xl border border-amber-200 px-5 py-4 flex items-start justify-between gap-4 shadow-sm">
+                  <div className="flex items-start gap-4 flex-1 min-w-0">
+                    <span className={`flex-shrink-0 text-xs font-bold px-2.5 py-1 rounded-full mt-0.5 ${n.priority >= 5 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                      {n.priority >= 5 ? '🔴 জরুরি' : '🟢 সাধারণ'}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-bold text-gray-900 text-sm leading-snug">{n.title}</p>
+                      {n.content && (
+                        <p className="text-gray-600 text-sm mt-1 leading-relaxed">{n.content}</p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="flex-shrink-0 text-xs text-amber-700 font-medium whitespace-nowrap mt-0.5">
+                    {new Date(n.created_at).toLocaleDateString('bn-BD')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Products */}
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4">
