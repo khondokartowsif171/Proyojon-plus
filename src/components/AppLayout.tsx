@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import ProductCard from '@/components/ProductCard';
-import { ArrowRight, Users, Shield, TrendingUp, Gift, Star, Zap, Crown, Award, ChevronRight, ShoppingBag } from 'lucide-react';
+import { ArrowRight, Crown, Award, ChevronRight, ShoppingBag } from 'lucide-react';
 
 export default function AppLayout() {
   const [products,    setProducts]    = useState<any[]>([]);
@@ -136,25 +136,6 @@ export default function AppLayout() {
         </div>
       </section>
 
-      {/* Stats bar */}
-      <section className="bg-white border-b border-gray-100 py-6">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-            {[
-              {label:'মোট পণ্য', value: products.length > 0 ? `${products.length}+` : '—', color:'text-blue-600'},
-              {label:'প্যাকেজ ধরন', value:'৩টি', color:'text-purple-600'},
-              {label:'জেনারেশন বোনাস', value:'৫ লেভেল', color:'text-green-600'},
-              {label:'ডেইলি ক্লাব বোনাস', value:'PV এর ৩০%', color:'text-orange-600'},
-            ].map((s,i)=>(
-              <div key={i}>
-                <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Vision & Mission */}
       <section className="py-20 bg-gradient-to-br from-indigo-50 via-purple-50 to-white">
         <div className="max-w-7xl mx-auto px-4">
@@ -194,33 +175,6 @@ export default function AppLayout() {
                 <div className="text-3xl mb-2">{v.icon}</div>
                 <p className="font-bold text-gray-800 text-sm">{v.title}</p>
                 <p className="text-gray-500 text-xs mt-1">{v.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Features */}
-      <section className="py-20 bg-gradient-to-br from-indigo-50 to-purple-50">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">কেন Proyojon Plus?</h2>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { icon: <TrendingUp size={28} />, title: '৫ জেনারেশন বোনাস', desc: 'PV পণ্য বিক্রয়ে ১% জেনারেশন বোনাস', color: 'from-blue-500 to-cyan-500' },
-              { icon: <Gift size={28} />, title: 'ডেইলি ক্লাব বোনাস', desc: 'PV এর ৩০% ডেইলি ক্লাবে বন্টন', color: 'from-purple-500 to-pink-500' },
-              { icon: <Shield size={28} />, title: 'ইনসুরেন্স ক্লাব', desc: '১৫ জন Weekly member পেলে যোগ', color: 'from-green-500 to-emerald-500' },
-              { icon: <Users size={28} />, title: 'পেনশন ক্লাব', desc: 'ইনসুরেন্সের সাথেই পাবেন', color: 'from-orange-500 to-red-500' },
-              { icon: <Star size={28} />, title: 'শেয়ারহোল্ডার ক্লাব', desc: 'PV এর ১০% শেয়ারহোল্ডারদের মাঝে', color: 'from-yellow-500 to-orange-500' },
-              { icon: <Zap size={28} />, title: 'তাৎক্ষণিক রেফার', desc: 'আইডি সক্রিয় হলেই কমিশন', color: 'from-indigo-500 to-purple-500' },
-              { icon: <Crown size={28} />, title: 'গোল্ড প্যাকেজ', desc: '৩৬৫ দিনে দৈনিক ইনকাম বন্টন', color: 'from-amber-500 to-yellow-500' },
-              { icon: <Award size={28} />, title: 'ফ্রি শিপিং', desc: 'সকল অর্ডারে বিনামূল্যে ডেলিভারি', color: 'from-teal-500 to-cyan-500' },
-            ].map((f, i) => (
-              <div key={i} className="bg-white rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border border-gray-100">
-                <div className={`w-14 h-14 bg-gradient-to-br ${f.color} rounded-xl flex items-center justify-center text-white mb-4`}>{f.icon}</div>
-                <h3 className="font-bold text-gray-900 mb-2">{f.title}</h3>
-                <p className="text-sm text-gray-500">{f.desc}</p>
               </div>
             ))}
           </div>
