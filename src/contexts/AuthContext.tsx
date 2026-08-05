@@ -221,74 +221,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Admin Login (Super Admin OR Sub Admin) ────────────────────────────────
   const adminLogin = async (identifier: string, password: string) => {
     try {
-      const cleanInput = identifier.trim();
+      const cleanInput = identifier.trim().toLowerCase();
       const hashedInput = await hashPassword(password);
 
-      // ── Step 1: Super Admin in mlm_users (role = 'admin') ─────────────────
-      const { data: adminUsers } = await supabase
+      // ── Step 1: Super Admin in mlm_users ─────────────────────────────────
+      // Fetch all users with any admin role (case insensitive) or matching email/phone
+      const { data: allUsers } = await supabase
         .from('mlm_users')
-        .select('*')
-        .eq('role', 'admin');
+        .select('*');
 
-      if (adminUsers && adminUsers.length > 0) {
-        const adminUser = adminUsers.find((u: any) => {
+      if (allUsers && allUsers.length > 0) {
+        // Filter admins
+        const adminUsers = allUsers.filter((u: any) =>
+          u.role && u.role.toString().toLowerCase().includes('admin')
+        );
+
+        if (adminUsers.length > 0) {
+          const adminUser = adminUsers.find((u: any) => {
+            const stored = u.password_hash || '';
+            const passMatch = stored === password || stored === hashedInput;
+            const uEmail = (u.email || '').trim().toLowerCase();
+            const uPhone = (u.phone || '').trim();
+            const idMatch = (uEmail && uEmail === cleanInput) || (uPhone && uPhone === identifier.trim());
+            return passMatch && (idMatch || adminUsers.length === 1);
+          });
+
+          if (adminUser) {
+            if (adminUser.is_locked) {
+              return { success: false, error: 'এই অ্যাকাউন্ট লক করা হয়েছে।' };
+            }
+            setUser(adminUser as User);
+            setSubAdminAccount(null);
+            localStorage.setItem('mlm_user_id', adminUser.id);
+            localStorage.removeItem('admin_sub_id');
+            return { success: true, role: 'admin' };
+          }
+        }
+
+        // Also check if any user matching email/phone is an admin
+        const matchingUser = allUsers.find((u: any) => {
+          const uEmail = (u.email || '').trim().toLowerCase();
+          const uPhone = (u.phone || '').trim();
+          const idMatch = (uEmail && uEmail === cleanInput) || (uPhone && uPhone === identifier.trim());
           const stored = u.password_hash || '';
           const passMatch = stored === password || stored === hashedInput;
-          const idMatch = (u.email && u.email.trim().toLowerCase() === cleanInput.toLowerCase()) ||
-                          (u.phone && u.phone.trim() === cleanInput);
-          // Match if password matches AND (identifier matches OR there is only one admin)
-          return passMatch && (idMatch || adminUsers.length === 1);
+          return idMatch && passMatch;
         });
 
-        if (adminUser) {
-          if (adminUser.is_locked) {
-            return { success: false, error: 'এই অ্যাকাউন্ট লক করা হয়েছে।' };
+        if (matchingUser) {
+          if (matchingUser.role && matchingUser.role.toString().toLowerCase().includes('admin')) {
+            if (matchingUser.is_locked) {
+              return { success: false, error: 'এই অ্যাকাউন্ট লক করা হয়েছে।' };
+            }
+            setUser(matchingUser as User);
+            setSubAdminAccount(null);
+            localStorage.setItem('mlm_user_id', matchingUser.id);
+            localStorage.removeItem('admin_sub_id');
+            return { success: true, role: 'admin' };
           }
-          setUser(adminUser as User);
-          setSubAdminAccount(null);
-          localStorage.setItem('mlm_user_id', adminUser.id);
-          localStorage.removeItem('admin_sub_id');
-          return { success: true, role: 'admin' };
         }
       }
 
-      // ── Step 2: Search mlm_users by phone or email directly ──────────────
-      const isEmailInput = cleanInput.includes('@');
-      const field = isEmailInput ? 'email' : 'phone';
-      const { data: userCandidates } = await supabase
-        .from('mlm_users')
-        .select('*')
-        .eq(field, cleanInput);
-
-      if (userCandidates && userCandidates.length > 0) {
-        const foundUser = userCandidates.find((u: any) => {
-          const stored = u.password_hash || '';
-          return stored === password || stored === hashedInput;
-        });
-
-        if (foundUser && foundUser.role === 'admin') {
-          if (foundUser.is_locked) {
-            return { success: false, error: 'এই অ্যাকাউন্ট লক করা হয়েছে।' };
-          }
-          setUser(foundUser as User);
-          setSubAdminAccount(null);
-          localStorage.setItem('mlm_user_id', foundUser.id);
-          localStorage.removeItem('admin_sub_id');
-          return { success: true, role: 'admin' };
-        }
-      }
-
-      // ── Step 3: Sub Admin in admin_sub_accounts ───────────────────────────
+      // ── Step 2: Sub Admin in admin_sub_accounts ───────────────────────────
       try {
         const { data: subCandidates } = await supabase
           .from('admin_sub_accounts')
-          .select('*')
-          .or(`email.eq.${cleanInput},phone.eq.${cleanInput}`);
+          .select('*');
 
         if (subCandidates && subCandidates.length > 0) {
           const subAdmin = subCandidates.find((u: any) => {
             const stored = u.password_hash || '';
-            return stored === password || stored === hashedInput;
+            const passMatch = stored === password || stored === hashedInput;
+            const uEmail = (u.email || '').trim().toLowerCase();
+            const uPhone = (u.phone || '').trim();
+            const idMatch = (uEmail && uEmail === cleanInput) || (uPhone && uPhone === identifier.trim());
+            return passMatch && idMatch;
           });
 
           if (subAdmin) {
