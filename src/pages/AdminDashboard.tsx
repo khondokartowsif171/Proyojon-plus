@@ -1238,7 +1238,8 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          {activeTab !== 'sub-admins' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
 
             {activeTab === 'overview' && hasPermission('view_overview') && (() => {
               const now    = new Date();
@@ -2170,8 +2171,8 @@ export default function AdminDashboard() {
                 </div>
               </div>
             )}
-
           </div>
+        )}
         </main>
       </div>
 
