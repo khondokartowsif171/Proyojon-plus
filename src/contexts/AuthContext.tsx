@@ -221,55 +221,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Admin Login (Super Admin OR Sub Admin) ────────────────────────────────
   const adminLogin = async (identifier: string, password: string) => {
     try {
-      const cleanInput = identifier.trim().toLowerCase();
+      const cleanInput = identifier.trim();
+      const cleanLower = cleanInput.toLowerCase();
       const hashedInput = await hashPassword(password);
 
       // ── Step 1: Super Admin in mlm_users ─────────────────────────────────
-      // Fetch all users with any admin role (case insensitive) or matching email/phone
-      const { data: allUsers } = await supabase
-        .from('mlm_users')
-        .select('*');
+      // Run targeted queries to prevent RLS blocking broad select(*)
+      const [roleRes, emailRes, phoneRes] = await Promise.all([
+        supabase.from('mlm_users').select('*').eq('role', 'admin'),
+        supabase.from('mlm_users').select('*').eq('email', cleanInput),
+        supabase.from('mlm_users').select('*').eq('phone', cleanInput),
+      ]);
 
-      if (allUsers && allUsers.length > 0) {
-        // Filter admins
-        const adminUsers = allUsers.filter((u: any) =>
-          u.role && u.role.toString().toLowerCase().includes('admin')
-        );
-
-        if (adminUsers.length > 0) {
-          const adminUser = adminUsers.find((u: any) => {
-            const stored = u.password_hash || '';
-            const passMatch = stored === password || stored === hashedInput;
-            const uEmail = (u.email || '').trim().toLowerCase();
-            const uPhone = (u.phone || '').trim();
-            const idMatch = (uEmail && uEmail === cleanInput) || (uPhone && uPhone === identifier.trim());
-            return passMatch && (idMatch || adminUsers.length === 1);
-          });
-
-          if (adminUser) {
-            if (adminUser.is_locked) {
-              return { success: false, error: 'এই অ্যাকাউন্ট লক করা হয়েছে।' };
+      const candidates: any[] = [];
+      [roleRes.data, emailRes.data, phoneRes.data].forEach(list => {
+        if (list && Array.isArray(list)) {
+          list.forEach(item => {
+            if (!candidates.some(c => c.id === item.id)) {
+              candidates.push(item);
             }
-            setUser(adminUser as User);
-            setSubAdminAccount(null);
-            localStorage.setItem('mlm_user_id', adminUser.id);
-            localStorage.removeItem('admin_sub_id');
-            return { success: true, role: 'admin' };
-          }
+          });
         }
+      });
 
-        // Also check if any user matching email/phone is an admin
-        const matchingUser = allUsers.find((u: any) => {
-          const uEmail = (u.email || '').trim().toLowerCase();
-          const uPhone = (u.phone || '').trim();
-          const idMatch = (uEmail && uEmail === cleanInput) || (uPhone && uPhone === identifier.trim());
+      if (candidates.length > 0) {
+        // First try to match user where password matches
+        const matchingUser = candidates.find((u: any) => {
           const stored = u.password_hash || '';
-          const passMatch = stored === password || stored === hashedInput;
-          return idMatch && passMatch;
+          return stored === password || stored === hashedInput;
         });
 
         if (matchingUser) {
-          if (matchingUser.role && matchingUser.role.toString().toLowerCase().includes('admin')) {
+          const userRole = (matchingUser.role || '').toString().toLowerCase();
+          if (userRole.includes('admin')) {
             if (matchingUser.is_locked) {
               return { success: false, error: 'এই অ্যাকাউন্ট লক করা হয়েছে।' };
             }
@@ -278,6 +262,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             localStorage.setItem('mlm_user_id', matchingUser.id);
             localStorage.removeItem('admin_sub_id');
             return { success: true, role: 'admin' };
+          } else {
+            return { success: false, error: 'এই একাউন্টে এডমিন পারমিশন নেই।' };
           }
         }
       }
@@ -286,16 +272,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { data: subCandidates } = await supabase
           .from('admin_sub_accounts')
-          .select('*');
+          .select('*')
+          .or(`email.eq.${cleanInput},phone.eq.${cleanInput}`);
 
         if (subCandidates && subCandidates.length > 0) {
           const subAdmin = subCandidates.find((u: any) => {
             const stored = u.password_hash || '';
-            const passMatch = stored === password || stored === hashedInput;
-            const uEmail = (u.email || '').trim().toLowerCase();
-            const uPhone = (u.phone || '').trim();
-            const idMatch = (uEmail && uEmail === cleanInput) || (uPhone && uPhone === identifier.trim());
-            return passMatch && idMatch;
+            return stored === password || stored === hashedInput;
           });
 
           if (subAdmin) {
