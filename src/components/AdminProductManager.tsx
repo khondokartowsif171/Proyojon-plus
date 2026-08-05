@@ -41,9 +41,10 @@ interface Props {
   products: any[];
   categories: any[];
   onRefresh: () => void;
+  canManage?: boolean;
 }
 
-export default function AdminProductManager({ products, categories, onRefresh }: Props) {
+export default function AdminProductManager({ products, categories, onRefresh, canManage = true }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
@@ -280,12 +281,14 @@ export default function AdminProductManager({ products, categories, onRefresh }:
           <h2 className="text-lg font-bold text-gray-900">পণ্য ম্যানেজমেন্ট</h2>
           <p className="text-xs text-gray-500">মোট {products.length} টি পণ্য</p>
         </div>
-        <button
-          onClick={handleOpenAdd}
-          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl text-sm font-medium hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-200 transition-all"
-        >
-          <Plus size={16} /> নতুন পণ্য যোগ করুন
-        </button>
+        {canManage && (
+          <button
+            onClick={handleOpenAdd}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl text-sm font-medium hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-200 transition-all"
+          >
+            <Plus size={16} /> নতুন পণ্য যোগ করুন
+          </button>
+        )}
       </div>
 
       {/* Search */}
@@ -363,35 +366,47 @@ export default function AdminProductManager({ products, categories, onRefresh }:
                     </span>
                   </td>
                   <td className="py-3 px-4 text-center">
-                    <button
-                      onClick={() => handleToggleStatus(product)}
-                      className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full cursor-pointer transition-colors ${
-                        product.status === 'active'
-                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                      }`}
-                    >
-                      {product.status === 'active' ? <Eye size={12} /> : <EyeOff size={12} />}
-                      {product.status === 'active' ? 'সক্রিয়' : 'নিষ্ক্রিয়'}
-                    </button>
+                    {canManage ? (
+                      <button
+                        onClick={() => handleToggleStatus(product)}
+                        className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full cursor-pointer transition-colors ${
+                          product.status === 'active'
+                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                        }`}
+                      >
+                        {product.status === 'active' ? <Eye size={12} /> : <EyeOff size={12} />}
+                        {product.status === 'active' ? 'সক্রিয়' : 'নিষ্ক্রিয়'}
+                      </button>
+                    ) : (
+                      <span className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full ${
+                        product.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {product.status === 'active' ? 'সক্রিয়' : 'নিষ্ক্রিয়'}
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-4 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => handleOpenEdit(product)}
-                        className="p-2 rounded-lg hover:bg-indigo-100 text-indigo-600 transition-colors"
-                        title="এডিট"
-                      >
-                        <Edit size={15} />
-                      </button>
-                      <button
-                        onClick={() => setDeleteConfirm(product.id)}
-                        className="p-2 rounded-lg hover:bg-red-100 text-red-500 transition-colors"
-                        title="মুছুন"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
+                    {canManage ? (
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => handleOpenEdit(product)}
+                          className="p-2 rounded-lg hover:bg-indigo-100 text-indigo-600 transition-colors"
+                          title="এডিট"
+                        >
+                          <Edit size={15} />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirm(product.id)}
+                          className="p-2 rounded-lg hover:bg-red-100 text-red-500 transition-colors"
+                          title="মুছুন"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
                   </td>
                 </tr>
               ))

@@ -1131,6 +1131,12 @@ export default function AdminDashboard() {
   ];
   const sidebarItems = allSidebarItems.filter(item => hasPermission(item.perm));
 
+  useEffect(() => {
+    if (sidebarItems.length > 0 && !sidebarItems.some(item => item.id === activeTab)) {
+      setActiveTab(sidebarItems[0].id);
+    }
+  }, [subAdminAccount, user]);
+
   return (
     <div className="min-h-screen bg-gray-100">
       <Header />
@@ -1215,24 +1221,26 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-            {[
-              { label: at('totalMembers'),  value: stats.totalUsers,                              icon: <Users size={20} />,      color: 'from-blue-500 to-cyan-500' },
-              { label: at('activeMembers'), value: stats.activeUsers,                             icon: <CheckCircle size={20} />, color: 'from-green-500 to-emerald-500' },
-              { label: at('totalIncome'),   value: `৳${stats.totalIncome.toLocaleString()}`,       icon: <TrendingUp size={20} />, color: 'from-purple-500 to-pink-500' },
-              { label: at('totalWithdraw'), value: `৳${stats.totalWithdrawals.toLocaleString()}`, icon: <DollarSign size={20} />, color: 'from-orange-500 to-red-500' },
-            ].map((s, i) => (
-              <div key={i} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                <div className={`w-10 h-10 bg-gradient-to-br ${s.color} rounded-lg flex items-center justify-center text-white mb-2`}>{s.icon}</div>
-                <p className="text-xs text-gray-500">{s.label}</p>
-                <p className="text-lg font-bold text-gray-900">{s.value}</p>
-              </div>
-            ))}
-          </div>
+          {activeTab === 'overview' && hasPermission('view_overview') && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              {[
+                { label: at('totalMembers'),  value: stats.totalUsers,                              icon: <Users size={20} />,      color: 'from-blue-500 to-cyan-500' },
+                { label: at('activeMembers'), value: stats.activeUsers,                             icon: <CheckCircle size={20} />, color: 'from-green-500 to-emerald-500' },
+                { label: at('totalIncome'),   value: `৳${stats.totalIncome.toLocaleString()}`,       icon: <TrendingUp size={20} />, color: 'from-purple-500 to-pink-500' },
+                { label: at('totalWithdraw'), value: `৳${stats.totalWithdrawals.toLocaleString()}`, icon: <DollarSign size={20} />, color: 'from-orange-500 to-red-500' },
+              ].map((s, i) => (
+                <div key={i} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                  <div className={`w-10 h-10 bg-gradient-to-br ${s.color} rounded-lg flex items-center justify-center text-white mb-2`}>{s.icon}</div>
+                  <p className="text-xs text-gray-500">{s.label}</p>
+                  <p className="text-lg font-bold text-gray-900">{s.value}</p>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
 
-            {activeTab === 'overview' && (() => {
+            {activeTab === 'overview' && hasPermission('view_overview') && (() => {
               const now    = new Date();
               const h24ago = new Date(now.getTime() - 24 * 60 * 60 * 1000);
               const d7ago  = new Date(now.getTime() - 7  * 24 * 60 * 60 * 1000);
@@ -1397,7 +1405,9 @@ export default function AdminDashboard() {
                             <p className="text-gray-400">{u.phone}</p>
                           </div>
                           <span className="font-bold text-green-600 flex-shrink-0">{(u.monthly_pv_purchased||0).toLocaleString()} PV</span>
-                          <button onClick={()=>{setGiftModalUser(u);setGiftAmount('');}} className="ml-1 px-2 py-1 bg-yellow-500 text-white text-[10px] font-bold rounded-lg hover:bg-yellow-600">{at('gift')}</button>
+                          {hasPermission('gift_bonus') && (
+                            <button onClick={()=>{setGiftModalUser(u);setGiftAmount('');}} className="ml-1 px-2 py-1 bg-yellow-500 text-white text-[10px] font-bold rounded-lg hover:bg-yellow-600">{at('gift')}</button>
+                          )}
                         </div>
                       ))}
                       {pvLeaders.filter(u => (u.monthly_pv_purchased || 0) > 0).length === 0 && (
@@ -1410,7 +1420,7 @@ export default function AdminDashboard() {
               );
             })()}
 
-            {activeTab === 'users' && (
+            {activeTab === 'users' && hasPermission('view_members') && (
               <div>
                 <div className="flex items-center gap-3 mb-4">
                   <h2 className="text-lg font-bold">{at('memberMgmt')}</h2>
@@ -1453,17 +1463,23 @@ export default function AdminDashboard() {
                           <td className="py-2 px-3 text-xs font-mono text-gray-400 max-w-[120px] truncate" title={u.password_hash}>{u.password_hash}</td>
                           <td className="py-2 px-3">
                             <div className="flex gap-1">
-                              <button onClick={() => setEditUser({...u})} className="p-1.5 rounded-lg hover:bg-indigo-50 text-indigo-600"><Edit size={14} /></button>
-                              <button onClick={() => handleLockUser(u.id, !u.is_locked)}
-                                className={`p-1.5 rounded-lg ${u.is_locked?'hover:bg-green-50 text-green-600':'hover:bg-red-50 text-red-600'}`}>
-                                {u.is_locked?<Unlock size={14} />:<Lock size={14} />}
-                              </button>
-                              <button
-                                onClick={() => u.is_dealer ? handleToggleDealer(u.id, false) : setDealerFormUser(u)}
-                                title={u.is_dealer ? 'ডিলার মর্যাদা বাতিল' : 'ডিলার বানান'}
-                                className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${u.is_dealer ? 'bg-orange-100 text-orange-600 hover:bg-orange-200' : 'hover:bg-orange-50 text-gray-400 hover:text-orange-600'}`}>
-                                <Award size={14} />
-                              </button>
+                              {hasPermission('edit_members') && (
+                                <button onClick={() => setEditUser({...u})} className="p-1.5 rounded-lg hover:bg-indigo-50 text-indigo-600"><Edit size={14} /></button>
+                              )}
+                              {hasPermission('lock_members') && (
+                                <button onClick={() => handleLockUser(u.id, !u.is_locked)}
+                                  className={`p-1.5 rounded-lg ${u.is_locked?'hover:bg-green-50 text-green-600':'hover:bg-red-50 text-red-600'}`}>
+                                  {u.is_locked?<Unlock size={14} />:<Lock size={14} />}
+                                </button>
+                              )}
+                              {hasPermission('set_dealer') && (
+                                <button
+                                  onClick={() => u.is_dealer ? handleToggleDealer(u.id, false) : setDealerFormUser(u)}
+                                  title={u.is_dealer ? 'ডিলার মর্যাদা বাতিল' : 'ডিলার বানান'}
+                                  className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${u.is_dealer ? 'bg-orange-100 text-orange-600 hover:bg-orange-200' : 'hover:bg-orange-50 text-gray-400 hover:text-orange-600'}`}>
+                                  <Award size={14} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1474,13 +1490,13 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {activeTab === 'network' && (
+            {activeTab === 'network' && hasPermission('view_network') && (
               <div>
-                <h2 className="text-lg font-bold mb-4">{at('network')}</h2>
+                <h2 className="text-lg font-bold mb-4">{at('networkTable')}</h2>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead><tr className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
-                      {(at('netCols') as readonly string[]).map((h,i) => (
+                    <thead><tr className="bg-gradient-to-r from-gray-50 to-gray-100">
+                      {[at('colName'),at('upline'),at('colPkg'),at('teamCount'),at('colIncome'),at('colBal'),at('clubsTitle')].map((h, i) => (
                         <th key={h} className={`text-left py-3 px-4 text-xs font-semibold ${i===0?'rounded-tl-lg':''} ${i===6?'rounded-tr-lg text-center':''}`}>{h}</th>
                       ))}
                     </tr></thead>
@@ -1524,7 +1540,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {activeTab === 'categories' && (
+            {activeTab === 'categories' && hasPermission('view_categories') && (
               <div className="space-y-8">
                 {/* ── Shop Collections ── */}
                 <div>
@@ -1628,105 +1644,117 @@ export default function AdminDashboard() {
               <AdminProductManager products={products} categories={categories} onRefresh={fetchAll} />
             )}
 
-            {activeTab === 'content' && (
+            {activeTab === 'content' && (hasPermission('view_gallery') || hasPermission('view_notices')) && (
               <div className="space-y-8">
                 {/* ── Image Gallery ── */}
-                <div>
-                  <h2 className="text-lg font-bold mb-1 flex items-center gap-2"><Image size={20} className="text-indigo-600" /> {at('imageGallery')}</h2>
-                  <p className="text-xs text-gray-500 mb-4">{at('galleryNote')}</p>
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-4">
-                    <div className="grid md:grid-cols-3 gap-3 items-end">
-                      <div>
-                        <label className="text-xs font-medium text-gray-600 mb-1 block">{at('chooseFile')}</label>
-                        <input ref={galleryFileRef} type="file" accept="image/*" onChange={handleGalleryUpload}
-                          className="w-full text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer" />
+                {hasPermission('view_gallery') && (
+                  <div>
+                    <h2 className="text-lg font-bold mb-1 flex items-center gap-2"><Image size={20} className="text-indigo-600" /> {at('imageGallery')}</h2>
+                    <p className="text-xs text-gray-500 mb-4">{at('galleryNote')}</p>
+                    {hasPermission('manage_gallery') && (
+                      <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-4">
+                        <div className="grid md:grid-cols-3 gap-3 items-end">
+                          <div>
+                            <label className="text-xs font-medium text-gray-600 mb-1 block">{at('chooseFile')}</label>
+                            <input ref={galleryFileRef} type="file" accept="image/*" onChange={handleGalleryUpload}
+                              className="w-full text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600 mb-1 block">{at('captionLabel')}</label>
+                            <input value={galleryCaption} onChange={e => setGalleryCaption(e.target.value)}
+                              placeholder="ছবির বিবরণ..." className="w-full px-3 py-2 rounded-lg border text-sm" />
+                          </div>
+                          <div>
+                            {galleryUploading && <div className="flex items-center gap-2 text-indigo-600 text-sm"><Loader2 size={16} className="animate-spin" /> আপলোড হচ্ছে...</div>}
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-xs font-medium text-gray-600 mb-1 block">{at('captionLabel')}</label>
-                        <input value={galleryCaption} onChange={e => setGalleryCaption(e.target.value)}
-                          placeholder="ছবির বিবরণ..." className="w-full px-3 py-2 rounded-lg border text-sm" />
-                      </div>
-                      <div>
-                        {galleryUploading && <div className="flex items-center gap-2 text-indigo-600 text-sm"><Loader2 size={16} className="animate-spin" /> আপলোড হচ্ছে...</div>}
-                      </div>
+                    )}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {galleryItems.map(item => (
+                        <div key={item.id} className="relative group rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
+                          <img src={item.image_url} alt={item.caption || ''} className="w-full aspect-square object-cover" />
+                          {item.caption && <p className="text-[10px] text-gray-600 p-1.5 truncate">{item.caption}</p>}
+                          {hasPermission('manage_gallery') && (
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <button onClick={() => handleToggleGalleryVisibility(item.id, item.is_visible)}
+                                className={`px-2 py-1 text-[10px] font-bold rounded-lg ${item.is_visible ? 'bg-yellow-500 text-white' : 'bg-green-500 text-white'}`}>
+                                {item.is_visible ? 'লুকান' : 'দেখান'}
+                              </button>
+                              <button onClick={() => handleDeleteGallery(item.id, item.image_url)}
+                                className="px-2 py-1 text-[10px] font-bold rounded-lg bg-red-500 text-white">মুছুন</button>
+                            </div>
+                          )}
+                          {!item.is_visible && <div className="absolute top-1 right-1 bg-gray-700/70 text-white text-[9px] px-1.5 py-0.5 rounded">লুকানো</div>}
+                        </div>
+                      ))}
+                      {galleryItems.length === 0 && <p className="col-span-4 text-center text-sm text-gray-400 py-8">{at('noImages')}</p>}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {galleryItems.map(item => (
-                      <div key={item.id} className="relative group rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
-                        <img src={item.image_url} alt={item.caption || ''} className="w-full aspect-square object-cover" />
-                        {item.caption && <p className="text-[10px] text-gray-600 p-1.5 truncate">{item.caption}</p>}
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <button onClick={() => handleToggleGalleryVisibility(item.id, item.is_visible)}
-                            className={`px-2 py-1 text-[10px] font-bold rounded-lg ${item.is_visible ? 'bg-yellow-500 text-white' : 'bg-green-500 text-white'}`}>
-                            {item.is_visible ? 'লুকান' : 'দেখান'}
-                          </button>
-                          <button onClick={() => handleDeleteGallery(item.id, item.image_url)}
-                            className="px-2 py-1 text-[10px] font-bold rounded-lg bg-red-500 text-white">মুছুন</button>
-                        </div>
-                        {!item.is_visible && <div className="absolute top-1 right-1 bg-gray-700/70 text-white text-[9px] px-1.5 py-0.5 rounded">লুকানো</div>}
-                      </div>
-                    ))}
-                    {galleryItems.length === 0 && <p className="col-span-4 text-center text-sm text-gray-400 py-8">{at('noImages')}</p>}
-                  </div>
-                </div>
+                )}
 
-                <hr className="border-gray-200" />
+                {hasPermission('view_gallery') && hasPermission('view_notices') && <hr className="border-gray-200" />}
 
                 {/* ── Notice Board ── */}
-                <div>
-                  <h2 className="text-lg font-bold mb-1 flex items-center gap-2"><Bell size={20} className="text-orange-600" /> {at('noticeBoard')}</h2>
-                  <p className="text-xs text-gray-500 mb-4">{at('noticeNote')}</p>
-                  <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 mb-4">
-                    <div className="grid md:grid-cols-2 gap-3 mb-3">
-                      <div>
-                        <label className="text-xs font-medium text-gray-600 mb-1 block">{at('noticeTitleLabel')}</label>
-                        <input value={noticeTitle} onChange={e => setNoticeTitle(e.target.value)}
-                          placeholder="নোটিশের শিরোনাম..." className="w-full px-3 py-2 rounded-lg border text-sm" />
+                {hasPermission('view_notices') && (
+                  <div>
+                    <h2 className="text-lg font-bold mb-1 flex items-center gap-2"><Bell size={20} className="text-orange-600" /> {at('noticeBoard')}</h2>
+                    <p className="text-xs text-gray-500 mb-4">{at('noticeNote')}</p>
+                    {hasPermission('manage_notices') && (
+                      <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 mb-4">
+                        <div className="grid md:grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <label className="text-xs font-medium text-gray-600 mb-1 block">{at('noticeTitleLabel')}</label>
+                            <input value={noticeTitle} onChange={e => setNoticeTitle(e.target.value)}
+                              placeholder="নোটিশের শিরোনাম..." className="w-full px-3 py-2 rounded-lg border text-sm" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600 mb-1 block">{at('noticeExpiry')}</label>
+                            <input type="datetime-local" value={noticeExpiry} onChange={e => setNoticeExpiry(e.target.value)}
+                              className="w-full px-3 py-2 rounded-lg border text-sm" />
+                          </div>
+                        </div>
+                        <div className="mb-3">
+                          <label className="text-xs font-medium text-gray-600 mb-1 block">{at('noticeDetail')}</label>
+                          <textarea value={noticeContent} onChange={e => setNoticeContent(e.target.value)} rows={2}
+                            placeholder="নোটিশের বিস্তারিত তথ্য..." className="w-full px-3 py-2 rounded-lg border text-sm resize-none" />
+                        </div>
+                        <button onClick={handleSaveNotice} disabled={noticeSaving}
+                          className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700 disabled:opacity-50">
+                          {noticeSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} {at('postNotice')}
+                        </button>
                       </div>
-                      <div>
-                        <label className="text-xs font-medium text-gray-600 mb-1 block">{at('noticeExpiry')}</label>
-                        <input type="datetime-local" value={noticeExpiry} onChange={e => setNoticeExpiry(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg border text-sm" />
-                      </div>
-                    </div>
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">{at('noticeDetail')}</label>
-                      <textarea value={noticeContent} onChange={e => setNoticeContent(e.target.value)} rows={2}
-                        placeholder="নোটিশের বিস্তারিত তথ্য..." className="w-full px-3 py-2 rounded-lg border text-sm resize-none" />
-                    </div>
-                    <button onClick={handleSaveNotice} disabled={noticeSaving}
-                      className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700 disabled:opacity-50">
-                      {noticeSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} {at('postNotice')}
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {notices.map(notice => (
-                      <div key={notice.id} className={`flex items-start justify-between p-3 rounded-xl border ${notice.is_active ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100 opacity-60'}`}>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm">{notice.title}</p>
-                          {notice.content && <p className="text-xs text-gray-500 mt-0.5">{notice.content}</p>}
-                          {notice.expires_at && (
-                            <p className="text-[10px] text-orange-500 mt-1">মেয়াদ শেষ: {new Date(notice.expires_at).toLocaleDateString('bn-BD')}</p>
+                    )}
+                    <div className="space-y-2">
+                      {notices.map(notice => (
+                        <div key={notice.id} className={`flex items-start justify-between p-3 rounded-xl border ${notice.is_active ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100 opacity-60'}`}>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-sm">{notice.title}</p>
+                            {notice.content && <p className="text-xs text-gray-500 mt-0.5">{notice.content}</p>}
+                            {notice.expires_at && (
+                              <p className="text-[10px] text-orange-500 mt-1">মেয়াদ শেষ: {new Date(notice.expires_at).toLocaleDateString('bn-BD')}</p>
+                            )}
+                          </div>
+                          {hasPermission('manage_notices') && (
+                            <div className="flex gap-1 ml-3 flex-shrink-0">
+                              <button onClick={() => handleToggleNotice(notice.id, notice.is_active)}
+                                className={`px-2 py-1 text-[10px] font-bold rounded-lg ${notice.is_active ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                                {notice.is_active ? 'বন্ধ' : 'চালু'}
+                              </button>
+                              <button onClick={() => handleDeleteNotice(notice.id)}
+                                className="p-1.5 rounded-lg hover:bg-red-50 text-red-500"><Trash2 size={12} /></button>
+                            </div>
                           )}
                         </div>
-                        <div className="flex gap-1 ml-3 flex-shrink-0">
-                          <button onClick={() => handleToggleNotice(notice.id, notice.is_active)}
-                            className={`px-2 py-1 text-[10px] font-bold rounded-lg ${notice.is_active ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
-                            {notice.is_active ? 'বন্ধ' : 'চালু'}
-                          </button>
-                          <button onClick={() => handleDeleteNotice(notice.id)}
-                            className="p-1.5 rounded-lg hover:bg-red-50 text-red-500"><Trash2 size={12} /></button>
-                        </div>
-                      </div>
-                    ))}
-                    {notices.length === 0 && <p className="text-center text-sm text-gray-400 py-6">{at('noNotice')}</p>}
+                      ))}
+                      {notices.length === 0 && <p className="text-center text-sm text-gray-400 py-6">{at('noNotice')}</p>}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
 
-            {activeTab === 'gold_packages' && (
+            {activeTab === 'gold_packages' && hasPermission('view_gold_packages') && (
               <div>
                 <h2 className="text-lg font-bold mb-4">{at('goldPkgMgmt')}</h2>
                 <div className="overflow-x-auto">
@@ -1751,8 +1779,10 @@ export default function AdminDashboard() {
                             <td className="py-2 px-3 text-xs">৳{(pkg.daily_income||0).toFixed(4)}</td>
                             <td className="py-2 px-3"><span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${pkg.status==='active'?'bg-green-100 text-green-700':'bg-red-100 text-red-500'}`}>{pkg.status||'active'}</span></td>
                             <td className="py-2 px-3">
-                              <button onClick={()=>{setGoldEditPkg(pkg);setGoldEditDate(pkg.expires_at?new Date(pkg.expires_at).toISOString().split('T')[0]:'');}}
-                                className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-lg text-xs hover:bg-indigo-200">সম্পাদনা</button>
+                              {hasPermission('manage_gold_packages') && (
+                                <button onClick={()=>{setGoldEditPkg(pkg);setGoldEditDate(pkg.expires_at?new Date(pkg.expires_at).toISOString().split('T')[0]:'');}}
+                                  className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-lg text-xs hover:bg-indigo-200">সম্পাদনা</button>
+                              )}
                             </td>
                           </tr>
                         );
@@ -1764,7 +1794,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {activeTab === 'payments' && (
+            {activeTab === 'payments' && hasPermission('view_payments') && (
               <div>
                 <h2 className="text-lg font-bold mb-2">পেমেন্ট ভেরিফিকেশন</h2>
                 <p className="text-xs text-gray-500 mb-4">বিকাশ / নগদ / রকেট পেমেন্ট যাচাই করুন</p>
@@ -1826,7 +1856,7 @@ export default function AdminDashboard() {
                               </span>
                             </td>
                             <td className="py-2 px-3">
-                              {pv.status==='pending' && (
+                              {pv.status==='pending' && hasPermission('approve_payments') && (
                                 <div className="flex gap-1">
                                   <button onClick={() => handleApprovePayment(pv.id, true)} disabled={loading} className="p-1 rounded bg-green-100 text-green-600 hover:bg-green-200 disabled:opacity-40 disabled:cursor-not-allowed"><CheckCircle size={14} /></button>
                                   <button onClick={() => handleApprovePayment(pv.id, false)} disabled={loading} className="p-1 rounded bg-red-100 text-red-600 hover:bg-red-200 disabled:opacity-40 disabled:cursor-not-allowed"><XCircle size={14} /></button>
@@ -1845,35 +1875,37 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {activeTab === 'clubs' && (
+            {activeTab === 'clubs' && hasPermission('distribute_clubs') && (
               <div>
                 <h2 className="text-lg font-bold mb-1">ক্লাব বোনাস বন্টন</h2>
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-xs text-blue-800 space-y-1">
                   <p>📌 Customer package + PV sales → Daily 30% • Weekly 2.5% • Insurance 1.25% • Pension 1.25% • Shareholder 10%</p>
                   <p>📌 Shareholder club → শুধু shareholder package holders পাবেন</p>
                 </div>
-                <div className="grid md:grid-cols-2 gap-4 mb-6">
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                    <h3 className="font-bold text-yellow-800 text-sm mb-3">গোল্ড ম্যানুয়াল ক্রেডিট</h3>
-                    <div className="space-y-2">
-                      <input value={manualGoldUserId} onChange={e=>setManualGoldUserId(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs font-mono" placeholder="User ID (UUID)"/>
-                      <input type="number" value={manualGoldAmount} onChange={e=>setManualGoldAmount(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs" placeholder="পরিমাণ (৳)"/>
-                      <button onClick={handleManualGoldCredit} disabled={manualGoldLoading} className="w-full py-2 bg-yellow-500 text-white text-sm font-bold rounded-lg hover:bg-yellow-600 disabled:opacity-50">
-                        {manualGoldLoading?'প্রসেসিং...':'জমা করুন'}
-                      </button>
+                {hasPermission('manual_credit') && (
+                  <div className="grid md:grid-cols-2 gap-4 mb-6">
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                      <h3 className="font-bold text-yellow-800 text-sm mb-3">গোল্ড ম্যানুয়াল ক্রেডিট</h3>
+                      <div className="space-y-2">
+                        <input value={manualGoldUserId} onChange={e=>setManualGoldUserId(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs font-mono" placeholder="User ID (UUID)"/>
+                        <input type="number" value={manualGoldAmount} onChange={e=>setManualGoldAmount(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs" placeholder="পরিমাণ (৳)"/>
+                        <button onClick={handleManualGoldCredit} disabled={manualGoldLoading} className="w-full py-2 bg-yellow-500 text-white text-sm font-bold rounded-lg hover:bg-yellow-600 disabled:opacity-50">
+                          {manualGoldLoading?'প্রসেসিং...':'জমা করুন'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                      <h3 className="font-bold text-orange-800 text-sm mb-3">বকেয়া ম্যানুয়াল কর্তন</h3>
+                      <div className="space-y-2">
+                        <input value={manualBakeyaUserId} onChange={e=>setManualBakeyaUserId(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs font-mono" placeholder="User ID (UUID)"/>
+                        <input type="number" value={manualBakeyaAmount} onChange={e=>setManualBakeyaAmount(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs" placeholder="কর্তনের পরিমাণ (৳)"/>
+                        <button onClick={handleManualBakeyaDeduct} disabled={manualBakeyaLoading} className="w-full py-2 bg-orange-500 text-white text-sm font-bold rounded-lg hover:bg-orange-600 disabled:opacity-50">
+                          {manualBakeyaLoading?'প্রসেসিং...':'বকেয়া কমান'}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-                    <h3 className="font-bold text-orange-800 text-sm mb-3">বকেয়া ম্যানুয়াল কর্তন</h3>
-                    <div className="space-y-2">
-                      <input value={manualBakeyaUserId} onChange={e=>setManualBakeyaUserId(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs font-mono" placeholder="User ID (UUID)"/>
-                      <input type="number" value={manualBakeyaAmount} onChange={e=>setManualBakeyaAmount(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-xs" placeholder="কর্তনের পরিমাণ (৳)"/>
-                      <button onClick={handleManualBakeyaDeduct} disabled={manualBakeyaLoading} className="w-full py-2 bg-orange-500 text-white text-sm font-bold rounded-lg hover:bg-orange-600 disabled:opacity-50">
-                        {manualBakeyaLoading?'প্রসেসিং...':'বকেয়া কমান'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                )}
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {clubPools.map(pool => {
                     const memberCount =
@@ -1900,7 +1932,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {activeTab === 'withdrawals' && (
+            {activeTab === 'withdrawals' && hasPermission('view_withdrawals') && (
               <div>
                 <h2 className="text-lg font-bold mb-4">উইথড্রো অনুরোধ</h2>
                 <div className="overflow-x-auto">
@@ -1934,7 +1966,7 @@ export default function AdminDashboard() {
                             </span>
                           </td>
                           <td className="py-2 px-3">
-                            {wd.status==='pending' && (
+                            {wd.status==='pending' && hasPermission('approve_withdrawals') && (
                               <div className="flex gap-1">
                                 <button onClick={() => handleApproveWithdrawal(wd.id, true)} className="p-1 rounded bg-green-100 text-green-600 hover:bg-green-200"><CheckCircle size={14} /></button>
                                 <button onClick={() => handleApproveWithdrawal(wd.id, false)} className="p-1 rounded bg-red-100 text-red-600 hover:bg-red-200"><XCircle size={14} /></button>
@@ -1949,7 +1981,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {activeTab === 'transactions' && (
+            {activeTab === 'transactions' && hasPermission('view_transactions') && (
               <div>
                 <h2 className="text-lg font-bold mb-4">সকল লেনদেন</h2>
                 <div className="space-y-2">
@@ -1968,7 +2000,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {activeTab === 'orders' && (
+            {activeTab === 'orders' && hasPermission('view_orders') && (
               <div>
                 <h2 className="text-lg font-bold mb-4">অর্ডার সমূহ</h2>
                 {orders.length===0 ? (
@@ -2043,7 +2075,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {activeTab === 'dealer-req' && (
+            {activeTab === 'dealer-req' && hasPermission('view_dealer_req') && (
               <div>
                 <h2 className="text-lg font-bold mb-4">ডিলার রিকুইজিশন (পেন্ডিং)</h2>
                 {requisitions.length === 0 ? (
@@ -2077,20 +2109,22 @@ export default function AdminDashboard() {
                             <td className="py-3 pr-3 text-right text-green-600 font-bold">৳{req.commission_amount}</td>
                             <td className="py-3 pr-3 text-gray-400 text-xs">{new Date(req.created_at).toLocaleDateString('bn-BD')}</td>
                             <td className="py-3">
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleAcceptRequisition(req)}
-                                  disabled={processingReqId === req.id}
-                                  className="px-3 py-1.5 bg-green-100 text-green-700 hover:bg-green-200 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
-                                  {processingReqId === req.id ? '⏳...' : '✅ গ্রহণ'}
-                                </button>
-                                <button
-                                  onClick={() => handleRejectRequisition(req.id)}
-                                  disabled={processingReqId === req.id}
-                                  className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
-                                  ❌ বাতিল
-                                </button>
-                              </div>
+                              {hasPermission('approve_dealer_req') && (
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleAcceptRequisition(req)}
+                                    disabled={processingReqId === req.id}
+                                    className="px-3 py-1.5 bg-green-100 text-green-700 hover:bg-green-200 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+                                    {processingReqId === req.id ? '⏳...' : '✅ গ্রহণ'}
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectRequisition(req.id)}
+                                    disabled={processingReqId === req.id}
+                                    className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+                                    ❌ বাতিল
+                                  </button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -2101,7 +2135,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {activeTab === 'reports' && (
+            {activeTab === 'reports' && hasPermission('view_reports') && (
               <div>
                 <h2 className="text-lg font-bold mb-4">রিপোর্ট ও বিশ্লেষণ</h2>
                 <div className="grid md:grid-cols-2 gap-6">
