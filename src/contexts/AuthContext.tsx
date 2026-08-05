@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import { hashPassword, isEmail } from '@/lib/crypto';
+import { ALL_PERMISSIONS } from '@/lib/permissions';
+
+// ── Interfaces ────────────────────────────────────────────────────────────────
 
 interface User {
   id: string;
@@ -43,18 +46,37 @@ interface User {
   dealer_area?: string | null;
 }
 
+export interface SubAdminAccount {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: 'sub_admin';
+  permissions: string[];
+  is_active: boolean;
+  created_by?: string | null;
+  last_login_at?: string | null;
+  notes?: string | null;
+  created_at?: string;
+}
+
 interface AuthContextType {
   user: User | null;
+  subAdminAccount: SubAdminAccount | null;
   loading: boolean;
+  isSuperAdmin: boolean;
+  adminPermissions: string[];
+  hasPermission: (perm: string) => boolean;
   login: (identifier: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  adminLogin: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: string }>;
   register: (data: RegisterData) => Promise<{ success: boolean; error?: string; userId?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
 
 interface RegisterData {
-  email?: string;       // ঐচ্ছিক
-  phone: string;        // বাধ্যতামূলক
+  email?: string;
+  phone: string;
   password: string;
   name: string;
   package_type: string;
@@ -76,16 +98,34 @@ interface InsertUserData {
   referrer_id?: string;
 }
 
+// ── Context ───────────────────────────────────────────────────────────────────
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user,            setUser]            = useState<User | null>(null);
+  const [subAdminAccount, setSubAdminAccount] = useState<SubAdminAccount | null>(null);
+  const [loading,         setLoading]         = useState(true);
 
+  // ── Derived values ────────────────────────────────────────────────────────
+  const isSuperAdmin      = !!(user && user.role === 'admin');
+  const adminPermissions  = isSuperAdmin
+    ? ALL_PERMISSIONS            // Super admin সব permission পাবে
+    : (subAdminAccount?.permissions ?? []);
+  const hasPermission = (perm: string): boolean => {
+    if (isSuperAdmin) return true;
+    return adminPermissions.includes(perm);
+  };
+
+  // ── Session restore on mount ──────────────────────────────────────────────
   useEffect(() => {
-    const stored = localStorage.getItem('mlm_user_id');
-    if (stored) {
-      fetchUser(stored);
+    const mlmUserId   = localStorage.getItem('mlm_user_id');
+    const subAdminId  = localStorage.getItem('admin_sub_id');
+
+    if (mlmUserId) {
+      fetchUser(mlmUserId);
+    } else if (subAdminId) {
+      fetchSubAdmin(subAdminId);
     } else {
       setLoading(false);
     }
@@ -104,8 +144,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         localStorage.removeItem('mlm_user_id');
       }
-    } catch (e: unknown) {
+    } catch {
       localStorage.removeItem('mlm_user_id');
+    }
+    setLoading(false);
+  };
+
+  const fetchSubAdmin = async (subAdminId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('admin_sub_accounts')
+        .select('*')
+        .eq('id', subAdminId)
+        .eq('is_active', true)
+        .single();
+
+      if (data && !error) {
+        setSubAdminAccount(data as SubAdminAccount);
+      } else {
+        localStorage.removeItem('admin_sub_id');
+      }
+    } catch {
+      localStorage.removeItem('admin_sub_id');
     }
     setLoading(false);
   };
@@ -113,17 +173,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshUser = async () => {
     if (user) {
       await fetchUser(user.id);
+    } else if (subAdminAccount) {
+      await fetchSubAdmin(subAdminAccount.id);
     }
   };
 
-  // ── Login: Phone অথবা Email যেকোনো একটা দিয়ে ────────────────────────────
+  // ── Regular User Login (Phone / Email) ───────────────────────────────────
   const login = async (identifier: string, password: string) => {
     try {
-      const field = isEmail(identifier) ? 'email' : 'phone';
+      const field      = isEmail(identifier) ? 'email' : 'phone';
       const hashedInput = await hashPassword(password);
 
-      // সব matching user fetch করি (.single/.maybeSingle এড়াতে)
-      // duplicate phone থাকলেও সঠিক password-ওয়ালাটা খুঁজে পাব
       const { data: candidates, error: fetchErr } = await supabase
         .from('mlm_users')
         .select('*')
@@ -137,7 +197,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'মোবাইল নম্বর/ইমেইল পাওয়া যায়নি' };
       }
 
-      // password মেলে এমন user খুঁজি (plain text অথবা SHA-256 hash)
       const userData = candidates.find((u: any) => {
         const stored = u.password_hash || '';
         return stored === password || stored === hashedInput;
@@ -154,15 +213,115 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(userData as User);
       localStorage.setItem('mlm_user_id', userData.id);
       return { success: true };
-    } catch (e) {
+    } catch {
       return { success: false, error: 'লগইন করতে সমস্যা হয়েছে' };
     }
   };
 
-  // ── Register ─────────────────────────────────────────────────────────────
+  // ── Admin Login (Super Admin OR Sub Admin) ────────────────────────────────
+  const adminLogin = async (identifier: string, password: string) => {
+    try {
+      const cleanInput = identifier.trim();
+      const hashedInput = await hashPassword(password);
+
+      // ── Step 1: Super Admin in mlm_users (role = 'admin') ─────────────────
+      const { data: adminUsers } = await supabase
+        .from('mlm_users')
+        .select('*')
+        .eq('role', 'admin');
+
+      if (adminUsers && adminUsers.length > 0) {
+        const adminUser = adminUsers.find((u: any) => {
+          const stored = u.password_hash || '';
+          const passMatch = stored === password || stored === hashedInput;
+          const idMatch = (u.email && u.email.trim().toLowerCase() === cleanInput.toLowerCase()) ||
+                          (u.phone && u.phone.trim() === cleanInput);
+          // Match if password matches AND (identifier matches OR there is only one admin)
+          return passMatch && (idMatch || adminUsers.length === 1);
+        });
+
+        if (adminUser) {
+          if (adminUser.is_locked) {
+            return { success: false, error: 'এই অ্যাকাউন্ট লক করা হয়েছে।' };
+          }
+          setUser(adminUser as User);
+          setSubAdminAccount(null);
+          localStorage.setItem('mlm_user_id', adminUser.id);
+          localStorage.removeItem('admin_sub_id');
+          return { success: true, role: 'admin' };
+        }
+      }
+
+      // ── Step 2: Search mlm_users by phone or email directly ──────────────
+      const isEmailInput = cleanInput.includes('@');
+      const field = isEmailInput ? 'email' : 'phone';
+      const { data: userCandidates } = await supabase
+        .from('mlm_users')
+        .select('*')
+        .eq(field, cleanInput);
+
+      if (userCandidates && userCandidates.length > 0) {
+        const foundUser = userCandidates.find((u: any) => {
+          const stored = u.password_hash || '';
+          return stored === password || stored === hashedInput;
+        });
+
+        if (foundUser && foundUser.role === 'admin') {
+          if (foundUser.is_locked) {
+            return { success: false, error: 'এই অ্যাকাউন্ট লক করা হয়েছে।' };
+          }
+          setUser(foundUser as User);
+          setSubAdminAccount(null);
+          localStorage.setItem('mlm_user_id', foundUser.id);
+          localStorage.removeItem('admin_sub_id');
+          return { success: true, role: 'admin' };
+        }
+      }
+
+      // ── Step 3: Sub Admin in admin_sub_accounts ───────────────────────────
+      try {
+        const { data: subCandidates } = await supabase
+          .from('admin_sub_accounts')
+          .select('*')
+          .or(`email.eq.${cleanInput},phone.eq.${cleanInput}`);
+
+        if (subCandidates && subCandidates.length > 0) {
+          const subAdmin = subCandidates.find((u: any) => {
+            const stored = u.password_hash || '';
+            return stored === password || stored === hashedInput;
+          });
+
+          if (subAdmin) {
+            if (!subAdmin.is_active) {
+              return { success: false, error: 'আপনার অ্যাকাউন্ট নিষ্ক্রিয় করা হয়েছে। সুপার এডমিনের সাথে যোগাযোগ করুন।' };
+            }
+
+            await supabase
+              .from('admin_sub_accounts')
+              .update({ last_login_at: new Date().toISOString() })
+              .eq('id', subAdmin.id);
+
+            setSubAdminAccount(subAdmin as SubAdminAccount);
+            setUser(null);
+            localStorage.setItem('admin_sub_id', subAdmin.id);
+            localStorage.removeItem('mlm_user_id');
+            return { success: true, role: 'sub_admin' };
+          }
+        }
+      } catch {
+        // Table admin_sub_accounts might not exist yet if migration not run, ignore
+      }
+
+      return { success: false, error: 'ইমেইল/ফোন নম্বর বা পাসওয়ার্ড ভুল হয়েছে' };
+    } catch (e) {
+      return { success: false, error: 'লগইন করতে সমস্যা হয়েছে: ' + (e instanceof Error ? e.message : String(e)) };
+    }
+  };
+
+  // ── Register ──────────────────────────────────────────────────────────────
   const register = async (regData: RegisterData) => {
     try {
-      // Phone uniqueness check (বাধ্যতামূলক)
+      // Phone uniqueness check
       const { data: existingPhone } = await supabase
         .from('mlm_users')
         .select('id')
@@ -173,7 +332,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'এই মোবাইল নম্বর দিয়ে আগেই রেজিস্ট্রেশন করা হয়েছে' };
       }
 
-      // Referrer ID বাধ্যতামূলক এবং DB-তে থাকতে হবে
+      // Referrer ID mandatory
       if (!regData.referrer_id || !regData.referrer_id.trim()) {
         return { success: false, error: 'রেফারার আইডি বাধ্যতামূলক। সঠিক রেফারেল লিংক ব্যবহার করুন।' };
       }
@@ -186,37 +345,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'রেফারার আইডি সঠিক নয়। সঠিক রেফারেল লিংক ব্যবহার করুন।' };
       }
 
-      // Email uniqueness check (ঐচ্ছিক — দিলে unique হতে হবে)
+      // Email uniqueness check (optional)
       if (regData.email && regData.email.trim()) {
         const { data: existingEmail } = await supabase
           .from('mlm_users')
           .select('id')
           .eq('email', regData.email.trim())
           .single();
-
         if (existingEmail) {
           return { success: false, error: 'এই ইমেইল দিয়ে আগেই রেজিস্ট্রেশন করা হয়েছে' };
         }
       }
 
       const insertData: InsertUserData = {
-        password_hash: regData.password,  // plain text — admin can view
-        name: regData.name,
-        phone: regData.phone.trim(),
-        package_type: regData.package_type,
-        pv_points: 0,
-        ps_points: 0,
-        gp_points: 0,
+        password_hash:        regData.password, // plain text — admin can view
+        name:                 regData.name,
+        phone:                regData.phone.trim(),
+        package_type:         regData.package_type,
+        pv_points:            0,
+        ps_points:            0,
+        gp_points:            0,
         monthly_pv_purchased: 0,
-        is_active: false,
-        gold_package_start: null,
+        is_active:            false,
+        gold_package_start:   null,
       };
 
-      // Email optional — শুধু থাকলে insert করো
       if (regData.email && regData.email.trim()) {
         insertData.email = regData.email.trim();
       }
-
       if (regData.referrer_id) {
         insertData.referrer_id = regData.referrer_id;
       }
@@ -240,13 +396,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ── Logout ────────────────────────────────────────────────────────────────
   const logout = () => {
     setUser(null);
+    setSubAdminAccount(null);
     localStorage.removeItem('mlm_user_id');
+    localStorage.removeItem('admin_sub_id');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider value={{
+      user,
+      subAdminAccount,
+      loading,
+      isSuperAdmin,
+      adminPermissions,
+      hasPermission,
+      login,
+      adminLogin,
+      register,
+      logout,
+      refreshUser,
+    }}>
       {children}
     </AuthContext.Provider>
   );

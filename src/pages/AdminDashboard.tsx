@@ -4,6 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
 import { processDealerCommission, processDealerPurchasePv, addToClubPools, PV_CLUB_PCTS } from '@/lib/mlm-business-logic';
+import { PERMISSION_GROUPS, PERM_LABELS, ALL_PERMISSIONS } from '@/lib/permissions';
+import { hashPassword } from '@/lib/crypto';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import AdminProductManager from '@/components/AdminProductManager';
@@ -11,7 +13,7 @@ import {
   Users, Wallet, TrendingUp, Gift, Search, Lock, Unlock, Edit, Trash2, RefreshCw,
   DollarSign, CheckCircle, XCircle, Play, Loader2, BarChart3, Network, Package,
   FolderTree, CreditCard, FileText, Plus, Save, ChevronDown, ChevronRight, ShoppingBag,
-  Image, Bell, Star, Award,
+  Image, Bell, Star, Award, Shield, UserPlus, UserCheck, UserX, Eye, EyeOff, Key,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -98,10 +100,13 @@ const adminT = {
 } as const;
 
 export default function AdminDashboard() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, subAdminAccount, loading: authLoading, isSuperAdmin, hasPermission } = useAuth();
   const { lang } = useLang();
   const at = <K extends keyof typeof adminT.bn>(key: K) => (adminT[lang as 'bn' | 'en'] as typeof adminT.bn)[key];
   const navigate = useNavigate();
+  // Determine current admin display name
+  const currentAdminName = user?.name || subAdminAccount?.name || 'Admin';
+  const currentAdminRole = isSuperAdmin ? 'সুপার এডমিন' : 'সাব এডমিন';
   const [activeTab, setActiveTab] = useState('overview');
   const [users, setUsers] = useState<any[]>([]);
   const [clubPools, setClubPools] = useState<any[]>([]);
@@ -168,11 +173,24 @@ export default function AdminDashboard() {
   const [goldEditDate,   setGoldEditDate]   = useState('');
   const [goldEditLoading,setGoldEditLoading]= useState(false);
 
+  // ── Sub Admin Management state ────────────────────────────────────────────
+  const [subAdmins,      setSubAdmins]      = useState<any[]>([]);
+  const [saModal,        setSaModal]        = useState<'add' | 'edit' | null>(null);
+  const [editSa,         setEditSa]         = useState<any>(null);
+  const [saForm,         setSaForm]         = useState({
+    name: '', email: '', phone: '', password: '', notes: '',
+    permissions: [] as string[], is_active: true,
+  });
+  const [saLoading,      setSaLoading]      = useState(false);
+  const [showSaPass,     setShowSaPass]     = useState(false);
+
   useEffect(() => {
     if (authLoading) return;
-    if (!user || user.role !== 'admin') { navigate('/login'); return; }
+    // Allow super admin (mlm_users role='admin') OR active sub admin
+    const isAdminAccess = (user?.role === 'admin') || (!!subAdminAccount && subAdminAccount.is_active);
+    if (!isAdminAccess) { navigate('/admin/login'); return; }
     fetchAll();
-  }, [user, authLoading]);
+  }, [user, subAdminAccount, authLoading]);
 
   const fetchAll = async () => {
     const { data: usersData } = await supabase.from('mlm_users').select('*').order('created_at', { ascending: false });
@@ -265,6 +283,89 @@ export default function AdminDashboard() {
       .eq('status', 'pending')
       .order('created_at', { ascending: false });
     if (reqData) setRequisitions(reqData);
+
+    // Sub admin list (only for super admin or manage_sub_admins permission)
+    if (hasPermission('manage_sub_admins')) {
+      const { data: saData } = await supabase
+        .from('admin_sub_accounts')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (saData) setSubAdmins(saData);
+    }
+  };
+
+  // ── Sub Admin CRUD ────────────────────────────────────────────────────────
+  const openAddSa = () => {
+    setSaForm({ name: '', email: '', phone: '', password: '', notes: '', permissions: [], is_active: true });
+    setEditSa(null);
+    setSaModal('add');
+  };
+
+  const openEditSa = (sa: any) => {
+    setSaForm({
+      name: sa.name || '', email: sa.email || '', phone: sa.phone || '',
+      password: '', notes: sa.notes || '',
+      permissions: sa.permissions || [], is_active: sa.is_active,
+    });
+    setEditSa(sa);
+    setSaModal('edit');
+  };
+
+  const handleSaveSa = async () => {
+    if (!saForm.name.trim() || !saForm.email.trim()) { toast.error('নাম ও ইমেইল বাধ্যতামূলক'); return; }
+    if (saModal === 'add' && !saForm.password.trim()) { toast.error('পাসওয়ার্ড দিন'); return; }
+    if (saForm.password && saForm.password.length < 4) { toast.error('পাসওয়ার্ড কমপক্ষে ৪ অক্ষর'); return; }
+    setSaLoading(true);
+    try {
+      if (saModal === 'add') {
+        // Check email uniqueness
+        const { data: existing } = await supabase.from('admin_sub_accounts').select('id').eq('email', saForm.email.trim()).maybeSingle();
+        if (existing) { toast.error('এই ইমেইল দিয়ে আগেই সাব এডমিন আছে'); setSaLoading(false); return; }
+        const pwHash = await hashPassword(saForm.password);
+        const { error } = await supabase.from('admin_sub_accounts').insert({
+          name: saForm.name.trim(), email: saForm.email.trim().toLowerCase(),
+          phone: saForm.phone.trim() || null, password_hash: pwHash,
+          permissions: saForm.permissions, is_active: saForm.is_active,
+          notes: saForm.notes.trim() || null,
+        });
+        if (error) { toast.error('সমস্যা: ' + error.message); } else { toast.success('✅ সাব এডমিন যোগ হয়েছে!'); }
+      } else if (saModal === 'edit' && editSa) {
+        const payload: any = {
+          name: saForm.name.trim(), phone: saForm.phone.trim() || null,
+          permissions: saForm.permissions, is_active: saForm.is_active,
+          notes: saForm.notes.trim() || null, updated_at: new Date().toISOString(),
+        };
+        if (saForm.password.trim()) payload.password_hash = await hashPassword(saForm.password);
+        const { error } = await supabase.from('admin_sub_accounts').update(payload).eq('id', editSa.id);
+        if (error) { toast.error('সমস্যা: ' + error.message); } else { toast.success('✅ সাব এডমিন আপডেট হয়েছে!'); }
+      }
+      setSaModal(null); setEditSa(null); fetchAll();
+    } finally { setSaLoading(false); }
+  };
+
+  const handleDeleteSa = async (id: string, name: string) => {
+    if (!window.confirm(`${name} কে মুছতে চান?`)) return;
+    const { error } = await supabase.from('admin_sub_accounts').delete().eq('id', id);
+    if (error) { toast.error('সমস্যা: ' + error.message); } else { toast.success('মুছে ফেলা হয়েছে'); fetchAll(); }
+  };
+
+  const toggleSaPerm = (perm: string) => {
+    setSaForm(prev => ({
+      ...prev,
+      permissions: prev.permissions.includes(perm)
+        ? prev.permissions.filter(p => p !== perm)
+        : [...prev.permissions, perm],
+    }));
+  };
+
+  const toggleSaPermGroup = (perms: string[]) => {
+    const allChecked = perms.every(p => saForm.permissions.includes(p));
+    setSaForm(prev => ({
+      ...prev,
+      permissions: allChecked
+        ? prev.permissions.filter(p => !perms.includes(p))
+        : [...new Set([...prev.permissions, ...perms])],
+    }));
   };
 
   // ── Daily cron ───────────────────────────────────────────────────────────────
@@ -1007,24 +1108,28 @@ export default function AdminDashboard() {
       <Loader2 size={32} className="animate-spin text-indigo-600" />
     </div>
   );
-  if (!user || user.role !== 'admin') return null;
+  // Render nothing if neither super admin nor active sub admin
+  const isAdminAccess = (user?.role === 'admin') || (!!subAdminAccount && subAdminAccount.is_active);
+  if (!isAdminAccess) return null;
 
-  const sidebarItems = [
-    { id: 'overview',     label: at('overview'),      icon: <BarChart3 size={18} /> },
-    { id: 'users',        label: at('users'),         icon: <Users size={18} /> },
-    { id: 'network',      label: at('network'),       icon: <Network size={18} /> },
-    { id: 'categories',   label: at('categories'),    icon: <FolderTree size={18} /> },
-    { id: 'products',     label: at('products'),      icon: <ShoppingBag size={18} /> },
-    { id: 'content',      label: at('content'),       icon: <Image size={18} /> },
-    { id: 'gold_packages',label: at('gold_packages'), icon: <Award size={18} /> },
-    { id: 'payments',     label: at('payments'),      icon: <CreditCard size={18} /> },
-    { id: 'clubs',        label: at('clubs'),         icon: <Gift size={18} /> },
-    { id: 'withdrawals',  label: at('withdrawals'),   icon: <Wallet size={18} /> },
-    { id: 'transactions', label: at('transactions'),  icon: <FileText size={18} /> },
-    { id: 'orders',       label: at('orders'),        icon: <Package size={18} /> },
-    { id: 'dealer-req',   label: at('dealerReq'),     icon: <Star size={18} /> },
-    { id: 'reports',      label: at('reports'),       icon: <BarChart3 size={18} /> },
+  const allSidebarItems = [
+    { id: 'overview',      perm: 'view_overview',      label: at('overview'),      icon: <BarChart3 size={18} /> },
+    { id: 'users',         perm: 'view_members',        label: at('users'),         icon: <Users size={18} /> },
+    { id: 'network',       perm: 'view_network',        label: at('network'),       icon: <Network size={18} /> },
+    { id: 'categories',    perm: 'view_categories',     label: at('categories'),    icon: <FolderTree size={18} /> },
+    { id: 'products',      perm: 'view_products',       label: at('products'),      icon: <ShoppingBag size={18} /> },
+    { id: 'content',       perm: 'view_gallery',        label: at('content'),       icon: <Image size={18} /> },
+    { id: 'gold_packages', perm: 'view_gold_packages',  label: at('gold_packages'), icon: <Award size={18} /> },
+    { id: 'payments',      perm: 'view_payments',       label: at('payments'),      icon: <CreditCard size={18} /> },
+    { id: 'clubs',         perm: 'distribute_clubs',    label: at('clubs'),         icon: <Gift size={18} /> },
+    { id: 'withdrawals',   perm: 'view_withdrawals',    label: at('withdrawals'),   icon: <Wallet size={18} /> },
+    { id: 'transactions',  perm: 'view_transactions',   label: at('transactions'),  icon: <FileText size={18} /> },
+    { id: 'orders',        perm: 'view_orders',         label: at('orders'),        icon: <Package size={18} /> },
+    { id: 'dealer-req',    perm: 'view_dealer_req',     label: at('dealerReq'),     icon: <Star size={18} /> },
+    { id: 'reports',       perm: 'view_reports',        label: at('reports'),       icon: <BarChart3 size={18} /> },
+    { id: 'sub-admins',    perm: 'manage_sub_admins',   label: 'সাব এডমিন',       icon: <Shield size={18} /> },
   ];
+  const sidebarItems = allSidebarItems.filter(item => hasPermission(item.perm));
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -1046,6 +1151,20 @@ export default function AdminDashboard() {
                 </button>
               ))}
             </nav>
+            {/* Admin role badge at bottom of sidebar */}
+            {sidebarOpen && (
+              <div className="mt-4 p-3 rounded-xl bg-white/5 border border-white/10">
+                <div className="flex items-center gap-2">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isSuperAdmin ? 'bg-yellow-500/20' : 'bg-indigo-500/20'}`}>
+                    {isSuperAdmin ? <Shield size={14} className="text-yellow-400" /> : <UserCheck size={14} className="text-indigo-400" />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-white text-xs font-medium truncate">{currentAdminName}</p>
+                    <p className={`text-[10px] ${isSuperAdmin ? 'text-yellow-400' : 'text-indigo-400'}`}>{currentAdminRole}</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </aside>
 
@@ -1062,17 +1181,24 @@ export default function AdminDashboard() {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-3">
             <div>
               <h1 className="text-xl font-bold text-gray-900">{at('dashTitle')}</h1>
-              <p className="text-gray-500 text-xs">{at('dashSub')}</p>
+              <p className="text-gray-500 text-xs">
+                {at('dashSub')} ·
+                <span className={`ml-1 font-medium ${isSuperAdmin ? 'text-yellow-600' : 'text-indigo-600'}`}>
+                  {currentAdminName} ({currentAdminRole})
+                </span>
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={fetchAll} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs hover:bg-gray-50">
                 <RefreshCw size={14} /> {at('refresh')}
               </button>
-              <button onClick={handleRunDailyCron} disabled={cronRunning}
-                className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg text-xs hover:from-orange-600 hover:to-red-600 disabled:opacity-50 shadow-lg">
-                {cronRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                {cronRunning ? at('running') : at('dailyTask')}
-              </button>
+              {hasPermission('run_daily_cron') && (
+                <button onClick={handleRunDailyCron} disabled={cronRunning}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg text-xs hover:from-orange-600 hover:to-red-600 disabled:opacity-50 shadow-lg">
+                  {cronRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                  {cronRunning ? at('running') : at('dailyTask')}
+                </button>
+              )}
             </div>
           </div>
 
@@ -2227,7 +2353,268 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* ══════════════════════════════════════════════════
+          SUB ADMIN MANAGEMENT TAB
+      ══════════════════════════════════════════════════ */}
+      {activeTab === 'sub-admins' && hasPermission('manage_sub_admins') && (
+        <div className="space-y-6">
+          {/* Stats cards */}
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: 'সক্রিয়', value: subAdmins.filter(s => s.is_active).length, color: 'bg-green-500', icon: <UserCheck size={18} /> },
+              { label: 'নিষ্ক্রিয়', value: subAdmins.filter(s => !s.is_active).length, color: 'bg-gray-400', icon: <UserX size={18} /> },
+              { label: 'মোট', value: subAdmins.length, color: 'bg-indigo-500', icon: <Shield size={18} /> },
+            ].map((s, i) => (
+              <div key={i} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center gap-3">
+                <div className={`w-10 h-10 ${s.color} rounded-lg flex items-center justify-center text-white`}>{s.icon}</div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">{s.value}</p>
+                  <p className="text-xs text-gray-500">{s.label} এডমিন</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Header with Add button */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-base font-bold text-gray-900">সাব এডমিন তালিকা</h2>
+                <p className="text-xs text-gray-500 mt-0.5">এডমিন প্যানেলে সীমিত অ্যাক্সেস সহ ব্যবহারকারী</p>
+              </div>
+              <button onClick={openAddSa}
+                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
+                <UserPlus size={14} /> নতুন সাব এডমিন
+              </button>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">নাম</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">ইমেইল</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 hidden md:table-cell">ফোন</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">স্ট্যাটাস</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 hidden md:table-cell">Permissions</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 hidden md:table-cell">যোগ দিয়েছে</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">অ্যাকশন</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {subAdmins.map(sa => (
+                    <tr key={sa.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                            <Shield size={14} className="text-indigo-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900 text-xs">{sa.name}</p>
+                            <p className="text-[10px] text-gray-400">সাব এডমিন</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600">{sa.email}</td>
+                      <td className="px-4 py-3 text-xs text-gray-600 hidden md:table-cell">{sa.phone || '—'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${sa.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {sa.is_active ? <><UserCheck size={10} /> সক্রিয়</> : <><UserX size={10} /> নিষ্ক্রিয়</>}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        <span className="text-xs text-indigo-600 font-medium">
+                          {(sa.permissions || []).length} টি permission
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">
+                        {sa.created_at ? new Date(sa.created_at).toLocaleDateString('bn-BD') : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button onClick={() => openEditSa(sa)}
+                            className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="সম্পাদনা">
+                            <Edit size={14} />
+                          </button>
+                          <button onClick={() => handleDeleteSa(sa.id, sa.name)}
+                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="মুছুন">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {subAdmins.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center text-gray-400 text-sm">
+                        <Shield size={32} className="mx-auto mb-2 opacity-30" />
+                        <p>কোনো সাব এডমিন নেই। উপরের বোতাম থেকে যোগ করুন।</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════
+          SUB ADMIN ADD / EDIT MODAL
+      ══════════════════════════════════════════════════ */}
+      {saModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-4 overflow-y-auto" onClick={() => setSaModal(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-2xl my-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            {/* Modal header */}
+            <div className={`p-5 rounded-t-2xl bg-gradient-to-r ${saModal === 'add' ? 'from-indigo-600 to-purple-600' : 'from-amber-500 to-orange-600'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                    {saModal === 'add' ? <UserPlus size={20} className="text-white" /> : <Edit size={20} className="text-white" />}
+                  </div>
+                  <div>
+                    <h2 className="text-white font-bold">{saModal === 'add' ? 'নতুন সাব এডমিন যোগ করুন' : 'সাব এডমিন সম্পাদনা'}</h2>
+                    <p className="text-white/70 text-xs">{saModal === 'edit' ? editSa?.email : 'তথ্য ও অনুমতি সেট করুন'}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSaModal(null)} className="text-white/70 hover:text-white p-1">
+                  <XCircle size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-5">
+              {/* Basic info grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">নাম *</label>
+                  <input value={saForm.name} onChange={e => setSaForm(p => ({...p, name: e.target.value}))}
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none"
+                    placeholder="সম্পূর্ণ নাম" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">ইমেইল * {saModal === 'edit' && <span className="text-gray-400">(পরিবর্তনযোগ্য নয়)</span>}</label>
+                  <input value={saForm.email} onChange={e => setSaForm(p => ({...p, email: e.target.value}))}
+                    disabled={saModal === 'edit'}
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-400"
+                    placeholder="example@email.com" type="email" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">ফোন</label>
+                  <input value={saForm.phone} onChange={e => setSaForm(p => ({...p, phone: e.target.value}))}
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none"
+                    placeholder="01XXXXXXXXX" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                    পাসওয়ার্ড {saModal === 'edit' && <span className="text-gray-400">(ফাঁকা রাখলে পরিবর্তন হবে না)</span>}
+                    {saModal === 'add' && <span className="text-red-500"> *</span>}
+                  </label>
+                  <div className="relative">
+                    <input value={saForm.password} onChange={e => setSaForm(p => ({...p, password: e.target.value}))}
+                      type={showSaPass ? 'text' : 'password'}
+                      className="w-full px-3 py-2.5 pr-10 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none"
+                      placeholder={saModal === 'edit' ? 'নতুন পাসওয়ার্ড (ঐচ্ছিক)' : 'পাসওয়ার্ড সেট করুন'} />
+                    <button type="button" onClick={() => setShowSaPass(p => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">
+                      {showSaPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status toggle */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">অ্যাকাউন্ট স্ট্যাটাস</p>
+                  <p className="text-xs text-gray-500">নিষ্ক্রিয় করলে এই সাব এডমিন লগইন করতে পারবে না</p>
+                </div>
+                <button onClick={() => setSaForm(p => ({...p, is_active: !p.is_active}))}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${saForm.is_active ? 'bg-green-500' : 'bg-gray-300'}`}>
+                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${saForm.is_active ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+
+              {/* Permissions */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Key size={16} className="text-indigo-600" />
+                    <h3 className="text-sm font-bold text-gray-900">অনুমতিসমূহ (Permissions)</h3>
+                    <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-medium">
+                      {saForm.permissions.length} / {PERMISSION_GROUPS.reduce((a, g) => a + g.perms.length, 0)} টি
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setSaForm(p => ({...p, permissions: PERMISSION_GROUPS.flatMap(g => g.perms)}))}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">সব চালু</button>
+                    <span className="text-gray-300">|</span>
+                    <button onClick={() => setSaForm(p => ({...p, permissions: []}))}
+                      className="text-xs text-red-500 hover:text-red-700 font-medium">সব বন্ধ</button>
+                  </div>
+                </div>
+
+                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                  {PERMISSION_GROUPS.map(group => {
+                    const allChecked = group.perms.every(p => saForm.permissions.includes(p));
+                    const someChecked = group.perms.some(p => saForm.permissions.includes(p));
+                    return (
+                      <div key={group.label} className="border border-gray-100 rounded-xl overflow-hidden">
+                        {/* Group header */}
+                        <button onClick={() => toggleSaPermGroup(group.perms)}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold transition-colors ${allChecked ? 'bg-indigo-50 text-indigo-700' : someChecked ? 'bg-amber-50 text-amber-700' : 'bg-gray-50 text-gray-600'}`}>
+                          <span>{group.label}</span>
+                          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${allChecked ? 'bg-indigo-600 border-indigo-600' : someChecked ? 'border-amber-500' : 'border-gray-300'}`}>
+                            {allChecked && <CheckCircle size={10} className="text-white" />}
+                            {someChecked && !allChecked && <span className="w-2 h-0.5 bg-amber-500 rounded" />}
+                          </div>
+                        </button>
+                        {/* Permissions grid */}
+                        <div className="p-2 grid grid-cols-2 md:grid-cols-3 gap-1.5">
+                          {group.perms.map(perm => (
+                            <label key={perm}
+                              className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors text-xs ${saForm.permissions.includes(perm) ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-gray-50 text-gray-600'}`}>
+                              <input type="checkbox" checked={saForm.permissions.includes(perm)}
+                                onChange={() => toggleSaPerm(perm)} className="hidden" />
+                              <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${saForm.permissions.includes(perm) ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}>
+                                {saForm.permissions.includes(perm) && <CheckCircle size={9} className="text-white" />}
+                              </div>
+                              <span className="truncate">{PERM_LABELS[perm] || perm}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">মন্তব্য (ঐচ্ছিক)</label>
+                <textarea value={saForm.notes} onChange={e => setSaForm(p => ({...p, notes: e.target.value}))} rows={2}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:border-indigo-500 outline-none resize-none"
+                  placeholder="এই সাব এডমিন সম্পর্কে নোট..." />
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setSaModal(null)}
+                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50">
+                  বাতিল
+                </button>
+                <button onClick={handleSaveSa} disabled={saLoading}
+                  className={`flex-1 py-2.5 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2 ${saModal === 'add' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-amber-500 hover:bg-amber-600'}`}>
+                  {saLoading ? <><Loader2 size={14} className="animate-spin" /> সংরক্ষণ হচ্ছে...</> : <><Save size={14} /> সংরক্ষণ করুন</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Footer />
     </div>
   );
-}
+}
