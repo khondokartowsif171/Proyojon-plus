@@ -234,13 +234,13 @@ export default function AdminDashboard() {
     if (txns) setTransactions(txns);
 
     const { data: ordersRaw } = await supabase.from('ecom_orders')
-      .select('*, user:mlm_users(name, phone, email)')
-      .order('created_at', { ascending: false }).limit(50);
+      .select('*, user:mlm_users!ecom_orders_user_id_fkey(name, phone, email), dealer:mlm_users!ecom_orders_dealer_id_fkey(name, phone, dealer_area)')
+      .order('created_at', { ascending: false }).limit(100);
 
     if (ordersRaw && ordersRaw.length > 0) {
       const orderIds = ordersRaw.map((o: any) => o.id);
       const { data: itemsRaw } = await supabase.from('ecom_order_items')
-        .select('*, product:ecom_products(title, image_url)')
+        .select('*, product:ecom_products(name, images, image_url)')
         .in('order_id', orderIds);
       const merged = ordersRaw.map((o: any) => ({
         ...o,
@@ -913,9 +913,22 @@ export default function AdminDashboard() {
 
           // Dealer commission: ডিলার নিজে কিনলে তার PV এর ৫% extra
           if (pvToAdd > 0) await processDealerCommission(pv.user_id, pvToAdd);
+
+          // Mark user's pending orders as paid
+          if (pv.user_id) {
+            await supabase.from('ecom_orders')
+              .update({ status: 'paid' })
+              .eq('user_id', pv.user_id)
+              .eq('status', 'pending');
+          }
+          if (pv.trx_id) {
+            await supabase.from('ecom_orders')
+              .update({ status: 'paid' })
+              .ilike('stripe_payment_intent_id', `%${pv.trx_id}%`);
+          }
         }
 
-        toast.success('✅ পণ্য পেমেন্ট অনুমোদিত! PV ও Club pool আপডেট হয়েছে।');
+        toast.success('✅ পণ্য পেমেন্ট অনুমোদিত! PV, অর্ডার ও Club pool আপডেট হয়েছে।');
         fetchAll(); setLoading(false);
         return;
       }
