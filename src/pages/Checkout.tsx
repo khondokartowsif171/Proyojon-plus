@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '@/lib/supabase';
-import { processDealerCommission, processDealerPurchasePv, addToClubPools } from '@/lib/mlm-business-logic';
+import { processDealerCommission, processDealerPurchasePv, addToClubPools, distributeHajjReferralBonus, creditRewardPoints } from '@/lib/mlm-business-logic';
 import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
@@ -212,27 +212,17 @@ export default function Checkout() {
       description: `পণ্য ক্রয় (কোম্পানি সরাসরি) — ${pvToAdd} PV মূল্যের পণ্য`,
     }).catch(() => {});
 
-    // ── প্রথম activation এ referrer এর commission + count + club promotion ──
+    // ── প্রথম activation এ referrer এর Hajj Fund (1% x 5 levels) + count + club promotion ──
     const justFirstActivated = wasInactive && isFirstTime && updates.is_active === true;
     if (justFirstActivated && user.referrer_id) {
-      const commission = Math.floor(1000 * 0.05); // সবসময় ৳৫০ — ১০০০ PV এর ৫%
+      await distributeHajjReferralBonus(user.referrer_id, 1000, user.id, 1);
       const { data: referrer } = await supabase.from('mlm_users')
-        .select('id, current_balance, total_income, is_active, direct_referrals_count, is_weekly_club, is_insurance_club')
+        .select('id, is_active, direct_referrals_count, is_weekly_club, is_insurance_club')
         .eq('id', user.referrer_id).single();
 
       if (referrer && referrer.is_active) {
         const newCount    = (referrer.direct_referrals_count || 0) + 1;
-        const refUpdates: any = {
-          direct_referrals_count: newCount,
-          current_balance: Number(referrer.current_balance || 0) + commission,
-          total_income:    Number(referrer.total_income    || 0) + commission,
-        };
-
-        await supabase.from('mlm_transactions').insert({
-          user_id: referrer.id, type: 'referral_income', amount: commission,
-          description: `কাস্টমার রেফার কমিশন ৫% — ${user.name || ''} (৳৫০)`,
-          related_user_id: user.id,
-        });
+        const refUpdates: any = { direct_referrals_count: newCount };
 
         // Weekly club: ১৫ সক্রিয় রেফারাল হলে
         if (newCount >= 15 && !referrer.is_weekly_club) refUpdates.is_weekly_club = true;
@@ -258,9 +248,10 @@ export default function Checkout() {
       await processGenerationBonusChain(user.referrer_id, pvToAdd, user.id, 1);
     }
 
-    // ── Club pools: প্রতিটি PV purchase এ যোগ হবে ──────────────────────────
+    // ── Club pools & Reward points ──────────────────────────────────────────
     if (pvToAdd >= 1) {
       await addToClubPools(pvToAdd);
+      await creditRewardPoints(user.id, pvToAdd);
     }
 
     await refreshUser();
