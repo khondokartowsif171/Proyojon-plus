@@ -1104,14 +1104,19 @@ export default function AdminDashboard() {
   const parentCategories = categories.filter(c => !c.parent_id);
   const getSubCategories = (pid: string) => categories.filter(c => c.parent_id === pid);
 
-  if (authLoading) return (
+  const isAdminAccess = (user?.role === 'admin') || (!!subAdminAccount && subAdminAccount.is_active);
+
+  useEffect(() => {
+    if (!authLoading && !isAdminAccess) {
+      navigate('/admin/login');
+    }
+  }, [authLoading, isAdminAccess, navigate]);
+
+  if (authLoading || !isAdminAccess) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <Loader2 size={32} className="animate-spin text-indigo-600" />
     </div>
   );
-  // Render nothing if neither super admin nor active sub admin
-  const isAdminAccess = (user?.role === 'admin') || (!!subAdminAccount && subAdminAccount.is_active);
-  if (!isAdminAccess) return null;
 
   const allSidebarItems = [
     { id: 'overview',      perm: 'view_overview',      label: at('overview'),      icon: <BarChart3 size={18} /> },
