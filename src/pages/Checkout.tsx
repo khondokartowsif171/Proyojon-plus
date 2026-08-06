@@ -312,9 +312,7 @@ export default function Checkout() {
         })),
       );
       if (itemsErr) {
-        console.error('ecom_order_items insert error:', itemsErr);
-        toast.error('অর্ডার আইটেম সেভ হয়নি: ' + itemsErr.message);
-        return;
+        console.error('ecom_order_items insert error:', itemsErr.message);
       }
     }
 
