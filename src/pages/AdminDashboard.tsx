@@ -1110,18 +1110,6 @@ export default function AdminDashboard() {
 
   const isAdminAccess = (user?.role === 'admin') || (!!subAdminAccount && subAdminAccount.is_active);
 
-  useEffect(() => {
-    if (!authLoading && !isAdminAccess) {
-      navigate('/admin/login');
-    }
-  }, [authLoading, isAdminAccess, navigate]);
-
-  if (authLoading || !isAdminAccess) return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <Loader2 size={32} className="animate-spin text-indigo-600" />
-    </div>
-  );
-
   const allSidebarItems = [
     { id: 'overview',      perm: 'view_overview',      label: at('overview'),      icon: <BarChart3 size={18} /> },
     { id: 'users',         perm: 'view_members',        label: at('users'),         icon: <Users size={18} /> },
@@ -1142,10 +1130,22 @@ export default function AdminDashboard() {
   const sidebarItems = allSidebarItems.filter(item => hasPermission(item.perm));
 
   useEffect(() => {
+    if (!authLoading && !isAdminAccess) {
+      navigate('/admin/login');
+    }
+  }, [authLoading, isAdminAccess, navigate]);
+
+  useEffect(() => {
     if (sidebarItems.length > 0 && !sidebarItems.some(item => item.id === activeTab)) {
       setActiveTab(sidebarItems[0].id);
     }
-  }, [subAdminAccount, user]);
+  }, [subAdminAccount, user, sidebarItems]);
+
+  if (authLoading || !isAdminAccess) return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <Loader2 size={32} className="animate-spin text-indigo-600" />
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-100">
