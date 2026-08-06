@@ -2082,7 +2082,7 @@ export default function AdminDashboard() {
                             )}
                           </div>
                           <div className="text-right">
-                            <p className="font-bold text-indigo-700">৳{(order.total||order.total_price||0).toLocaleString()}</p>
+                            <p className="font-bold text-indigo-700">৳{Math.round((order.total||order.total_price||0) / 100).toLocaleString()}</p>
                             <span className={`text-xs px-2 py-0.5 rounded-full ${order.status==='paid'||order.financial_status==='paid'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>
                               {order.status==='paid'||order.financial_status==='paid'?'পেইড':'পেন্ডিং'}
                             </span>
@@ -2111,8 +2111,8 @@ export default function AdminDashboard() {
                                 </div>
                                 <div className="text-right text-xs flex-shrink-0">
                                   <span className="text-gray-500">×{item.quantity}</span>
-                                  <span className="ml-2 font-semibold">৳{(item.unit_price||0).toLocaleString()}</span>
-                                  <p className="text-gray-400">= ৳{((item.unit_price||0)*item.quantity).toLocaleString()}</p>
+                                  <span className="ml-2 font-semibold">৳{Math.round((item.unit_price||0) / 100).toLocaleString()}</span>
+                                  <p className="text-gray-400">= ৳{Math.round(((item.unit_price||0)*item.quantity) / 100).toLocaleString()}</p>
                                 </div>
                               </div>
                             ))}
