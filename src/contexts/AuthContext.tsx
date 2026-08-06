@@ -119,13 +119,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Session restore on mount ──────────────────────────────────────────────
   useEffect(() => {
-    const mlmUserId   = localStorage.getItem('mlm_user_id');
     const subAdminId  = localStorage.getItem('admin_sub_id');
+    const mlmUserId   = localStorage.getItem('mlm_user_id');
 
-    if (mlmUserId) {
-      fetchUser(mlmUserId);
-    } else if (subAdminId) {
+    if (subAdminId) {
       fetchSubAdmin(subAdminId);
+    } else if (mlmUserId) {
+      fetchUser(mlmUserId);
     } else {
       setLoading(false);
     }
@@ -156,11 +156,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .from('admin_sub_accounts')
         .select('*')
         .eq('id', subAdminId)
-        .eq('is_active', true)
         .single();
 
       if (data && !error) {
-        setSubAdminAccount(data as SubAdminAccount);
+        if (!data.is_active) {
+          localStorage.removeItem('admin_sub_id');
+          setSubAdminAccount(null);
+        } else {
+          setSubAdminAccount(data as SubAdminAccount);
+        }
       } else {
         localStorage.removeItem('admin_sub_id');
       }
@@ -171,10 +175,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshUser = async () => {
-    if (user) {
-      await fetchUser(user.id);
-    } else if (subAdminAccount) {
+    if (subAdminAccount) {
       await fetchSubAdmin(subAdminAccount.id);
+    } else if (user) {
+      await fetchUser(user.id);
     }
   };
 
@@ -225,8 +229,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const cleanLower = cleanInput.toLowerCase();
       const hashedInput = await hashPassword(password);
 
-      // ── Step 1: Super Admin in mlm_users ─────────────────────────────────
-      // Run targeted queries to prevent RLS blocking broad select(*)
+      // ── Step 1: Check Sub Admin in admin_sub_accounts FIRST ─────────────
+      try {
+        const [subEmailRes, subPhoneRes] = await Promise.all([
+          supabase.from('admin_sub_accounts').select('*').eq('email', cleanInput),
+          supabase.from('admin_sub_accounts').select('*').eq('phone', cleanInput),
+        ]);
+
+        const subCandidates: any[] = [];
+        [subEmailRes.data, subPhoneRes.data].forEach(list => {
+          if (list && Array.isArray(list)) {
+            list.forEach(item => {
+              if (!subCandidates.some(c => c.id === item.id)) {
+                subCandidates.push(item);
+              }
+            });
+          }
+        });
+
+        if (subCandidates.length > 0) {
+          const matchingSubAdmin = subCandidates.find((u: any) => {
+            const stored = u.password_hash || '';
+            return stored === password || stored === hashedInput;
+          });
+
+          if (matchingSubAdmin) {
+            if (!matchingSubAdmin.is_active) {
+              return { success: false, error: 'আপনার সাব-এডমিন অ্যাকাউন্ট নিষ্ক্রিয় করা হয়েছে। সুপার এডমিনের সাথে যোগাযোগ করুন।' };
+            }
+
+            await supabase
+              .from('admin_sub_accounts')
+              .update({ last_login_at: new Date().toISOString() })
+              .eq('id', matchingSubAdmin.id);
+
+            setSubAdminAccount(matchingSubAdmin as SubAdminAccount);
+            setUser(null);
+            localStorage.setItem('admin_sub_id', matchingSubAdmin.id);
+            localStorage.removeItem('mlm_user_id');
+            return { success: true, role: 'sub_admin' };
+          }
+        }
+      } catch {
+        // Table admin_sub_accounts might not exist yet if migration not run, ignore
+      }
+
+      // ── Step 2: Check Super Admin in mlm_users ─────────────────────────────
       const [roleRes, emailRes, phoneRes] = await Promise.all([
         supabase.from('mlm_users').select('*').eq('role', 'admin'),
         supabase.from('mlm_users').select('*').eq('email', cleanInput),
@@ -245,7 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (candidates.length > 0) {
-        // First try to match user where password matches
+        // Try to match user where password matches
         const matchingUser = candidates.find((u: any) => {
           const stored = u.password_hash || '';
           return stored === password || stored === hashedInput;
@@ -266,40 +314,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return { success: false, error: 'এই একাউন্টে এডমিন পারমিশন নেই।' };
           }
         }
-      }
-
-      // ── Step 2: Sub Admin in admin_sub_accounts ───────────────────────────
-      try {
-        const { data: subCandidates } = await supabase
-          .from('admin_sub_accounts')
-          .select('*')
-          .or(`email.eq.${cleanInput},phone.eq.${cleanInput}`);
-
-        if (subCandidates && subCandidates.length > 0) {
-          const subAdmin = subCandidates.find((u: any) => {
-            const stored = u.password_hash || '';
-            return stored === password || stored === hashedInput;
-          });
-
-          if (subAdmin) {
-            if (!subAdmin.is_active) {
-              return { success: false, error: 'আপনার অ্যাকাউন্ট নিষ্ক্রিয় করা হয়েছে। সুপার এডমিনের সাথে যোগাযোগ করুন।' };
-            }
-
-            await supabase
-              .from('admin_sub_accounts')
-              .update({ last_login_at: new Date().toISOString() })
-              .eq('id', subAdmin.id);
-
-            setSubAdminAccount(subAdmin as SubAdminAccount);
-            setUser(null);
-            localStorage.setItem('admin_sub_id', subAdmin.id);
-            localStorage.removeItem('mlm_user_id');
-            return { success: true, role: 'sub_admin' };
-          }
-        }
-      } catch {
-        // Table admin_sub_accounts might not exist yet if migration not run, ignore
       }
 
       return { success: false, error: 'ইমেইল/ফোন নম্বর বা পাসওয়ার্ড ভুল হয়েছে' };
