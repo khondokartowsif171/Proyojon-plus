@@ -240,7 +240,7 @@ export default function AdminDashboard() {
     if (ordersRaw && ordersRaw.length > 0) {
       const orderIds = ordersRaw.map((o: any) => o.id);
       const { data: itemsRaw } = await supabase.from('ecom_order_items')
-        .select('*, product:ecom_products(name, images, image_url)')
+        .select('*')
         .in('order_id', orderIds);
       const merged = ordersRaw.map((o: any) => ({
         ...o,
