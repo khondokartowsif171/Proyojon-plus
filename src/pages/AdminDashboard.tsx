@@ -2180,6 +2180,113 @@ export default function AdminDashboard() {
             )}
           </div>
         )}
+
+        {/* ══════════════════════════════════════════════════
+            SUB ADMIN MANAGEMENT TAB
+        ══════════════════════════════════════════════════ */}
+        {activeTab === 'sub-admins' && hasPermission('manage_sub_admins') && (
+          <div className="space-y-6">
+            {/* Stats cards */}
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { label: 'সক্রিয়', value: subAdmins.filter(s => s.is_active).length, color: 'bg-green-500', icon: <UserCheck size={18} /> },
+                { label: 'নিষ্ক্রিয়', value: subAdmins.filter(s => !s.is_active).length, color: 'bg-gray-400', icon: <UserX size={18} /> },
+                { label: 'মোট', value: subAdmins.length, color: 'bg-indigo-500', icon: <Shield size={18} /> },
+              ].map((s, i) => (
+                <div key={i} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center gap-3">
+                  <div className={`w-10 h-10 ${s.color} rounded-lg flex items-center justify-center text-white`}>{s.icon}</div>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">{s.value}</p>
+                    <p className="text-xs text-gray-500">{s.label} এডমিন</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Header with Add button */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">সাব এডমিন তালিকা</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">এডমিন প্যানেলে সীমিত অ্যাক্সেস সহ ব্যবহারকারী</p>
+                </div>
+                <button onClick={openAddSa}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
+                  <UserPlus size={14} /> নতুন সাব এডমিন
+                </button>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">নাম</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">ইমেইল</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 hidden md:table-cell">ফোন</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">স্ট্যাটাস</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 hidden md:table-cell">Permissions</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 hidden md:table-cell">যোগ দিয়েছে</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">অ্যাকশন</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {subAdmins.map(sa => (
+                      <tr key={sa.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                              <Shield size={14} className="text-indigo-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900 text-xs">{sa.name}</p>
+                              <p className="text-[10px] text-gray-400">সাব এডমিন</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-600">{sa.email}</td>
+                        <td className="px-4 py-3 text-xs text-gray-600 hidden md:table-cell">{sa.phone || '—'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${sa.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {sa.is_active ? <><UserCheck size={10} /> সক্রিয়</> : <><UserX size={10} /> নিষ্ক্রিয়</>}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 hidden md:table-cell">
+                          <span className="text-xs text-indigo-600 font-medium">
+                            {(sa.permissions || []).length} টি permission
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">
+                          {sa.created_at ? new Date(sa.created_at).toLocaleDateString('bn-BD') : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button onClick={() => openEditSa(sa)}
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="সম্পাদনা">
+                              <Edit size={14} />
+                            </button>
+                            <button onClick={() => handleDeleteSa(sa.id, sa.name)}
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="মুছুন">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {subAdmins.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-12 text-center text-gray-400 text-sm">
+                          <Shield size={32} className="mx-auto mb-2 opacity-30" />
+                          <p>কোনো সাব এডমিন নেই। উপরের বোতাম থেকে যোগ করুন।</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
         </main>
       </div>
 
@@ -2395,112 +2502,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════
-          SUB ADMIN MANAGEMENT TAB
-      ══════════════════════════════════════════════════ */}
-      {activeTab === 'sub-admins' && hasPermission('manage_sub_admins') && (
-        <div className="space-y-6">
-          {/* Stats cards */}
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              { label: 'সক্রিয়', value: subAdmins.filter(s => s.is_active).length, color: 'bg-green-500', icon: <UserCheck size={18} /> },
-              { label: 'নিষ্ক্রিয়', value: subAdmins.filter(s => !s.is_active).length, color: 'bg-gray-400', icon: <UserX size={18} /> },
-              { label: 'মোট', value: subAdmins.length, color: 'bg-indigo-500', icon: <Shield size={18} /> },
-            ].map((s, i) => (
-              <div key={i} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center gap-3">
-                <div className={`w-10 h-10 ${s.color} rounded-lg flex items-center justify-center text-white`}>{s.icon}</div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{s.value}</p>
-                  <p className="text-xs text-gray-500">{s.label} এডমিন</p>
-                </div>
-              </div>
-            ))}
-          </div>
 
-          {/* Header with Add button */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <div>
-                <h2 className="text-base font-bold text-gray-900">সাব এডমিন তালিকা</h2>
-                <p className="text-xs text-gray-500 mt-0.5">এডমিন প্যানেলে সীমিত অ্যাক্সেস সহ ব্যবহারকারী</p>
-              </div>
-              <button onClick={openAddSa}
-                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
-                <UserPlus size={14} /> নতুন সাব এডমিন
-              </button>
-            </div>
-
-            {/* Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">নাম</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">ইমেইল</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 hidden md:table-cell">ফোন</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">স্ট্যাটাস</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 hidden md:table-cell">Permissions</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 hidden md:table-cell">যোগ দিয়েছে</th>
-                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">অ্যাকশন</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {subAdmins.map(sa => (
-                    <tr key={sa.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-                            <Shield size={14} className="text-indigo-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900 text-xs">{sa.name}</p>
-                            <p className="text-[10px] text-gray-400">সাব এডমিন</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-600">{sa.email}</td>
-                      <td className="px-4 py-3 text-xs text-gray-600 hidden md:table-cell">{sa.phone || '—'}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${sa.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {sa.is_active ? <><UserCheck size={10} /> সক্রিয়</> : <><UserX size={10} /> নিষ্ক্রিয়</>}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 hidden md:table-cell">
-                        <span className="text-xs text-indigo-600 font-medium">
-                          {(sa.permissions || []).length} টি permission
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">
-                        {sa.created_at ? new Date(sa.created_at).toLocaleDateString('bn-BD') : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button onClick={() => openEditSa(sa)}
-                            className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="সম্পাদনা">
-                            <Edit size={14} />
-                          </button>
-                          <button onClick={() => handleDeleteSa(sa.id, sa.name)}
-                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="মুছুন">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {subAdmins.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-gray-400 text-sm">
-                        <Shield size={32} className="mx-auto mb-2 opacity-30" />
-                        <p>কোনো সাব এডমিন নেই। উপরের বোতাম থেকে যোগ করুন।</p>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ══════════════════════════════════════════════════
           SUB ADMIN ADD / EDIT MODAL
