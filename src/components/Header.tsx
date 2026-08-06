@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { ShoppingCart, User, Menu, X, LogOut, LayoutDashboard, Store, ChevronDown } from 'lucide-react';
 
 export default function Header({ isDashboard = false }: { isDashboard?: boolean }) {
-  const { user, logout } = useAuth();
+  const { user, subAdminAccount, logout } = useAuth();
   const { cartCount } = useCart();
   const { lang, setLang, t } = useLang();
   const navigate = useNavigate();
@@ -29,9 +29,14 @@ export default function Header({ isDashboard = false }: { isDashboard?: boolean 
 
   const handleLogout = () => {
     logout();
-    navigate('/');
+    navigate('/admin/login');
     setUserDropdown(false);
   };
+
+  const activeAccount = user || subAdminAccount;
+  const accountName = user?.name || subAdminAccount?.name || 'Admin';
+  const accountEmail = user?.email || subAdminAccount?.email || subAdminAccount?.phone || '';
+  const isAnyAdmin = user?.role === 'admin' || !!subAdminAccount;
 
   return (
     <header className="bg-gradient-to-r from-indigo-900 via-purple-900 to-indigo-900 text-white shadow-xl sticky top-0 z-50">
@@ -102,38 +107,55 @@ export default function Header({ isDashboard = false }: { isDashboard?: boolean 
             </Link>
 
             {/* User */}
-            {user ? (
+            {activeAccount ? (
               <div className="relative">
                 <button
                   onClick={() => setUserDropdown(!userDropdown)}
                   className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors"
                 >
                   <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center text-indigo-900 font-bold text-sm">
-                    {user.name.charAt(0)}
+                    {accountName.charAt(0)}
                   </div>
-                  <span className="hidden lg:block text-sm font-medium">{user.name}</span>
+                  <span className="hidden lg:block text-sm font-medium">{accountName}</span>
                   <ChevronDown size={14} />
                 </button>
                 {userDropdown && (
                   <div className="absolute right-0 top-full mt-1 bg-white text-gray-800 rounded-xl shadow-2xl py-2 min-w-[200px] border border-gray-100">
                     <div className="px-4 py-2 border-b border-gray-100">
-                      <p className="font-semibold text-sm">{user.name}</p>
-                      <p className="text-xs text-gray-500">{user.email}</p>
-                      <p className="text-xs text-indigo-600 font-medium mt-1">
-                        {t('balance')}: ৳{(user.current_balance || 0).toLocaleString()}
-                      </p>
+                      <p className="font-semibold text-sm">{accountName}</p>
+                      {accountEmail && <p className="text-xs text-gray-500">{accountEmail}</p>}
+                      {user ? (
+                        <p className="text-xs text-indigo-600 font-medium mt-1">
+                          {t('balance')}: ৳{(user.current_balance || 0).toLocaleString()}
+                        </p>
+                      ) : (
+                        <span className="inline-block text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold mt-1">
+                          সাব এডমিন
+                        </span>
+                      )}
                     </div>
-                    <Link
-                      to={user.role === 'admin' ? '/admin' : '/dashboard'}
-                      className="flex items-center gap-2 px-4 py-2.5 hover:bg-indigo-50 text-sm transition-colors"
-                      onClick={() => setUserDropdown(false)}
-                    >
-                      <LayoutDashboard size={16} />
-                      {t('dashboard')}
-                    </Link>
+                    {isAnyAdmin ? (
+                      <Link
+                        to="/admin"
+                        className="flex items-center gap-2 px-4 py-2.5 hover:bg-indigo-50 text-sm transition-colors"
+                        onClick={() => setUserDropdown(false)}
+                      >
+                        <LayoutDashboard size={16} />
+                        এডমিন ড্যাশবোর্ড
+                      </Link>
+                    ) : (
+                      <Link
+                        to="/dashboard"
+                        className="flex items-center gap-2 px-4 py-2.5 hover:bg-indigo-50 text-sm transition-colors"
+                        onClick={() => setUserDropdown(false)}
+                      >
+                        <LayoutDashboard size={16} />
+                        {t('dashboard')}
+                      </Link>
+                    )}
                     <button
                       onClick={handleLogout}
-                      className="flex items-center gap-2 px-4 py-2.5 hover:bg-red-50 text-sm transition-colors w-full text-left text-red-600"
+                      className="flex items-center gap-2 px-4 py-2.5 hover:bg-red-50 text-sm transition-colors w-full text-left text-red-600 font-medium"
                     >
                       <LogOut size={16} />
                       {t('logout')}

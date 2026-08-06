@@ -13,7 +13,7 @@ import {
   Users, Wallet, TrendingUp, Gift, Search, Lock, Unlock, Edit, Trash2, RefreshCw,
   DollarSign, CheckCircle, XCircle, Play, Loader2, BarChart3, Network, Package,
   FolderTree, CreditCard, FileText, Plus, Save, ChevronDown, ChevronRight, ShoppingBag,
-  Image, Bell, Star, Award, Shield, UserPlus, UserCheck, UserX, Eye, EyeOff, Key,
+  Image, Bell, Star, Award, Shield, UserPlus, UserCheck, UserX, Eye, EyeOff, Key, LogOut,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -100,10 +100,11 @@ const adminT = {
 } as const;
 
 export default function AdminDashboard() {
-  const { user, subAdminAccount, loading: authLoading, isSuperAdmin, hasPermission } = useAuth();
+  const { user, subAdminAccount, loading: authLoading, isSuperAdmin, hasPermission, logout } = useAuth();
   const { lang } = useLang();
   const at = <K extends keyof typeof adminT.bn>(key: K) => (adminT[lang as 'bn' | 'en'] as typeof adminT.bn)[key];
   const navigate = useNavigate();
+  const handleAdminLogout = () => { logout(); navigate('/admin/login'); };
   // Determine current admin display name
   const currentAdminName = user?.name || subAdminAccount?.name || 'Admin';
   const currentAdminRole = isSuperAdmin ? 'সুপার এডমিন' : 'সাব এডমিন';
@@ -1159,8 +1160,8 @@ export default function AdminDashboard() {
             </nav>
             {/* Admin role badge at bottom of sidebar */}
             {sidebarOpen && (
-              <div className="mt-4 p-3 rounded-xl bg-white/5 border border-white/10">
-                <div className="flex items-center gap-2">
+              <div className="mt-4 p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isSuperAdmin ? 'bg-yellow-500/20' : 'bg-indigo-500/20'}`}>
                     {isSuperAdmin ? <Shield size={14} className="text-yellow-400" /> : <UserCheck size={14} className="text-indigo-400" />}
                   </div>
@@ -1169,6 +1170,9 @@ export default function AdminDashboard() {
                     <p className={`text-[10px] ${isSuperAdmin ? 'text-yellow-400' : 'text-indigo-400'}`}>{currentAdminRole}</p>
                   </div>
                 </div>
+                <button onClick={handleAdminLogout} title="লগআউট" className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors ml-1">
+                  <LogOut size={16} />
+                </button>
               </div>
             )}
           </div>
@@ -1205,6 +1209,9 @@ export default function AdminDashboard() {
                   {cronRunning ? at('running') : at('dailyTask')}
                 </button>
               )}
+              <button onClick={handleAdminLogout} className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs hover:bg-red-100 font-medium transition-colors">
+                <LogOut size={14} /> লগআউট
+              </button>
             </div>
           </div>
 
