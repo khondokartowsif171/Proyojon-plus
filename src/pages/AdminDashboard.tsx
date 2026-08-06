@@ -27,6 +27,34 @@ const clubLabels: Record<string, string> = {
   admin_price_pool: 'এডমিন প্রাইস পয়েন্ট (৫%)',
 };
 
+const formatBnDateTime = (isoString?: string | null): string => {
+  if (!isoString) return '—';
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return '—';
+  return date.toLocaleString('bn-BD', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+};
+
+const formatBnDate = (isoString?: string | null): string => {
+  if (!isoString) return '—';
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('bn-BD', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  });
+};
+
 
 const adminT = {
   bn: {
@@ -2103,7 +2131,7 @@ export default function AdminDashboard() {
                             <span className={`text-xs px-2 py-0.5 rounded-full ${order.status==='paid'||order.financial_status==='paid'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>
                               {order.status==='paid'||order.financial_status==='paid'?'পেইড':'পেন্ডিং'}
                             </span>
-                            <p className="text-xs text-gray-400 mt-1">{new Date(order.created_at).toLocaleString('bn-BD')}</p>
+                            <p className="text-xs text-gray-400 mt-1">{formatBnDateTime(order.created_at)}</p>
                           </div>
                         </div>
                         {/* Order items */}

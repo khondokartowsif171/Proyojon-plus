@@ -16,6 +16,34 @@ import { hashPassword } from '@/lib/crypto';
 import { useLiveGoldPrice, minutesAgo } from '@/utils/goldPrice';
 import { processOrderCommissionsForUser } from '@/lib/mlm-business-logic';
 
+const formatBnDateTime = (isoString?: string | null): string => {
+  if (!isoString) return '—';
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return '—';
+  return date.toLocaleString('bn-BD', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+};
+
+const formatBnDate = (isoString?: string | null): string => {
+  if (!isoString) return '—';
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('bn-BD', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  });
+};
+
 function GoldCountdown({ startDate, t }: { startDate: string; t: (k: any) => string }) {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   useEffect(() => {
@@ -1495,7 +1523,7 @@ export default function UserDashboard() {
                       <div key={txn.id} className="flex items-center justify-between py-3 px-4 rounded-xl bg-gray-50">
                         <div>
                           <p className="text-xs font-medium text-gray-700">{txn.description}</p>
-                          <p className="text-[10px] text-gray-400">{new Date(txn.created_at).toLocaleString('bn-BD',{dateStyle:'short',timeStyle:'short'})}</p>
+                          <p className="text-[10px] text-gray-400">{formatBnDateTime(txn.created_at)}</p>
                         </div>
                         <div className="text-right">
                           <span className={`font-bold text-sm ${txn.amount>=0?'text-green-600':'text-red-600'}`}>{txn.amount>=0?'+':''}৳{Math.abs(txn.amount).toLocaleString()}</span>
@@ -1521,7 +1549,7 @@ export default function UserDashboard() {
                     <div key={txn.id} className="flex items-center justify-between py-3 px-4 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
                       <div>
                         <p className="text-sm font-medium text-gray-700">{txn.description}</p>
-                        <p className="text-xs text-gray-400">{txn.type} • {new Date(txn.created_at).toLocaleString('bn-BD',{dateStyle:'short',timeStyle:'short'})}</p>
+                          <p className="text-xs text-gray-400">{txn.type} • {formatBnDateTime(txn.created_at)}</p>
                       </div>
                       <span className={`font-bold text-sm ml-4 flex-shrink-0 ${txn.amount>=0?'text-green-600':'text-red-600'}`}>{txn.amount>=0?'+':''}৳{Math.abs(txn.amount).toLocaleString()}</span>
                     </div>
