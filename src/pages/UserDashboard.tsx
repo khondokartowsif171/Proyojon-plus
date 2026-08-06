@@ -744,22 +744,32 @@ export default function UserDashboard() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {[
-            {label:t('currentBalance'), value:`৳${(user.current_balance||0).toLocaleString()}`, icon:<Wallet size={20}/>, color:'from-green-500 to-emerald-600'},
-            {label:t('totalIncome'),    value:`৳${(user.total_income||0).toLocaleString()}`,    icon:<TrendingUp size={20}/>, color:'from-blue-500 to-indigo-600'},
-            {label:t('directRefer'),    value:`${user.direct_referrals_count||0} জন`,           icon:<Users size={20}/>, color:'from-purple-500 to-pink-600'},
-            {label:user.package_type==='customer'?t('pvPoints'):user.package_type==='shareholder'?t('spPoints'):t('gpPoints'),
-             value:String(user.package_type==='customer'?(user.pv_points||0):user.package_type==='shareholder'?(user.ps_points||0):(user.gp_points||0)),
-             icon:<Star size={20}/>, color:'from-orange-500 to-red-600'},
-          ].map((s,i)=>(
-            <div key={i} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-              <div className={`w-10 h-10 bg-gradient-to-br ${s.color} rounded-xl flex items-center justify-center text-white mb-3`}>{s.icon}</div>
-              <p className="text-xs text-gray-500">{s.label}</p>
-              <p className="text-xl font-bold text-gray-900 mt-0.5">{s.value}</p>
+        {(() => {
+          const omrahHajjPoints = user.omrah_hajj_balance || transactions.filter(t => t.type === 'hajj_referral_bonus').reduce((sum, t) => sum + (t.amount || 0), 0);
+          const rewardPoints = user.reward_points || transactions.filter(t => t.type === 'reward_points_bonus').reduce((sum, t) => sum + (t.amount || 0), 0);
+
+          return (
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+              {[
+                {label:t('currentBalance'), value:`৳${(user.current_balance||0).toLocaleString()}`, icon:<Wallet size={20}/>, color:'from-green-500 to-emerald-600'},
+                {label:t('totalIncome'),    value:`৳${(user.total_income||0).toLocaleString()}`,    icon:<TrendingUp size={20}/>, color:'from-blue-500 to-indigo-600'},
+                {label:t('directRefer'),    value:`${user.direct_referrals_count||0} জন`,           icon:<Users size={20}/>, color:'from-purple-500 to-pink-600'},
+                {label:user.package_type==='customer'?t('pvPoints'):user.package_type==='shareholder'?t('spPoints'):t('gpPoints'),
+                 value:String(user.package_type==='customer'?(user.pv_points||0):user.package_type==='shareholder'?(user.ps_points||0):(user.gp_points||0)),
+                 icon:<Star size={20}/>, color:'from-orange-500 to-red-600'},
+                {label:'My Omrah Hajj Point', value:`৳${omrahHajjPoints.toLocaleString()}`, icon:<Award size={20}/>, color:'from-emerald-600 to-teal-700', note:'হজ ফান্ডে জমা'},
+                {label:'Reward Points', value:`${rewardPoints.toLocaleString()} পয়েন্ট`, icon:<Gift size={20}/>, color:'from-amber-500 to-yellow-600', note:'নন-উইথড্রয়েবল'},
+              ].map((s,i)=>(
+                <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                  <div className={`w-9 h-9 bg-gradient-to-br ${s.color} rounded-xl flex items-center justify-center text-white mb-2`}>{s.icon}</div>
+                  <p className="text-xs text-gray-500">{s.label}</p>
+                  <p className="text-lg font-bold text-gray-900 mt-0.5">{s.value}</p>
+                  {s.note && <p className="text-[10px] text-indigo-500 font-medium mt-0.5">{s.note}</p>}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          );
+        })()}
 
         {/* Inactive warning */}
         {!user.is_active&&(

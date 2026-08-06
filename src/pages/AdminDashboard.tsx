@@ -18,11 +18,13 @@ import {
 import { toast } from 'sonner';
 
 const clubLabels: Record<string, string> = {
-  daily_club:       'ডেইলি ক্লাব',
-  weekly_club:      'উইকলি ক্লাব',
-  insurance_club:   'ইনসুরেন্স ক্লাব',
-  pension_club:     'পেনশন ক্লাব',
-  shareholder_club: 'শেয়ারহোল্ডার ক্লাব',
+  daily_club:       'ডেইলি ক্লাব (২০%)',
+  weekly_club:      'উইকলি ক্লাব (৩%)',
+  insurance_club:   'ইনসুরেন্স ক্লাব (১.২৫%)',
+  pension_club:     'পেনশন ক্লাব (১.২৫%)',
+  shareholder_club: 'শেয়ারহোল্ডার ক্লাব (১০%)',
+  reward_pool:      'রিওয়ার্ড পুল (৭%)',
+  admin_price_pool: 'এডমিন প্রাইস পয়েন্ট (৫%)',
 };
 
 
@@ -728,6 +730,14 @@ export default function AdminDashboard() {
 
     await supabase.from('mlm_club_pools').update({ total_amount: 0 }).eq('id', pool.id);
     toast.success(`✅ ${members.length} জনকে প্রতিজনে ৳${perMember} বন্টন হয়েছে!`);
+    fetchAll(); setLoading(false);
+  };
+
+  const handleResetAdminPricePool = async () => {
+    if (!window.confirm('এডমিন প্রাইস পয়েন্ট ব্যালেন্স শূন্য (০) করতে চান?')) return;
+    setLoading(true);
+    await supabase.from('mlm_club_pools').update({ total_amount: 0 }).eq('club_type', 'admin_price_pool');
+    toast.success('✅ এডমিন প্রাইস পয়েন্ট জিরো (০) করা হয়েছে');
     fetchAll(); setLoading(false);
   };
 
@@ -1896,7 +1906,7 @@ export default function AdminDashboard() {
               <div>
                 <h2 className="text-lg font-bold mb-1">ক্লাব বোনাস বন্টন</h2>
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-xs text-blue-800 space-y-1">
-                  <p>📌 Customer package + PV sales → Daily 30% • Weekly 2.5% • Insurance 1.25% • Pension 1.25% • Shareholder 10%</p>
+                  <p>📌 PV Sales Allocation → Daily 20% • Weekly 3% • Hajj 5% (1% × 5 levels) • Reward 7% • Admin Price 5% • Insurance 1.25% • Pension 1.25% • Shareholder 10%</p>
                   <p>📌 Shareholder club → শুধু shareholder package holders পাবেন</p>
                 </div>
                 {hasPermission('manual_credit') && (
@@ -1932,16 +1942,28 @@ export default function AdminDashboard() {
                       : pool.club_type==='pension_club'     ? users.filter(u=>u.is_pension_club).length
                       : pool.club_type==='shareholder_club' ? users.filter(u=>u.is_shareholder_club&&u.package_type==='shareholder').length : 0;
                     const perMember = memberCount>0&&pool.total_amount>0 ? Math.floor(pool.total_amount/memberCount) : 0;
-                    const pctLabel = pool.club_type==='daily_club'?'৩০%':pool.club_type==='shareholder_club'?'১০%':pool.club_type==='weekly_club'?'২.৫%':'১.২৫%';
+                    const pctLabel = pool.club_type==='daily_club'?'২০%':pool.club_type==='weekly_club'?'৩%':pool.club_type==='shareholder_club'?'১০%':pool.club_type==='reward_pool'?'৭%':pool.club_type==='admin_price_pool'?'৫%':'১.২৫%';
+                    const isAdminPrice = pool.club_type === 'admin_price_pool';
+                    const isReward = pool.club_type === 'reward_pool';
+
                     return (
-                      <div key={pool.id} className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 border border-gray-200">
+                      <div key={pool.id} className={`rounded-xl p-5 border ${isAdminPrice ? 'bg-purple-50 border-purple-200' : isReward ? 'bg-amber-50 border-amber-200' : 'bg-gradient-to-br from-gray-50 to-white border-gray-200'}`}>
                         <h3 className="font-bold text-gray-800 mb-1">{clubLabels[pool.club_type]||pool.club_type}</h3>
                         <p className="text-xs text-gray-400 mb-2">{pctLabel} PV pool</p>
                         <p className="text-2xl font-bold text-indigo-600 mb-1">৳{(pool.total_amount||0).toLocaleString()}</p>
-                        <p className="text-xs text-gray-500 mb-1">সদস্য: {memberCount} জন</p>
-                        {perMember>0 && <p className="text-xs text-gray-400 mb-3">প্রতি জনে: ৳{perMember}</p>}
-                        <button onClick={() => handleDistributeClub(pool.club_type)} disabled={loading||pool.total_amount<=0}
-                          className="w-full py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50">বন্টন করুন</button>
+                        {!isAdminPrice && !isReward && <p className="text-xs text-gray-500 mb-1">সদস্য: {memberCount} জন</p>}
+                        {perMember>0 && !isAdminPrice && !isReward && <p className="text-xs text-gray-400 mb-3">প্রতি জনে: ৳{perMember}</p>}
+                        {isAdminPrice ? (
+                          <button onClick={handleResetAdminPricePool} disabled={loading||pool.total_amount<=0}
+                            className="w-full py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50">
+                            ব্যালেন্স জিরো (০) করুন
+                          </button>
+                        ) : isReward ? (
+                          <p className="text-xs text-amber-700 font-medium">রিওয়ার্ড ফান্ডের জন্য সংরক্ষিত</p>
+                        ) : (
+                          <button onClick={() => handleDistributeClub(pool.club_type)} disabled={loading||pool.total_amount<=0}
+                            className="w-full py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50">বন্টন করুন</button>
+                        )}
                       </div>
                     );
                   })}

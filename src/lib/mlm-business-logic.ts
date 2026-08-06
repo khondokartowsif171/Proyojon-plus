@@ -26,14 +26,16 @@ export const WITHDRAW_CHARGE_PCT     = 0.05;
 export const TRANSFER_MIN            = 100;
 
 export const PV_CLUB_PCTS: Record<string, number> = {
-  daily_club:       0.30,    // ৩০%
-  weekly_club:      0.025,   // ২.৫%
+  daily_club:       0.20,    // ২০% (আগে ৩০% ছিল)
+  weekly_club:      0.03,    // ৩% (আগে ২.৫% ছিল)
   insurance_club:   0.0125,  // ১.২৫%
   pension_club:     0.0125,  // ১.২৫%
   shareholder_club: 0.10,    // ১০%
+  reward_pool:      0.07,    // ৭% (নতুন)
+  admin_price_pool: 0.05,    // ৫% (নতুন)
 };
 
-export const CUSTOMER_REFERRAL_PCT    = 0.05;   // ৫%
+export const CUSTOMER_REFERRAL_PCT    = 0.05;   // ৫% (১% × ৫ লেভেল)
 export const SHAREHOLDER_REFERRAL_PCT = 0.025;  // ২.৫%
 export const GENERATION_BONUS_PCT     = 0.01;   // ১%
 export const DEALER_COMMISSION_PCT    = 0.05;   // ডিলার: নিজের PV এর ৫%
@@ -55,6 +57,66 @@ export const addToClubPools = async (pvAmount: number): Promise<void> => {
         .eq('club_type', clubType);
     }
   }
+};
+
+
+// ── Distribute 1% x 5 Levels into Omrah Hajj Fund (omrah_hajj_balance) ────────
+export const distributeHajjReferralBonus = async (
+  userId: string,
+  pvPoints: number,
+  sourceUserId: string,
+  gen: number,
+): Promise<void> => {
+  if (gen > 5 || !userId) return;
+
+  const { data: u } = await supabase.from('mlm_users').select('*').eq('id', userId).single();
+  if (!u || !u.is_active) return;
+
+  const bonus = Math.floor(pvPoints * 0.01); // ১% করে ৫টি লেভেলে = মোট ৫%
+  if (bonus > 0) {
+    const currentHajj = Number(u.omrah_hajj_balance || 0);
+    await supabase.from('mlm_users').update({
+      omrah_hajj_balance: currentHajj + bonus,
+    }).eq('id', userId).catch(() => {});
+
+    await supabase.from('mlm_transactions').insert({
+      user_id:         userId,
+      type:            'hajj_referral_bonus',
+      amount:          bonus,
+      description:     `উমরাহ হজ ফান্ড রেফার ইনকাম (১% × Gen ${gen}, PV: ${pvPoints})`,
+      related_user_id: sourceUserId,
+    });
+  }
+
+  if (u.referrer_id) {
+    await distributeHajjReferralBonus(u.referrer_id, pvPoints, sourceUserId, gen + 1);
+  }
+};
+
+
+// ── Credit Reward Points (7%) to Buyer ─────────────────────────────────────────
+export const creditRewardPoints = async (
+  userId: string,
+  pvPoints: number,
+): Promise<void> => {
+  if (pvPoints <= 0 || !userId) return;
+  const rewardBonus = Math.floor(pvPoints * 0.07); // ৭% রিওয়ার্ড পয়েন্ট
+  if (rewardBonus <= 0) return;
+
+  const { data: u } = await supabase.from('mlm_users').select('reward_points').eq('id', userId).single();
+  if (!u) return;
+
+  const currentReward = Number(u.reward_points || 0);
+  await supabase.from('mlm_users').update({
+    reward_points: currentReward + rewardBonus,
+  }).eq('id', userId).catch(() => {});
+
+  await supabase.from('mlm_transactions').insert({
+    user_id:     userId,
+    type:        'reward_points_bonus',
+    amount:      rewardBonus,
+    description: `রিওয়ার্ড পয়েন্ট অর্জিত (৭% × ${pvPoints} PV = ${rewardBonus} পয়েন্ট)`,
+  });
 };
 
 
@@ -107,9 +169,8 @@ export const processReferrerCommission = async (
   let desc       = '';
 
   if (packageType === 'customer') {
-    // ✅ ৫% — সাথে সাথে current_balance এ যাবে
-    commission = Math.floor(pvOrSpOrGp * CUSTOMER_REFERRAL_PCT);
-    desc       = `কাস্টমার রেফার কমিশন (৫% × ${pvOrSpOrGp} PV)`;
+    // ✅ ৫% রেফারাল — ১% করে ৫টি লেভেলে Omrah Hajj Fund (omrah_hajj_balance) এ জমা হবে
+    await distributeHajjReferralBonus(referrerId, pvOrSpOrGp, newUserId, 1);
 
   } else if (packageType === 'shareholder') {
     // ✅ ২.৫% — সাথে সাথে current_balance এ যাবে
@@ -297,19 +358,16 @@ export const processOrderCommissionsForUser = async (
   }).catch(() => {});
 
   // Referral commission — only on first activation
+  // Referral commission — only on first activation (1% x 5 levels to Hajj Fund)
   const justFirstActivated = wasInactive && isFirstTime && updates.is_active === true;
   if (justFirstActivated && u.referrer_id) {
-    const commission = Math.floor(CUSTOMER_PV_TO_ACTIVATE * CUSTOMER_REFERRAL_PCT);
+    await distributeHajjReferralBonus(u.referrer_id, CUSTOMER_PV_TO_ACTIVATE, userId, 1);
     const { data: ref } = await supabase.from('mlm_users')
-      .select('id, current_balance, total_income, is_active, direct_referrals_count, is_weekly_club, is_insurance_club')
+      .select('id, is_active, direct_referrals_count, is_weekly_club, is_insurance_club')
       .eq('id', u.referrer_id).single();
     if (ref && ref.is_active) {
       const newCount = (ref.direct_referrals_count || 0) + 1;
-      const refUpd: any = {
-        direct_referrals_count: newCount,
-        current_balance: Number(ref.current_balance || 0) + commission,
-        total_income:    Number(ref.total_income    || 0) + commission,
-      };
+      const refUpd: any = { direct_referrals_count: newCount };
       if (newCount >= 15 && !ref.is_weekly_club) refUpd.is_weekly_club = true;
       if (!ref.is_insurance_club) {
         const { data: directs } = await supabase.from('mlm_users')
@@ -319,18 +377,16 @@ export const processOrderCommissionsForUser = async (
         }
       }
       await supabase.from('mlm_users').update(refUpd).eq('id', ref.id);
-      await supabase.from('mlm_transactions').insert({
-        user_id: ref.id, type: 'referral_income', amount: commission,
-        description: `কাস্টমার রেফার কমিশন ৫% — ডিলার অর্ডার (৳${commission})`,
-        related_user_id: userId,
-      });
     }
   }
 
   const isNowActive = u.is_active || updates.is_active === true;
   if (isNowActive && u.referrer_id && pvAmount > 0)
     await distributeGenerationBonus(u.referrer_id, pvAmount, userId, 1);
-  if (pvAmount >= 1) await addToClubPools(pvAmount);
+  if (pvAmount >= 1) {
+    await addToClubPools(pvAmount);
+    await creditRewardPoints(userId, pvAmount);
+  }
 };
 
 
