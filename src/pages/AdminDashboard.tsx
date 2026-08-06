@@ -664,6 +664,23 @@ export default function AdminDashboard() {
   const handleUpdateUser = async () => {
     if (!editUser) return;
     setLoading(true);
+
+    const oldUser = users.find(u => u.id === editUser.id);
+    const oldBal  = oldUser?.current_balance || 0;
+    const newBal  = Number(editUser.current_balance || 0);
+    const diff    = newBal - oldBal;
+
+    if (diff !== 0) {
+      await supabase.from('mlm_transactions').insert({
+        user_id:     editUser.id,
+        type:        diff > 0 ? 'admin_credit' : 'admin_deduct',
+        amount:      diff,
+        description: diff > 0
+          ? `এডমিন ড্যাশবোর্ড থেকে ৳${diff.toLocaleString()} ব্যালেন্স সংযুক্ত করা হয়েছে`
+          : `এডমিন ড্যাশবোর্ড থেকে ৳${Math.abs(diff).toLocaleString()} ব্যালেন্স কর্তন করা হয়েছে`,
+      });
+    }
+
     await supabase.from('mlm_users').update({
       name: editUser.name, email: editUser.email, phone: editUser.phone,
       password_hash: editUser.password_hash,
