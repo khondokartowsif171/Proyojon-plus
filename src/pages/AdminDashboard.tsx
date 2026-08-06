@@ -91,7 +91,7 @@ const adminT = {
     noticeTitleLabel: 'Title *', noticeExpiry: 'Expiry (optional)', noticeDetail: 'Details (optional)',
     postNotice: 'Post Notice', noNotice: 'No notices',
     goldPkgMgmt: 'Gold Package Management',
-    gpCols: ['#','User','Phone','Purchase Date','Expiry','Days Left','Daily Income','Status','Edit'],
+    gpCols: ['#','User','Phone','Investment','Purchase Date','Expiry','Days Left','Daily Income','Status','Edit'],
     catMgmt: 'Category Management', newCat: 'New Category',
     shopCollections: 'Shop Collections', shopColNote: 'Appears in shop navigation dropdown',
     newCollection: '+ New Collection', colTitle: 'Collection Name', colDesc: 'Description (optional)',
@@ -102,7 +102,11 @@ const adminT = {
 export default function AdminDashboard() {
   const { user, subAdminAccount, loading: authLoading, isSuperAdmin, hasPermission, logout } = useAuth();
   const { lang } = useLang();
-  const at = <K extends keyof typeof adminT.bn>(key: K) => (adminT[lang as 'bn' | 'en'] as typeof adminT.bn)[key];
+  const at = (key: keyof typeof adminT.bn): any => {
+    const currentLang = (lang === 'en') ? 'en' : 'bn';
+    const dict = adminT[currentLang] || adminT.bn;
+    return dict[key] || adminT.bn[key] || key;
+  };
   const navigate = useNavigate();
   const handleAdminLogout = () => { logout(); navigate('/admin/login'); };
   // Determine current admin display name
