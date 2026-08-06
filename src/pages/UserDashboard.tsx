@@ -393,21 +393,54 @@ export default function UserDashboard() {
     e.preventDefault();
     if (!user) return;
     const amount = parseFloat(trfAmount);
-    if (isNaN(amount)||amount<100) { toast.error('সর্বনিম্ন ট্রান্সফার ৳১০০'); return; }
-    if (amount>(user.current_balance||0)) { toast.error('ব্যালেন্স যথেষ্ট নয়'); return; }
-    if (!trfToId.trim()) { toast.error('প্রাপকের আইডি দিন'); return; }
-    if (trfToId.trim()===user.id) { toast.error('নিজের আইডিতে ট্রান্সফার করা যাবে না'); return; }
+    if (isNaN(amount) || amount < 100) { toast.error('সর্বনিম্ন ট্রান্সফার ৳১০০'); return; }
+    if (amount > (user.current_balance || 0)) { toast.error('ব্যালেন্স যথেষ্ট নয়'); return; }
+    const input = trfToId.trim();
+    if (!input) { toast.error('প্রাপকের আইডি / মোবাইল নম্বর / ইমেইল দিন'); return; }
+
     setTrfLoading(true);
-    const {data:recipient} = await supabase.from('mlm_users').select('id,name,current_balance').eq('id',trfToId.trim()).single();
-    if (!recipient) { toast.error('প্রাপকের আইডি পাওয়া যায়নি'); setTrfLoading(false); return; }
+
+    // Search recipient by User ID (UUID), Mobile Phone, or Email
+    let recipient: any = null;
+    const { data: byId } = await supabase.from('mlm_users').select('id, name, current_balance, is_locked').eq('id', input).maybeSingle();
+    if (byId) {
+      recipient = byId;
+    } else {
+      const { data: byPhone } = await supabase.from('mlm_users').select('id, name, current_balance, is_locked').eq('phone', input).maybeSingle();
+      if (byPhone) {
+        recipient = byPhone;
+      } else {
+        const { data: byEmail } = await supabase.from('mlm_users').select('id, name, current_balance, is_locked').eq('email', input).maybeSingle();
+        if (byEmail) recipient = byEmail;
+      }
+    }
+
+    if (!recipient) {
+      toast.error('প্রাপকের অ্যাকাউন্ট পাওয়া যায়নি। ইউজার আইডি/মোবাইল নম্বর চেক করুন।');
+      setTrfLoading(false); return;
+    }
+    if (recipient.id === user.id) {
+      toast.error('নিজের আইডিতে ট্রান্সফার করা যাবে না');
+      setTrfLoading(false); return;
+    }
+    if (recipient.is_locked) {
+      toast.error('প্রাপকের অ্যাকাউন্ট লক করা রয়েছে');
+      setTrfLoading(false); return;
+    }
+
+    const senderNewBal    = (user.current_balance || 0) - amount;
+    const recipientNewBal = (recipient.current_balance || 0) + amount;
+
     await Promise.all([
-      supabase.from('mlm_users').update({current_balance:(user.current_balance||0)-amount}).eq('id',user.id),
-      supabase.from('mlm_users').update({current_balance:(recipient.current_balance||0)+amount}).eq('id',recipient.id),
+      supabase.from('mlm_users').update({ current_balance: senderNewBal }).eq('id', user.id),
+      supabase.from('mlm_users').update({ current_balance: recipientNewBal }).eq('id', recipient.id),
     ]);
+
     await supabase.from('mlm_transactions').insert([
-      {user_id:user.id, type:'transfer_out', amount:-amount, description:`ট্রান্সফার → ${recipient.name} (৳${amount})`, related_user_id:recipient.id},
-      {user_id:recipient.id, type:'transfer_in', amount, description:`ট্রান্সফার ← ${user.name} (৳${amount})`, related_user_id:user.id},
+      { user_id: user.id, type: 'transfer_out', amount: -amount, description: `ট্রান্সফার → ${recipient.name} (৳${amount})`, related_user_id: recipient.id },
+      { user_id: recipient.id, type: 'transfer_in', amount, description: `ট্রান্সফার ← ${user.name} (৳${amount})`, related_user_id: user.id },
     ]);
+
     toast.success(`✅ ৳${amount} সফলভাবে ${recipient.name}-কে পাঠানো হয়েছে!`);
     setTrfAmount(''); setTrfToId('');
     await refreshUser(); await fetchData(); setTrfLoading(false);
