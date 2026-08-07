@@ -95,6 +95,16 @@ const adminT = {
     shopCollections: 'শপ কালেকশন', shopColNote: 'শপ নেভিগেশন ড্রপডাউনে যা দেখাবে',
     newCollection: '+ নতুন কালেকশন', colTitle: 'কালেকশন নাম', colDesc: 'বিবরণ (ঐচ্ছিক)',
     dealerReq: 'ডিলার রিকুইজিশন',
+    customerPackages: 'কাস্টমার প্যাকেজ',
+    shareholderPackages: 'শেয়ারহোল্ডার প্যাকেজ',
+    subAdmins: 'সাব এডমিন',
+    newLast24h: 'গত ২৪ ঘণ্টায় নতুন',
+    newLast7d: 'গত ৭ দিনে নতুন',
+    customerPkgLabel: 'কাস্টমার',
+    shareholderPkgLabel: 'শেয়ারহোল্ডার',
+    goldPkgLabel: 'গোল্ড',
+    dealerPkgLabel: 'ডিলার',
+    person: 'জন',
   },
   en: {
     sidebarTitle: 'Admin Panel',
@@ -130,6 +140,16 @@ const adminT = {
     shopCollections: 'Shop Collections', shopColNote: 'Appears in shop navigation dropdown',
     newCollection: '+ New Collection', colTitle: 'Collection Name', colDesc: 'Description (optional)',
     dealerReq: 'Dealer Requisitions',
+    customerPackages: 'Customer Packages',
+    shareholderPackages: 'Shareholder Packages',
+    subAdmins: 'Sub-Admins',
+    newLast24h: 'New in Last 24 Hours',
+    newLast7d: 'New in Last 7 Days',
+    customerPkgLabel: 'Customer',
+    shareholderPkgLabel: 'Shareholder',
+    goldPkgLabel: 'Gold',
+    dealerPkgLabel: 'Dealer',
+    person: 'members',
   },
 } as const;
 
@@ -159,6 +179,7 @@ export default function AdminDashboard() {
   const [products, setProducts] = useState<any[]>([]);
   const [paymentVerifications, setPV] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [memberFilter, setMemberFilter] = useState<'all' | 'active' | '24h' | '7d'>('all');
   const [editUser, setEditUser] = useState<any>(null);
   const [stats, setStats] = useState({ totalUsers: 0, activeUsers: 0, totalIncome: 0, totalWithdrawals: 0 });
   const [loading, setLoading] = useState(false);
@@ -1357,41 +1378,49 @@ export default function AdminDashboard() {
 
                 {/* ── গত ২৪ঘ / ৭দিন stat row ── */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-                  <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
-                    <p className="text-xs text-gray-400 mb-1">মোট সদস্য</p>
+                  <button onClick={() => { setSearchQuery(''); setMemberFilter('all'); setActiveTab('users'); }}
+                    className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm text-left hover:shadow-md transition-all cursor-pointer">
+                    <p className="text-xs text-gray-400 mb-1">{at('totalMembers')}</p>
                     <p className="text-2xl font-extrabold text-gray-800">{stats.totalUsers}</p>
-                  </div>
-                  <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
-                    <p className="text-xs text-gray-400 mb-1">সক্রিয় সদস্য</p>
+                    <p className="text-[10px] font-semibold text-indigo-600 mt-2">{at('clickList')}</p>
+                  </button>
+                  <button onClick={() => { setSearchQuery(''); setMemberFilter('active'); setActiveTab('users'); }}
+                    className="bg-green-50/60 border border-green-100 rounded-2xl p-4 shadow-sm text-left hover:shadow-md transition-all cursor-pointer">
+                    <p className="text-xs text-green-600 mb-1">{at('activeMembers')}</p>
                     <p className="text-2xl font-extrabold text-green-600">{stats.activeUsers}</p>
-                  </div>
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 shadow-sm">
-                    <p className="text-xs text-indigo-400 mb-1">গত ২৪ ঘণ্টায় নতুন</p>
+                    <p className="text-[10px] font-semibold text-green-700 mt-2">{at('clickList')}</p>
+                  </button>
+                  <button onClick={() => { setSearchQuery(''); setMemberFilter('24h'); setActiveTab('users'); }}
+                    className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 shadow-sm text-left hover:shadow-md transition-all cursor-pointer">
+                    <p className="text-xs text-indigo-500 mb-1">{at('newLast24h')}</p>
                     <p className="text-2xl font-extrabold text-indigo-600">{newLast24h}</p>
-                  </div>
-                  <div className="bg-purple-50 border border-purple-100 rounded-2xl p-4 shadow-sm">
-                    <p className="text-xs text-purple-400 mb-1">গত ৭ দিনে নতুন</p>
+                    <p className="text-[10px] font-semibold text-indigo-700 mt-2">{at('clickList')}</p>
+                  </button>
+                  <button onClick={() => { setSearchQuery(''); setMemberFilter('7d'); setActiveTab('users'); }}
+                    className="bg-purple-50 border border-purple-100 rounded-2xl p-4 shadow-sm text-left hover:shadow-md transition-all cursor-pointer">
+                    <p className="text-xs text-purple-500 mb-1">{at('newLast7d')}</p>
                     <p className="text-2xl font-extrabold text-purple-600">{newLast7d}</p>
-                  </div>
+                    <p className="text-[10px] font-semibold text-purple-700 mt-2">{at('clickList')}</p>
+                  </button>
                 </div>
 
                 {/* ── Package + Dealer cards (4 কলাম) ── */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
                   {[
-                    { pkg: 'customer',    label: 'কাস্টমার',       color: 'from-blue-500 to-cyan-500',     bg: 'bg-blue-50 border-blue-200',     textColor: 'text-blue-700',   count: users.filter(u => u.package_type === 'customer'    && u.role !== 'admin').length },
-                    { pkg: 'shareholder', label: 'শেয়ারহোল্ডার',  color: 'from-purple-500 to-violet-500', bg: 'bg-purple-50 border-purple-200', textColor: 'text-purple-700', count: users.filter(u => u.package_type === 'shareholder' && u.role !== 'admin').length },
-                    { pkg: 'gold',        label: 'গোল্ড',           color: 'from-yellow-500 to-orange-500', bg: 'bg-yellow-50 border-yellow-200', textColor: 'text-yellow-700', count: users.filter(u => u.package_type === 'gold'        && u.role !== 'admin').length },
-                    { pkg: 'dealer',      label: 'ডিলার',           color: 'from-orange-500 to-red-500',   bg: 'bg-orange-50 border-orange-200', textColor: 'text-orange-700', count: dealerCount },
-                  ].map(({ pkg, label, color, bg, textColor, count }) => {
+                    { pkg: 'customer',    label: at('customerPkgLabel'),    color: 'from-blue-500 to-cyan-500',     bg: 'bg-blue-50 border-blue-200',     textColor: 'text-blue-700',   count: users.filter(u => u.package_type === 'customer'    && u.role !== 'admin').length, tabId: 'customer_packages' },
+                    { pkg: 'shareholder', label: at('shareholderPkgLabel'), color: 'from-purple-500 to-violet-500', bg: 'bg-purple-50 border-purple-200', textColor: 'text-purple-700', count: users.filter(u => u.package_type === 'shareholder' && u.role !== 'admin').length, tabId: 'shareholder_pkgs' },
+                    { pkg: 'gold',        label: at('goldPkgLabel'),        color: 'from-yellow-500 to-orange-500', bg: 'bg-yellow-50 border-yellow-200', textColor: 'text-yellow-700', count: users.filter(u => u.package_type === 'gold'        && u.role !== 'admin').length, tabId: 'gold_packages' },
+                    { pkg: 'dealer',      label: at('dealerPkgLabel'),      color: 'from-orange-500 to-red-500',   bg: 'bg-orange-50 border-orange-200', textColor: 'text-orange-700', count: dealerCount, tabId: 'dealer-req' },
+                  ].map(({ pkg, label, color, bg, textColor, count, tabId }) => {
                     const pct = Math.round((count / (stats.totalUsers || 1)) * 100);
                     return (
-                      <button key={pkg} onClick={() => openPackageModal(pkg)}
+                      <button key={pkg} onClick={() => setActiveTab(tabId)}
                         className={`${bg} border rounded-2xl p-4 text-left hover:shadow-md transition-all cursor-pointer`}>
                         <div className={`w-9 h-9 bg-gradient-to-br ${color} rounded-xl flex items-center justify-center text-white mb-3`}>
                           <Users size={16} />
                         </div>
                         <p className="text-xs text-gray-500 mb-1">{label}</p>
-                        <p className={`text-2xl font-extrabold ${textColor}`}>{count} জন</p>
+                        <p className={`text-2xl font-extrabold ${textColor}`}>{count} {at('person')}</p>
                         <div className="w-full h-1.5 bg-white/60 rounded-full mt-2 overflow-hidden">
                           <div className={`h-full bg-gradient-to-r ${color} rounded-full`} style={{ width: `${pct}%` }} />
                         </div>
@@ -1511,10 +1540,30 @@ export default function AdminDashboard() {
               );
             })()}
 
-            {activeTab === 'users' && hasPermission('view_members') && (
+            {activeTab === 'users' && hasPermission('view_members') && (() => {
+              const now = new Date();
+              const h24ago = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+              const d7ago  = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+              const displayUsers = filteredUsers.filter(u => {
+                if (u.role === 'admin') return false;
+                if (memberFilter === 'active') return u.is_active;
+                if (memberFilter === '24h') return new Date(u.created_at) >= h24ago;
+                if (memberFilter === '7d') return new Date(u.created_at) >= d7ago;
+                return true;
+              });
+              return (
               <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <h2 className="text-lg font-bold">{at('memberMgmt')}</h2>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold">{at('memberMgmt')}</h2>
+                    {memberFilter !== 'all' && (
+                      <button onClick={() => setMemberFilter('all')}
+                        className="px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-indigo-200">
+                        <span>ফিল্টার: {memberFilter === 'active' ? at('activeMembers') : memberFilter === '24h' ? at('newLast24h') : at('newLast7d')} ({displayUsers.length})</span>
+                        <span>✕</span>
+                      </button>
+                    )}
+                  </div>
                   <div className="flex-1 max-w-sm relative">
                     <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -1530,7 +1579,7 @@ export default function AdminDashboard() {
                       ))}
                     </tr></thead>
                     <tbody>
-                      {filteredUsers.filter(u => u.role !== 'admin').map(u => (
+                      {displayUsers.map(u => (
                         <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50">
                           <td className="py-2 px-3 font-medium">
                             <div className="flex items-center gap-1.5">
@@ -1580,7 +1629,8 @@ export default function AdminDashboard() {
                   </table>
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {activeTab === 'network' && hasPermission('view_network') && (
               <div>
