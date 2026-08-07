@@ -1523,7 +1523,7 @@ export default function AdminDashboard() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead><tr className="bg-gray-50">
-                      {[at('colName'),at('colEmail'),at('colPkg'),at('colBal'),at('colPv'),at('colStatus'),at('colPass'),at('colAction')].map(h => (
+                      {[at('colName'),at('colEmail'),'যোগদানের তারিখ',at('colPkg'),at('colBal'),at('colPv'),at('colStatus'),at('colPass'),at('colAction')].map(h => (
                         <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-500">{h}</th>
                       ))}
                     </tr></thead>
@@ -1537,6 +1537,7 @@ export default function AdminDashboard() {
                             </div>
                           </td>
                           <td className="py-2 px-3 text-xs"><p>{u.email}</p><p className="text-gray-400">{u.phone}</p></td>
+                          <td className="py-2 px-3 text-xs text-gray-500 whitespace-nowrap">{formatBnDate(u.created_at)}</td>
                           <td className="py-2 px-3">
                             <span className={`text-xs px-2 py-0.5 rounded-full ${u.package_type==='gold'?'bg-yellow-100 text-yellow-700':u.package_type==='shareholder'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>
                               {u.package_type==='customer'?'কাস্টমার':u.package_type==='shareholder'?'শেয়ারহোল্ডার':'গোল্ড'}
@@ -2386,7 +2387,11 @@ export default function AdminDashboard() {
       {editUser && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-bold mb-4">ইউজার এডিট</h2>
+            <h2 className="text-lg font-bold mb-3">ইউজার এডিট</h2>
+            <div className="mb-4 bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-xs text-indigo-700 font-medium flex items-center justify-between">
+              <span>📅 যোগদানের তারিখ:</span>
+              <span className="font-bold">{formatBnDateTime(editUser.created_at)}</span>
+            </div>
             <div className="space-y-3">
               {[
                 { label: 'নাম',        key: 'name',            type: 'text'   },
@@ -2483,6 +2488,7 @@ export default function AdminDashboard() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{u.name}</p>
                     <p className="text-xs text-gray-400">{u.phone}{u.email ? ` · ${u.email}` : ''}</p>
+                    <p className="text-[10px] text-gray-400">📅 যোগদান: {formatBnDate(u.created_at)}</p>
                     {pkgModalType === 'dealer' && u.dealer_area && (
                       <p className="text-[10px] text-orange-600 font-medium mt-0.5">📍 {u.dealer_area}</p>
                     )}
