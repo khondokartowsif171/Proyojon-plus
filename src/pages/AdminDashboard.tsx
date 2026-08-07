@@ -1188,7 +1188,6 @@ export default function AdminDashboard() {
     { id: 'customer_packages', perm: 'view_members',        label: 'কাস্টমার প্যাকেজ',     icon: <UserCheck size={18} /> },
     { id: 'shareholder_pkgs',  perm: 'view_members',        label: 'শেয়ারহোল্ডার প্যাকেজ', icon: <Award size={18} /> },
     { id: 'gold_packages',     perm: 'view_gold_packages',  label: at('gold_packages'),     icon: <Award size={18} /> },
-    { id: 'dealer_packages',   perm: 'view_members',        label: 'ডিলার তালিকা',         icon: <Star size={18} /> },
     { id: 'network',           perm: 'view_network',        label: at('network'),           icon: <Network size={18} /> },
     { id: 'categories',        perm: 'view_categories',     label: at('categories'),        icon: <FolderTree size={18} /> },
     { id: 'products',          perm: 'view_products',       label: at('products'),          icon: <ShoppingBag size={18} /> },
