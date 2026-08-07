@@ -98,6 +98,9 @@ const adminT = {
     customerPackages: 'কাস্টমার প্যাকেজ',
     shareholderPackages: 'শেয়ারহোল্ডার প্যাকেজ',
     subAdmins: 'সাব এডমিন',
+    superAdmin: 'সুপার এডমিন',
+    subAdminRole: 'সাব এডমিন',
+    joiningDate: 'যোগদানের তারিখ',
     newLast24h: 'গত ২৪ ঘণ্টায় নতুন',
     newLast7d: 'গত ৭ দিনে নতুন',
     customerPkgLabel: 'কাস্টমার',
@@ -143,6 +146,9 @@ const adminT = {
     customerPackages: 'Customer Packages',
     shareholderPackages: 'Shareholder Packages',
     subAdmins: 'Sub-Admins',
+    superAdmin: 'Super Admin',
+    subAdminRole: 'Sub Admin',
+    joiningDate: 'Joining Date',
     newLast24h: 'New in Last 24 Hours',
     newLast7d: 'New in Last 7 Days',
     customerPkgLabel: 'Customer',
@@ -165,8 +171,28 @@ export default function AdminDashboard() {
   const handleAdminLogout = () => { logout(); navigate('/admin/login'); };
   // Determine current admin display name
   const currentAdminName = user?.name || subAdminAccount?.name || 'Admin';
-  const currentAdminRole = isSuperAdmin ? 'সুপার এডমিন' : 'সাব এডমিন';
+  const currentAdminRole = isSuperAdmin ? at('superAdmin') : at('subAdminRole');
   const [activeTab, setActiveTab] = useState('overview');
+
+  const allSidebarItems = [
+    { id: 'overview',          perm: 'view_overview',      label: at('overview'),            icon: <BarChart3 size={18} /> },
+    { id: 'users',             perm: 'view_members',        label: at('users'),               icon: <Users size={18} /> },
+    { id: 'customer_packages', perm: 'view_members',        label: at('customerPackages'),   icon: <UserCheck size={18} /> },
+    { id: 'shareholder_pkgs',  perm: 'view_members',        label: at('shareholderPackages'),  icon: <Award size={18} /> },
+    { id: 'gold_packages',     perm: 'view_gold_packages',  label: at('gold_packages'),       icon: <Award size={18} /> },
+    { id: 'network',           perm: 'view_network',        label: at('network'),             icon: <Network size={18} /> },
+    { id: 'categories',        perm: 'view_categories',     label: at('categories'),          icon: <FolderTree size={18} /> },
+    { id: 'products',          perm: 'view_products',       label: at('products'),            icon: <ShoppingBag size={18} /> },
+    { id: 'content',           perm: 'view_gallery',        label: at('content'),             icon: <Image size={18} /> },
+    { id: 'payments',          perm: 'view_payments',       label: at('payments'),            icon: <CreditCard size={18} /> },
+    { id: 'clubs',             perm: 'distribute_clubs',    label: at('clubs'),               icon: <Gift size={18} /> },
+    { id: 'withdrawals',       perm: 'view_withdrawals',    label: at('withdrawals'),         icon: <Wallet size={18} /> },
+    { id: 'transactions',      perm: 'view_transactions',   label: at('transactions'),        icon: <FileText size={18} /> },
+    { id: 'orders',            perm: 'view_orders',         label: at('orders'),              icon: <Package size={18} /> },
+    { id: 'dealer-req',        perm: 'view_dealer_req',     label: at('dealerReq'),           icon: <Star size={18} /> },
+    { id: 'reports',           perm: 'view_reports',        label: at('reports'),             icon: <BarChart3 size={18} /> },
+    { id: 'sub-admins',        perm: 'manage_sub_admins',   label: at('subAdmins'),          icon: <Shield size={18} /> },
+  ];
   const [users, setUsers] = useState<any[]>([]);
   const [clubPools, setClubPools] = useState<any[]>([]);
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
@@ -1203,25 +1229,6 @@ export default function AdminDashboard() {
 
   const isAdminAccess = (user?.role === 'admin') || (!!subAdminAccount && subAdminAccount.is_active);
 
-  const allSidebarItems = [
-    { id: 'overview',          perm: 'view_overview',      label: at('overview'),          icon: <BarChart3 size={18} /> },
-    { id: 'users',             perm: 'view_members',        label: at('users'),             icon: <Users size={18} /> },
-    { id: 'customer_packages', perm: 'view_members',        label: 'কাস্টমার প্যাকেজ',     icon: <UserCheck size={18} /> },
-    { id: 'shareholder_pkgs',  perm: 'view_members',        label: 'শেয়ারহোল্ডার প্যাকেজ', icon: <Award size={18} /> },
-    { id: 'gold_packages',     perm: 'view_gold_packages',  label: at('gold_packages'),     icon: <Award size={18} /> },
-    { id: 'network',           perm: 'view_network',        label: at('network'),           icon: <Network size={18} /> },
-    { id: 'categories',        perm: 'view_categories',     label: at('categories'),        icon: <FolderTree size={18} /> },
-    { id: 'products',          perm: 'view_products',       label: at('products'),          icon: <ShoppingBag size={18} /> },
-    { id: 'content',           perm: 'view_gallery',        label: at('content'),           icon: <Image size={18} /> },
-    { id: 'payments',          perm: 'view_payments',       label: at('payments'),          icon: <CreditCard size={18} /> },
-    { id: 'clubs',             perm: 'distribute_clubs',    label: at('clubs'),             icon: <Gift size={18} /> },
-    { id: 'withdrawals',       perm: 'view_withdrawals',    label: at('withdrawals'),       icon: <Wallet size={18} /> },
-    { id: 'transactions',      perm: 'view_transactions',   label: at('transactions'),      icon: <FileText size={18} /> },
-    { id: 'orders',            perm: 'view_orders',         label: at('orders'),            icon: <Package size={18} /> },
-    { id: 'dealer-req',        perm: 'view_dealer_req',     label: at('dealerReq'),         icon: <Star size={18} /> },
-    { id: 'reports',           perm: 'view_reports',        label: at('reports'),           icon: <BarChart3 size={18} /> },
-    { id: 'sub-admins',        perm: 'manage_sub_admins',   label: 'সাব এডমিন',           icon: <Shield size={18} /> },
-  ];
   const sidebarItems = allSidebarItems.filter(item => hasPermission(item.perm));
 
   useEffect(() => {
