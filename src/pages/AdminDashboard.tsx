@@ -29,7 +29,9 @@ const clubLabels: Record<string, string> = {
 
 const formatBnDateTime = (isoString?: string | null): string => {
   if (!isoString) return '—';
-  const date = new Date(isoString);
+  let str = isoString.trim();
+  if (!str.endsWith('Z') && !str.includes('+')) str += 'Z';
+  const date = new Date(str);
   if (isNaN(date.getTime())) return '—';
   return date.toLocaleString('bn-BD', {
     timeZone: 'Asia/Dhaka',
@@ -45,7 +47,9 @@ const formatBnDateTime = (isoString?: string | null): string => {
 
 const formatBnDate = (isoString?: string | null): string => {
   if (!isoString) return '—';
-  const date = new Date(isoString);
+  let str = isoString.trim();
+  if (!str.endsWith('Z') && !str.includes('+')) str += 'Z';
+  const date = new Date(str);
   if (isNaN(date.getTime())) return '—';
   return date.toLocaleDateString('bn-BD', {
     timeZone: 'Asia/Dhaka',
