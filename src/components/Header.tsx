@@ -64,7 +64,6 @@ export default function Header({ isDashboard = false }: { isDashboard?: boolean 
                 <Link to="/shop" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium flex items-center gap-1">
                   <Store size={16} />
                   {t('shop')}
-                  <ChevronDown size={14} />
                 </Link>
                 {shopDropdown && (
                   <div className="absolute top-full left-0 mt-1 bg-white text-gray-800 rounded-xl shadow-2xl py-2 min-w-[200px] border border-gray-100">
@@ -86,10 +85,10 @@ export default function Header({ isDashboard = false }: { isDashboard?: boolean 
                 {t('packages')}
               </Link>
               <Link to="/gallery" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
-                গ্যালারি
+                {t('gallery')}
               </Link>
               <Link to="/about" className="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium">
-                আমাদের পরিচয়
+                {t('about')}
               </Link>
             </nav>
           )}
@@ -130,7 +129,7 @@ export default function Header({ isDashboard = false }: { isDashboard?: boolean 
                         </p>
                       ) : (
                         <span className="inline-block text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold mt-1">
-                          সাব এডমিন
+                          {t('subAdmin')}
                         </span>
                       )}
                     </div>
@@ -141,7 +140,7 @@ export default function Header({ isDashboard = false }: { isDashboard?: boolean 
                         onClick={() => setUserDropdown(false)}
                       >
                         <LayoutDashboard size={16} />
-                        এডমিন ড্যাশবোর্ড
+                        {t('adminDashboard')}
                       </Link>
                     ) : (
                       <Link
@@ -204,16 +203,16 @@ export default function Header({ isDashboard = false }: { isDashboard?: boolean 
           <div className="md:hidden pb-4 border-t border-white/10 mt-2 pt-4 space-y-2">
             {!isDashboard && (
               <>
-                <Link to="/" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>হোম</Link>
-                <Link to="/shop" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>শপ</Link>
+                <Link to="/" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>{t('home')}</Link>
+                <Link to="/shop" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>{t('shop')}</Link>
                 {collections.map(col => (
                   <Link key={col.id} to={`/collections/${col.handle}`} className="block px-6 py-2 rounded-lg hover:bg-white/10 text-xs text-gray-300" onClick={() => setMobileOpen(false)}>
                     {col.title}
                   </Link>
                 ))}
-                <Link to="/packages" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>প্যাকেজ</Link>
-                <Link to="/gallery" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>গ্যালারি</Link>
-                <Link to="/about" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>আমাদের পরিচয়</Link>
+                <Link to="/packages" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>{t('packages')}</Link>
+                <Link to="/gallery" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>{t('gallery')}</Link>
+                <Link to="/about" className="block px-3 py-2 rounded-lg hover:bg-white/10 text-sm" onClick={() => setMobileOpen(false)}>{t('about')}</Link>
               </>
             )}
           </div>

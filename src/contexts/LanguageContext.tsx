@@ -7,6 +7,7 @@ const strings = {
     // Nav
     home: 'হোম', shop: 'শপ', packages: 'প্যাকেজ', login: 'লগইন', register: 'রেজিস্ট্রেশন',
     dashboard: 'ড্যাশবোর্ড', logout: 'লগআউট', balance: 'ব্যালেন্স',
+    gallery: 'গ্যালারি', about: 'আমাদের পরিচয়', adminDashboard: 'এডমিন ড্যাশবোর্ড', subAdmin: 'সাব এডমিন',
     // Tabs
     overview: 'ওভারভিউ', income: 'ইনকাম', generations: 'টিম লেভেল', clubs: 'ক্লাব',
     pkgTab: 'প্যাকেজ', withdraw: 'উইথড্রো', transfer: 'ট্রান্সফার', history: 'ইতিহাস', profile: 'প্রোফাইল',
@@ -70,6 +71,7 @@ const strings = {
   en: {
     home: 'Home', shop: 'Shop', packages: 'Packages', login: 'Login', register: 'Register',
     dashboard: 'Dashboard', logout: 'Logout', balance: 'Balance',
+    gallery: 'Gallery', about: 'About Us', adminDashboard: 'Admin Dashboard', subAdmin: 'Sub Admin',
     overview: 'Overview', income: 'Income', generations: 'Team Level', clubs: 'Clubs',
     pkgTab: 'Packages', withdraw: 'Withdraw', transfer: 'Transfer', history: 'History', profile: 'Profile',
     myId: 'My Account Info', name: 'Name', email: 'Email', phone: 'Phone',
