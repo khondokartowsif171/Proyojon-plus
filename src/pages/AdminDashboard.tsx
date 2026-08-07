@@ -1183,21 +1183,24 @@ export default function AdminDashboard() {
   const isAdminAccess = (user?.role === 'admin') || (!!subAdminAccount && subAdminAccount.is_active);
 
   const allSidebarItems = [
-    { id: 'overview',      perm: 'view_overview',      label: at('overview'),      icon: <BarChart3 size={18} /> },
-    { id: 'users',         perm: 'view_members',        label: at('users'),         icon: <Users size={18} /> },
-    { id: 'network',       perm: 'view_network',        label: at('network'),       icon: <Network size={18} /> },
-    { id: 'categories',    perm: 'view_categories',     label: at('categories'),    icon: <FolderTree size={18} /> },
-    { id: 'products',      perm: 'view_products',       label: at('products'),      icon: <ShoppingBag size={18} /> },
-    { id: 'content',       perm: 'view_gallery',        label: at('content'),       icon: <Image size={18} /> },
-    { id: 'gold_packages', perm: 'view_gold_packages',  label: at('gold_packages'), icon: <Award size={18} /> },
-    { id: 'payments',      perm: 'view_payments',       label: at('payments'),      icon: <CreditCard size={18} /> },
-    { id: 'clubs',         perm: 'distribute_clubs',    label: at('clubs'),         icon: <Gift size={18} /> },
-    { id: 'withdrawals',   perm: 'view_withdrawals',    label: at('withdrawals'),   icon: <Wallet size={18} /> },
-    { id: 'transactions',  perm: 'view_transactions',   label: at('transactions'),  icon: <FileText size={18} /> },
-    { id: 'orders',        perm: 'view_orders',         label: at('orders'),        icon: <Package size={18} /> },
-    { id: 'dealer-req',    perm: 'view_dealer_req',     label: at('dealerReq'),     icon: <Star size={18} /> },
-    { id: 'reports',       perm: 'view_reports',        label: at('reports'),       icon: <BarChart3 size={18} /> },
-    { id: 'sub-admins',    perm: 'manage_sub_admins',   label: 'সাব এডমিন',       icon: <Shield size={18} /> },
+    { id: 'overview',          perm: 'view_overview',      label: at('overview'),          icon: <BarChart3 size={18} /> },
+    { id: 'users',             perm: 'view_members',        label: at('users'),             icon: <Users size={18} /> },
+    { id: 'customer_packages', perm: 'view_members',        label: 'কাস্টমার প্যাকেজ',     icon: <UserCheck size={18} /> },
+    { id: 'shareholder_pkgs',  perm: 'view_members',        label: 'শেয়ারহোল্ডার প্যাকেজ', icon: <Award size={18} /> },
+    { id: 'gold_packages',     perm: 'view_gold_packages',  label: at('gold_packages'),     icon: <Award size={18} /> },
+    { id: 'dealer_packages',   perm: 'view_members',        label: 'ডিলার তালিকা',         icon: <Star size={18} /> },
+    { id: 'network',           perm: 'view_network',        label: at('network'),           icon: <Network size={18} /> },
+    { id: 'categories',        perm: 'view_categories',     label: at('categories'),        icon: <FolderTree size={18} /> },
+    { id: 'products',          perm: 'view_products',       label: at('products'),          icon: <ShoppingBag size={18} /> },
+    { id: 'content',           perm: 'view_gallery',        label: at('content'),           icon: <Image size={18} /> },
+    { id: 'payments',          perm: 'view_payments',       label: at('payments'),          icon: <CreditCard size={18} /> },
+    { id: 'clubs',             perm: 'distribute_clubs',    label: at('clubs'),             icon: <Gift size={18} /> },
+    { id: 'withdrawals',       perm: 'view_withdrawals',    label: at('withdrawals'),       icon: <Wallet size={18} /> },
+    { id: 'transactions',      perm: 'view_transactions',   label: at('transactions'),      icon: <FileText size={18} /> },
+    { id: 'orders',            perm: 'view_orders',         label: at('orders'),            icon: <Package size={18} /> },
+    { id: 'dealer-req',        perm: 'view_dealer_req',     label: at('dealerReq'),         icon: <Star size={18} /> },
+    { id: 'reports',           perm: 'view_reports',        label: at('reports'),           icon: <BarChart3 size={18} /> },
+    { id: 'sub-admins',        perm: 'manage_sub_admins',   label: 'সাব এডমিন',           icon: <Shield size={18} /> },
   ];
   const sidebarItems = allSidebarItems.filter(item => hasPermission(item.perm));
 
@@ -1880,6 +1883,157 @@ export default function AdminDashboard() {
                     </tbody>
                   </table>
                   {adminGoldPkgs.length===0&&<p className="text-center text-gray-400 py-8 text-sm">কোনো গোল্ড প্যাকেজ নেই</p>}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'customer_packages' && hasPermission('view_members') && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">কাস্টমার প্যাকেজ সদস্য তালিকা</h2>
+                    <p className="text-xs text-gray-500">মোট {users.filter(u => u.package_type === 'customer' && u.role !== 'admin').length} জন কাস্টমার সদস্য</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="bg-blue-50">
+                      {['#', 'সদস্য', 'ইমেইল/মোবাইল', 'যোগদানের তারিখ', 'ব্যালেন্স', 'PV (মাসিক)', 'স্ট্যাটাস', 'অ্যাকশন'].map(h => (
+                        <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-600">{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {users.filter(u => u.package_type === 'customer' && u.role !== 'admin').map((u, i) => (
+                        <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-2 px-3 text-xs text-gray-400">{i+1}</td>
+                          <td className="py-2 px-3 font-medium text-xs">
+                            <div className="flex items-center gap-1.5">
+                              {u.name}
+                              {u.is_dealer && <span className="text-[9px] px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded-full font-bold">ডিলার</span>}
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 text-xs"><p>{u.email}</p><p className="text-gray-400">{u.phone}</p></td>
+                          <td className="py-2 px-3 text-xs text-gray-500 whitespace-nowrap">{formatBnDate(u.created_at)}</td>
+                          <td className="py-2 px-3 font-medium text-xs">৳{(u.current_balance||0).toLocaleString()}</td>
+                          <td className="py-2 px-3 text-xs">{u.monthly_pv_purchased||0}/100</td>
+                          <td className="py-2 px-3">
+                            <span className={`text-xs ${u.is_locked?'text-red-600':u.is_active?'text-green-600':'text-yellow-600'}`}>
+                              {u.is_locked?'লক':u.is_active?'সক্রিয়':'নিষ্ক্রিয়'}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3">
+                            {hasPermission('edit_members') && (
+                              <button onClick={() => setEditUser({...u})} className="p-1.5 rounded-lg hover:bg-indigo-50 text-indigo-600"><Edit size={14} /></button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {users.filter(u => u.package_type === 'customer' && u.role !== 'admin').length === 0 && (
+                    <p className="text-center text-gray-400 py-8 text-sm">কোনো কাস্টমার সদস্য নেই</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'shareholder_pkgs' && hasPermission('view_members') && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">শেয়ারহোল্ডার প্যাকেজ সদস্য তালিকা</h2>
+                    <p className="text-xs text-gray-500">মোট {users.filter(u => u.package_type === 'shareholder' && u.role !== 'admin').length} জন শেয়ারহোল্ডার সদস্য</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="bg-purple-50">
+                      {['#', 'সদস্য', 'ইমেইল/মোবাইল', 'শেয়ার সংখ্যা', 'বিনিয়োগ (৳)', 'যোগদানের তারিখ', 'ব্যালেন্স', 'স্ট্যাটাস', 'অ্যাকশন'].map(h => (
+                        <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-600">{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {users.filter(u => u.package_type === 'shareholder' && u.role !== 'admin').map((u, i) => (
+                        <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-2 px-3 text-xs text-gray-400">{i+1}</td>
+                          <td className="py-2 px-3 font-medium text-xs">{u.name}</td>
+                          <td className="py-2 px-3 text-xs"><p>{u.email}</p><p className="text-gray-400">{u.phone}</p></td>
+                          <td className="py-2 px-3 font-bold text-xs text-purple-700">{u.shareholder_count||1}টি শেয়ার</td>
+                          <td className="py-2 px-3 font-bold text-xs text-indigo-700">৳{((u.shareholder_count||1)*5000).toLocaleString()}</td>
+                          <td className="py-2 px-3 text-xs text-gray-500 whitespace-nowrap">{formatBnDate(u.created_at)}</td>
+                          <td className="py-2 px-3 font-medium text-xs">৳{(u.current_balance||0).toLocaleString()}</td>
+                          <td className="py-2 px-3">
+                            <span className={`text-xs ${u.is_locked?'text-red-600':u.is_active?'text-green-600':'text-yellow-600'}`}>
+                              {u.is_locked?'লক':u.is_active?'সক্রিয়':'নিষ্ক্রিয়'}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3">
+                            {hasPermission('edit_members') && (
+                              <button onClick={() => setEditUser({...u})} className="p-1.5 rounded-lg hover:bg-indigo-50 text-indigo-600"><Edit size={14} /></button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {users.filter(u => u.package_type === 'shareholder' && u.role !== 'admin').length === 0 && (
+                    <p className="text-center text-gray-400 py-8 text-sm">কোনো শেয়ারহোল্ডার সদস্য নেই</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'dealer_packages' && hasPermission('view_members') && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">ডিলার সদস্য তালিকা</h2>
+                    <p className="text-xs text-gray-500">মোট {users.filter(u => u.is_dealer && u.role !== 'admin').length} জন মনোনীত ডিলার</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="bg-orange-50">
+                      {['#', 'ডিলার নাম', 'ইমেইল/মোবাইল', 'ডিলার এলাকা', 'প্যাকেজ', 'যোগদানের তারিখ', 'ব্যালেন্স', 'স্ট্যাটাস', 'অ্যাকশন'].map(h => (
+                        <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-600">{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {users.filter(u => u.is_dealer && u.role !== 'admin').map((u, i) => (
+                        <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-2 px-3 text-xs text-gray-400">{i+1}</td>
+                          <td className="py-2 px-3 font-medium text-xs">
+                            <span className="font-bold text-orange-700">{u.name}</span>
+                          </td>
+                          <td className="py-2 px-3 text-xs"><p>{u.email}</p><p className="text-gray-400">{u.phone}</p></td>
+                          <td className="py-2 px-3 text-xs font-semibold text-orange-600">📍 {u.dealer_area || 'নির্দিষ্ট নেই'}</td>
+                          <td className="py-2 px-3 text-xs">{u.package_type}</td>
+                          <td className="py-2 px-3 text-xs text-gray-500 whitespace-nowrap">{formatBnDate(u.created_at)}</td>
+                          <td className="py-2 px-3 font-medium text-xs">৳{(u.current_balance||0).toLocaleString()}</td>
+                          <td className="py-2 px-3">
+                            <span className={`text-xs ${u.is_locked?'text-red-600':u.is_active?'text-green-600':'text-yellow-600'}`}>
+                              {u.is_locked?'লক':u.is_active?'সক্রিয়':'নিষ্ক্রিয়'}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3">
+                            <div className="flex gap-1">
+                              {hasPermission('edit_members') && (
+                                <button onClick={() => setEditUser({...u})} className="p-1.5 rounded-lg hover:bg-indigo-50 text-indigo-600"><Edit size={14} /></button>
+                              )}
+                              {hasPermission('set_dealer') && (
+                                <button onClick={() => handleToggleDealer(u.id, false)} title="ডিলার মর্যাদা বাতিল" className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100">
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {users.filter(u => u.is_dealer && u.role !== 'admin').length === 0 && (
+                    <p className="text-center text-gray-400 py-8 text-sm">কোনো মনোনীত ডিলার নেই</p>
+                  )}
                 </div>
               </div>
             )}
