@@ -816,16 +816,25 @@ export default function AdminDashboard() {
     const { data: members } = await query;
     if (!members || members.length === 0) { toast.error('এই ক্লাবে কোনো সক্রিয় সদস্য নেই'); setLoading(false); return; }
 
-    const perMember = Math.floor(pool.total_amount / members.length);
+    const perMember = parseFloat((pool.total_amount / members.length).toFixed(4));
     if (perMember <= 0) { toast.error('পরিমাণ যথেষ্ট নয়'); setLoading(false); return; }
 
     for (const member of members) {
-      await supabase.from('mlm_users').update({ current_balance: (member.current_balance || 0) + perMember, total_income: (member.total_income || 0) + perMember }).eq('id', member.id);
-      await supabase.from('mlm_transactions').insert({ user_id: member.id, type: clubType, amount: perMember, description: `${clubLabels[clubType]} বোনাস বন্টন` });
+      await supabase.from('mlm_users').update({
+        current_balance: parseFloat(((member.current_balance || 0) + perMember).toFixed(4)),
+        total_income:    parseFloat(((member.total_income    || 0) + perMember).toFixed(4)),
+      }).eq('id', member.id);
+
+      await supabase.from('mlm_transactions').insert({
+        user_id: member.id,
+        type: clubType,
+        amount: perMember,
+        description: `${clubLabels[clubType]} বোনাস বন্টন (৳${perMember.toFixed(2)})`,
+      });
     }
 
     await supabase.from('mlm_club_pools').update({ total_amount: 0 }).eq('id', pool.id);
-    toast.success(`✅ ${members.length} জনকে প্রতিজনে ৳${perMember} বন্টন হয়েছে!`);
+    toast.success(`✅ ${members.length} জনকে প্রতিজনে ৳${perMember.toFixed(2)} বন্টন হয়েছে!`);
     fetchAll(); setLoading(false);
   };
 
@@ -865,10 +874,20 @@ export default function AdminDashboard() {
     const { data: u } = await supabase.from('mlm_users')
       .select('id, referrer_id, is_active, current_balance, total_income').eq('id', userId).single();
     if (!u || !u.is_active) return;
-    const bonus = Math.floor(pvPoints * 0.01);
+    const bonus = parseFloat((pvPoints * 0.01).toFixed(4));
     if (bonus > 0) {
-      await supabase.from('mlm_users').update({ current_balance: (u.current_balance || 0) + bonus, total_income: (u.total_income || 0) + bonus }).eq('id', userId);
-      await supabase.from('mlm_transactions').insert({ user_id: userId, type: 'generation_bonus', amount: bonus, description: `জেনারেশন ${gen} বোনাস (PV: ${pvPoints})`, related_user_id: sourceId });
+      await supabase.from('mlm_users').update({
+        current_balance: parseFloat(((u.current_balance || 0) + bonus).toFixed(4)),
+        total_income:    parseFloat(((u.total_income    || 0) + bonus).toFixed(4)),
+      }).eq('id', userId);
+
+      await supabase.from('mlm_transactions').insert({
+        user_id: userId,
+        type: 'generation_bonus',
+        amount: bonus,
+        description: `জেনারেশন ${gen} বোনাস ৳${bonus.toFixed(2)} (PV: ${pvPoints})`,
+        related_user_id: sourceId,
+      });
     }
     if (u.referrer_id) await distributeGenerationBonus(u.referrer_id, pvPoints, sourceId, gen + 1);
   };
@@ -959,7 +978,7 @@ export default function AdminDashboard() {
 
           // প্রথম activation এ referrer কমিশন + count + club promotion
           if (justFirstActivated && userData.referrer_id) {
-            const commission = Math.floor(1000 * 0.05); // সবসময় ৳৫০
+            const commission = parseFloat((1000 * 0.05).toFixed(4)); // সবসময় ৳৫০
             const { data: ref } = await supabase.from('mlm_users')
               .select('id, current_balance, total_income, is_active, direct_referrals_count, is_weekly_club, is_insurance_club, name')
               .eq('id', userData.referrer_id).single();
@@ -1142,10 +1161,10 @@ export default function AdminDashboard() {
           let desc       = '';
 
           if (isCustomer) {
-            commission = Math.floor(1000 * 0.05); // ৳50 fixed per customer
+            commission = parseFloat((1000 * 0.05).toFixed(4)); // ৳50 fixed per customer
             desc       = 'কাস্টমার রেফার কমিশন (৫%)';
           } else if (isShareholder) {
-            commission = quantity * Math.floor(5000 * 0.025); // ৳125 × quantity
+            commission = parseFloat((quantity * 5000 * 0.025).toFixed(4)); // ৳125 × quantity
             desc       = `শেয়ারহোল্ডার রেফার কমিশন (২.৫% × ${quantity}টি)`;
           } else if (isGold) {
             const amtPerPkg2   = (pv.amount||0) / quantity;
