@@ -208,6 +208,19 @@ export default function UserDashboard() {
       const {data:pvLog} = await supabase.from('mlm_pv_log').select('*, user:mlm_users(name,phone)').in('user_id', directIds).order('created_at',{ascending:false}).limit(20);
       if (pvLog) setReferralPurchases(pvLog);
     }
+    // Real-time auto-deactivation check if 30-day expiry passed and monthly PV < 100
+    if (
+      user.is_active &&
+      user.role !== 'admin' &&
+      user.package_type === 'customer' &&
+      user.expires_at &&
+      new Date(user.expires_at) < new Date() &&
+      (user.monthly_pv_purchased || 0) < 100
+    ) {
+      await supabase.from('mlm_users').update({ is_active: false }).eq('id', user.id);
+      await refreshUser();
+    }
+
     await buildGenerationTable();
     setLoading(false);
   };
