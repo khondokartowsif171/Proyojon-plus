@@ -29,7 +29,7 @@ const strings = {
     goShop: 'শপে যান →',
     // Clubs
     clubTitle: 'ক্লাব সদস্যপদ', member: 'সদস্য ✓', notMember: 'সদস্য নয়', pool: 'পুল',
-    weeklyProgress: 'উইকলি ক্লাব অগ্রগতি', weeklyTarget: '১৫ জন সক্রিয় Customer দরকার',
+    weeklyProgress: 'সেলারী ক্লাব অগ্রগতি', weeklyTarget: '১৫ জন সক্রিয় Customer দরকার',
     insuranceProgress: 'ইনসুরেন্স/পেনশন অগ্রগতি', insuranceTarget: '১৫ জন Weekly Club সদস্য দরকার',
     yourDirects: 'আপনার ডিরেক্ট সক্রিয় Customer',
     weeklyDirects: 'Weekly Club সদস্য (ডিরেক্ট)',

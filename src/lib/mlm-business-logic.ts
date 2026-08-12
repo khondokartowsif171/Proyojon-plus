@@ -26,13 +26,12 @@ export const WITHDRAW_CHARGE_PCT     = 0.05;
 export const TRANSFER_MIN            = 100;
 
 export const PV_CLUB_PCTS: Record<string, number> = {
-  daily_club:       0.20,    // ২০% (আগে ৩০% ছিল)
-  weekly_club:      0.03,    // ৩% (আগে ২.৫% ছিল)
-  insurance_club:   0.0125,  // ১.২৫%
-  pension_club:     0.0125,  // ১.২৫%
-  shareholder_club: 0.10,    // ১০%
-  reward_pool:      0.07,    // ৭% (নতুন)
-  admin_price_pool: 0.05,    // ৫% (নতুন)
+  daily_club:              0.20,    // ২০%
+  weekly_club:             0.03,    // ৩% (সেলারী ক্লাব)
+  shareholder_club:        0.10,    // ১০%
+  reward_pool:             0.07,    // ৭%
+  admin_price_pool:        0.05,    // ৫%
+  lottery_omrah_hajj_club: 0.05,    // ৫% (লটারি ওমরা হজ্জ ক্লাব)
 };
 
 export const CUSTOMER_REFERRAL_PCT    = 0.05;   // ৫% (১% × ৫ লেভেল)
@@ -44,17 +43,21 @@ export const DEALER_COMMISSION_PCT    = 0.05;   // ডিলার: নিজে
 // ── Club pool: add PV amount to all relevant pools ───────────────────────────
 export const addToClubPools = async (pvAmount: number): Promise<void> => {
   const { data: pools } = await supabase.from('mlm_club_pools').select('*');
-  if (!pools) return;
+  const existingPools = pools || [];
 
   for (const [clubType, pct] of Object.entries(PV_CLUB_PCTS)) {
     const amt = Math.floor(pvAmount * pct);
     if (amt <= 0) continue;
-    const pool = pools.find((p: any) => p.club_type === clubType);
+    const pool = existingPools.find((p: any) => p.club_type === clubType);
     if (pool) {
       await supabase
         .from('mlm_club_pools')
         .update({ total_amount: Number(pool.total_amount || 0) + amt })
         .eq('club_type', clubType);
+    } else {
+      await supabase
+        .from('mlm_club_pools')
+        .insert({ club_type: clubType, total_amount: amt });
     }
   }
 };

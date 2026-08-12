@@ -89,6 +89,7 @@ export default function UserDashboard() {
   const [generations,      setGenerations]      = useState<any[]>([]);
   const [withdrawals,      setWithdrawals]      = useState<any[]>([]);
   const [clubPools,        setClubPools]        = useState<any[]>([]);
+  const [pvLeaders,        setPvLeaders]        = useState<any[]>([]);
   const [goldPackages,     setGoldPackages]     = useState<any[]>([]);
   const [goldLockerImages, setGoldLockerImages] = useState<string[]>([]);
   const [pendingPayments,  setPendingPayments]  = useState<any[]>([]);
@@ -202,6 +203,16 @@ export default function UserDashboard() {
     if (dirRes.data) setDirectCustomers(dirRes.data);
     if (lockerRes.data) setGoldLockerImages(lockerRes.data.map((p:any)=>p.locker_image_url).filter(Boolean));
     if (shRes.data)  setShareholderHistory(shRes.data);
+
+    // Fetch Top 15 PV Leaders for User Dashboard
+    const { data: leadersData } = await supabase
+      .from('mlm_users')
+      .select('id, name, phone, package_type, monthly_pv_purchased')
+      .neq('role', 'admin')
+      .order('monthly_pv_purchased', { ascending: false })
+      .limit(15);
+    if (leadersData) setPvLeaders(leadersData);
+
     // Referral purchases feed
     const directIds = (dirRes.data||[]).map((u:any)=>u.id);
     if (directIds.length > 0) {
@@ -984,7 +995,7 @@ export default function UserDashboard() {
                     {[
                       {label:t('referIncome'), value:sumByType('referral_income')},
                       {label:t('genBonus'),    value:sumByType('generation_bonus')},
-                      {label:t('clubBonus'),   value:sumByTypes(['daily_club','weekly_club','insurance_club','pension_club','shareholder_club'])},
+                      {label:t('clubBonus'),   value:sumByTypes(['daily_club','weekly_club','shareholder_club','lottery_omrah_hajj_club'])},
                       ...(user.package_type==='gold'?[{label:t('goldDaily'),value:sumByType('gold_daily')}]:[]),
                       ...(user.is_dealer?[{label:'ডিলার কমিশন',value:sumByType('dealer_commission')}]:[]),
                     ].map((item,i)=>(
@@ -1003,6 +1014,38 @@ export default function UserDashboard() {
                   </div>
                 </div>
               </div>
+
+              {/* ── Top 15 PV Leaders Leaderboard ── */}
+              <div className="mt-6 bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                    <Star size={16} className="text-yellow-500 fill-yellow-500" />
+                    সর্বোচ্চ PV অর্জনকারী ১৫ জন (Leaderboard)
+                  </h3>
+                  <span className="text-[11px] text-gray-400 font-medium">মাসিক PV এর ভিত্তিতে</span>
+                </div>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {pvLeaders.filter(u => (u.monthly_pv_purchased || 0) > 0).slice(0, 15).map((u, i) => (
+                    <div key={u.id || i} className="flex items-center gap-3 p-2.5 rounded-xl bg-gray-50/80 border border-gray-100">
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs text-white flex-shrink-0 ${i===0?'bg-amber-500':i===1?'bg-slate-400':i===2?'bg-amber-700':'bg-gray-300'}`}>
+                        {i + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-xs text-gray-800 truncate">{u.name}</p>
+                        <p className="text-[10px] text-gray-400">
+                          {u.phone ? `${u.phone.slice(0, 3)}****${u.phone.slice(-4)}` : '—'}
+                        </p>
+                      </div>
+                      <span className="font-bold text-xs text-indigo-600 flex-shrink-0">
+                        {(u.monthly_pv_purchased || 0).toLocaleString()} PV
+                      </span>
+                    </div>
+                  ))}
+                  {pvLeaders.filter(u => (u.monthly_pv_purchased || 0) > 0).length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-4 col-span-full">এখনো কোনো PV ডাটা পাওয়া যায়নি</p>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -1012,14 +1055,13 @@ export default function UserDashboard() {
               <h2 className="text-lg font-bold mb-5">{t('incomeDetails')}</h2>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {([
-                  {label:t('referIncome'),   type:'referral_income',  color:'from-green-500 to-emerald-600', icon:<Users size={20}/>},
-                  {label:t('genBonus'),       type:'generation_bonus', color:'from-blue-500 to-indigo-600',   icon:<TrendingUp size={20}/>},
-                  {label:'ডেইলি ক্লাব',      type:'daily_club',       color:'from-orange-500 to-red-600',    icon:<Gift size={20}/>},
-                  {label:'উইকলি ক্লাব',       type:'weekly_club',      color:'from-purple-500 to-pink-600',   icon:<Crown size={20}/>},
-                  {label:'ইনসুরেন্স ক্লাব',  type:'insurance_club',   color:'from-teal-500 to-cyan-600',     icon:<Shield size={20}/>},
-                  {label:'পেনশন ক্লাব',       type:'pension_club',     color:'from-amber-500 to-yellow-600',  icon:<Award size={20}/>},
-                  {label:'শেয়ারহোল্ডার ক্লাব',type:'shareholder_club',color:'from-violet-500 to-purple-600', icon:<Star size={20}/>},
-                  {label:t('goldDaily'),      type:'gold_daily',       color:'from-yellow-500 to-orange-600', icon:<Award size={20}/>},
+                  {label:t('referIncome'),       type:'referral_income',         color:'from-green-500 to-emerald-600', icon:<Users size={20}/>},
+                  {label:t('genBonus'),           type:'generation_bonus',        color:'from-blue-500 to-indigo-600',   icon:<TrendingUp size={20}/>},
+                  {label:'ডেইলি ক্লাব',          type:'daily_club',              color:'from-orange-500 to-red-600',    icon:<Gift size={20}/>},
+                  {label:'সেলারী ক্লাব',         type:'weekly_club',             color:'from-purple-500 to-pink-600',   icon:<Crown size={20}/>},
+                  {label:'শেয়ারহোল্ডার ক্লাব',  type:'shareholder_club',        color:'from-violet-500 to-purple-600', icon:<Star size={20}/>},
+                  {label:'লটারি ওমরা হজ্জ ক্লাব', type:'lottery_omrah_hajj_club', color:'from-teal-500 to-emerald-600',  icon:<Award size={20}/>},
+                  {label:t('goldDaily'),          type:'gold_daily',              color:'from-yellow-500 to-orange-600', icon:<Award size={20}/>},
                 ]).map(item=>(
                   <div key={item.type} className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
                     <div className={`w-10 h-10 bg-gradient-to-br ${item.color} rounded-xl flex items-center justify-center text-white mb-3`}>{item.icon}</div>
@@ -1097,11 +1139,10 @@ export default function UserDashboard() {
               <h2 className="text-lg font-bold mb-5">{t('clubTitle')}</h2>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                 {([
-                  {key:'daily_club',       label:'ডেইলি ক্লাব',        desc:'PV এর ৩০%',   flag:user.is_daily_club,       color:'from-orange-500 to-red-500',    cond:'Customer package হলেই',      icon:<ShoppingBag size={18}/>},
-                  {key:'weekly_club',      label:'উইকলি ক্লাব',         desc:'PV এর ২.৫%',  flag:user.is_weekly_club,      color:'from-green-500 to-emerald-600',cond:'১৫ ডিরেক্ট Customer রেফার', icon:<Users size={18}/>},
-                  {key:'insurance_club',   label:'ইনসুরেন্স ক্লাব',     desc:'PV এর ১.২৫%', flag:user.is_insurance_club,   color:'from-blue-500 to-indigo-600',  cond:'১৫ জন Weekly club member',   icon:<Shield size={18}/>},
-                  {key:'pension_club',     label:'পেনশন ক্লাব',         desc:'PV এর ১.২৫%', flag:user.is_pension_club,     color:'from-teal-500 to-cyan-600',    cond:'ইনসুরেন্সের সাথেই পাবেন',  icon:<Award size={18}/>},
-                  {key:'shareholder_club', label:'শেয়ারহোল্ডার ক্লাব',  desc:'PV এর ১০%',   flag:user.is_shareholder_club, color:'from-purple-500 to-violet-600',cond:'Shareholder package holders',icon:<Crown size={18}/>},
+                  {key:'daily_club',              label:'ডেইলি ক্লাব',             desc:'PV এর ২০%',   flag:user.is_daily_club,       color:'from-orange-500 to-red-500',    cond:'Customer package হলেই',      icon:<ShoppingBag size={18}/>},
+                  {key:'weekly_club',             label:'সেলারী ক্লাব',            desc:'PV এর ৩%',   flag:user.is_weekly_club,      color:'from-green-500 to-emerald-600',cond:'১৫ ডিরেক্ট Customer রেফার', icon:<Users size={18}/>},
+                  {key:'shareholder_club',        label:'শেয়ারহোল্ডার ক্লাব',       desc:'PV এর ১০%',   flag:user.is_shareholder_club, color:'from-purple-500 to-violet-600',cond:'Shareholder package holders',icon:<Crown size={18}/>},
+                  {key:'lottery_omrah_hajj_club', label:'লটারি ওমরা হজ্জ ক্লাব', desc:'PV এর ৫%',    flag:true,                     color:'from-teal-500 to-emerald-600',  cond:'সকল অ্যাক্টিভ মেম্বারদের জন্য', icon:<Gift size={18}/>},
                 ]).map(club=>(
                   <div key={club.key} className={`rounded-xl p-5 border-2 transition-all ${club.flag?'border-green-300 bg-green-50':'border-gray-200 bg-gray-50'}`}>
                     <div className="flex items-center justify-between mb-3">
@@ -1111,7 +1152,7 @@ export default function UserDashboard() {
                     <h3 className="font-bold text-gray-800 text-sm mb-1">{club.label}</h3>
                     <p className="text-xs text-gray-500 mb-1">{club.desc}</p>
                     <p className="text-xs text-gray-400">{club.cond}</p>
-                    {club.flag&&<div className="mt-3 pt-2 border-t border-green-200"><p className="text-xs text-green-700 font-medium">{t('pool')}: ৳{getClubPool(club.key).toLocaleString()}</p></div>}
+                    <div className="mt-3 pt-2 border-t border-gray-200"><p className="text-xs text-indigo-700 font-medium">{t('pool')}: ৳{getClubPool(club.key).toLocaleString()}</p></div>
                   </div>
                 ))}
               </div>

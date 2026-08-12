@@ -18,13 +18,12 @@ import {
 import { toast } from 'sonner';
 
 const clubLabels: Record<string, string> = {
-  daily_club:       'ডেইলি ক্লাব (২০%)',
-  weekly_club:      'উইকলি ক্লাব (৩%)',
-  insurance_club:   'ইনসুরেন্স ক্লাব (১.২৫%)',
-  pension_club:     'পেনশন ক্লাব (১.২৫%)',
-  shareholder_club: 'শেয়ারহোল্ডার ক্লাব (১০%)',
-  reward_pool:      'রিওয়ার্ড পুল (৭%)',
-  admin_price_pool: 'এডমিন প্রাইস পয়েন্ট (৫%)',
+  daily_club:              'ডেইলি ক্লাব (২০%)',
+  weekly_club:             'সেলারী ক্লাব (৩%)',
+  shareholder_club:        'শেয়ারহোল্ডার ক্লাব (১০%)',
+  reward_pool:             'রিওয়ার্ড পুল (৭%)',
+  admin_price_pool:        'এডমিন প্রাইস পয়েন্ট (৫%)',
+  lottery_omrah_hajj_club: 'লটারি ওমরা হজ্জ ক্লাব (৫%)',
 };
 
 const formatBnDateTime = (isoString?: string | null): string => {
@@ -846,6 +845,14 @@ export default function AdminDashboard() {
     fetchAll(); setLoading(false);
   };
 
+  const handleResetLotteryOmrahHajjPool = async () => {
+    if (!window.confirm('লটারি ওমরা হজ্জ ক্লাব ব্যালেন্স শূন্য (০) করতে চান?')) return;
+    setLoading(true);
+    await supabase.from('mlm_club_pools').update({ total_amount: 0 }).eq('club_type', 'lottery_omrah_hajj_club');
+    toast.success('✅ লটারি ওমরা হজ্জ ক্লাব ব্যালেন্স জিরো (০) করা হয়েছে');
+    fetchAll(); setLoading(false);
+  };
+
   const handleApproveWithdrawal = async (id: string, approve: boolean) => {
     setLoading(true);
     const wd = withdrawals.find(w => w.id === id);
@@ -1398,9 +1405,26 @@ export default function AdminDashboard() {
                   ).slice(0, 20)
                 : [];
 
-              return (
-              <div>
-                <h2 className="text-lg font-bold mb-4">{at('systemOverview')}</h2>
+              return (() => {
+                const totalPvSum = users.reduce((sum: number, u: any) => sum + Number(u.pv_points || 0) + Number(u.monthly_pv_purchased || 0), 0);
+                const companyProfit = Math.round(totalPvSum * 0.25);
+
+                return (
+                <div>
+                  <h2 className="text-lg font-bold mb-4">{at('systemOverview')}</h2>
+
+                  {/* ── কোম্পানি প্রফিট ২৫% ── */}
+                  <div className="mb-5 p-4 bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl text-white shadow-md flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-100 uppercase tracking-wide">কোম্পানি প্রফিট (Company Profit - 25%)</p>
+                      <p className="text-2xl font-black mt-0.5">৳{companyProfit.toLocaleString()}</p>
+                      <p className="text-[11px] text-emerald-100/80 mt-1">৭৫% সিস্টেমে ডিস্ট্রিবিউট হওয়ার পর অবশিষ্ট ২৫% কোম্পানি লাভ</p>
+                    </div>
+                    <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-xl border border-white/20 text-center">
+                      <p className="text-[10px] text-emerald-100">টোটাল PV বিক্রয়</p>
+                      <p className="text-base font-bold text-white">{totalPvSum.toLocaleString()} PV</p>
+                    </div>
+                  </div>
 
                 {/* ── গত ২৪ঘ / ৭দিন stat row ── */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
@@ -1564,7 +1588,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
               );
-            })()}
+            })()();}
 
             {activeTab === 'users' && hasPermission('view_members') && (() => {
               const now = new Date();
@@ -1691,11 +1715,9 @@ export default function AdminDashboard() {
                           <td className="py-2.5 px-4">
                             <div className="flex flex-wrap gap-1 justify-center">
                               {m.is_daily_club       && <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full">ডেইলি</span>}
-                              {m.is_weekly_club      && <span className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full">উইকলি</span>}
-                              {m.is_insurance_club   && <span className="text-[9px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">ইনসুরেন্স</span>}
-                              {m.is_pension_club     && <span className="text-[9px] px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded-full">পেনশন</span>}
+                              {m.is_weekly_club      && <span className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full">সেলারী</span>}
                               {m.is_shareholder_club && <span className="text-[9px] px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">শেয়ারহোল্ডার</span>}
-                              {!m.is_daily_club&&!m.is_weekly_club&&!m.is_insurance_club&&!m.is_pension_club&&!m.is_shareholder_club&&(
+                              {!m.is_daily_club&&!m.is_weekly_club&&!m.is_shareholder_club&&(
                                 <span className="text-[9px] text-gray-400">কোনো ক্লাব নেই</span>
                               )}
                             </div>
@@ -2226,28 +2248,32 @@ export default function AdminDashboard() {
                   </div>
                 )}
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {clubPools.map(pool => {
+                  {clubPools.filter(p => p.club_type !== 'insurance_club' && p.club_type !== 'pension_club').map(pool => {
                     const memberCount =
                       pool.club_type==='daily_club'         ? users.filter(u=>u.is_daily_club&&u.role!=='admin').length
                       : pool.club_type==='weekly_club'      ? users.filter(u=>u.is_weekly_club).length
-                      : pool.club_type==='insurance_club'   ? users.filter(u=>u.is_insurance_club).length
-                      : pool.club_type==='pension_club'     ? users.filter(u=>u.is_pension_club).length
                       : pool.club_type==='shareholder_club' ? users.filter(u=>u.is_shareholder_club&&u.package_type==='shareholder').length : 0;
                     const perMember = memberCount>0&&pool.total_amount>0 ? Math.floor(pool.total_amount/memberCount) : 0;
-                    const pctLabel = pool.club_type==='daily_club'?'২০%':pool.club_type==='weekly_club'?'৩%':pool.club_type==='shareholder_club'?'১০%':pool.club_type==='reward_pool'?'৭%':pool.club_type==='admin_price_pool'?'৫%':'১.২৫%';
+                    const pctLabel = pool.club_type==='daily_club'?'২০%':pool.club_type==='weekly_club'?'৩%':pool.club_type==='shareholder_club'?'১০%':pool.club_type==='reward_pool'?'৭%':pool.club_type==='admin_price_pool'?'৫%':pool.club_type==='lottery_omrah_hajj_club'?'৫%':'—';
                     const isAdminPrice = pool.club_type === 'admin_price_pool';
                     const isReward = pool.club_type === 'reward_pool';
+                    const isLotteryOmrah = pool.club_type === 'lottery_omrah_hajj_club';
 
                     return (
-                      <div key={pool.id} className={`rounded-xl p-5 border ${isAdminPrice ? 'bg-purple-50 border-purple-200' : isReward ? 'bg-amber-50 border-amber-200' : 'bg-gradient-to-br from-gray-50 to-white border-gray-200'}`}>
+                      <div key={pool.id} className={`rounded-xl p-5 border ${isAdminPrice ? 'bg-purple-50 border-purple-200' : isReward ? 'bg-amber-50 border-amber-200' : isLotteryOmrah ? 'bg-emerald-50 border-emerald-200' : 'bg-gradient-to-br from-gray-50 to-white border-gray-200'}`}>
                         <h3 className="font-bold text-gray-800 mb-1">{clubLabels[pool.club_type]||pool.club_type}</h3>
                         <p className="text-xs text-gray-400 mb-2">{pctLabel} PV pool</p>
                         <p className="text-2xl font-bold text-indigo-600 mb-1">৳{(pool.total_amount||0).toLocaleString()}</p>
-                        {!isAdminPrice && !isReward && <p className="text-xs text-gray-500 mb-1">সদস্য: {memberCount} জন</p>}
-                        {perMember>0 && !isAdminPrice && !isReward && <p className="text-xs text-gray-400 mb-3">প্রতি জনে: ৳{perMember}</p>}
+                        {!isAdminPrice && !isReward && !isLotteryOmrah && <p className="text-xs text-gray-500 mb-1">সদস্য: {memberCount} জন</p>}
+                        {perMember>0 && !isAdminPrice && !isReward && !isLotteryOmrah && <p className="text-xs text-gray-400 mb-3">প্রতি জনে: ৳{perMember}</p>}
                         {isAdminPrice ? (
                           <button onClick={handleResetAdminPricePool} disabled={loading||pool.total_amount<=0}
                             className="w-full py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50">
+                            ব্যালেন্স জিরো (০) করুন
+                          </button>
+                        ) : isLotteryOmrah ? (
+                          <button onClick={handleResetLotteryOmrahHajjPool} disabled={loading||pool.total_amount<=0}
+                            className="w-full py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50">
                             ব্যালেন্স জিরো (০) করুন
                           </button>
                         ) : isReward ? (
@@ -2641,9 +2667,7 @@ export default function AdminDashboard() {
                   { key: 'is_active',          label: 'সক্রিয়' },
                   { key: 'is_locked',           label: 'লক' },
                   { key: 'is_daily_club',       label: 'ডেইলি ক্লাব' },
-                  { key: 'is_weekly_club',      label: 'উইকলি ক্লাব' },
-                  { key: 'is_insurance_club',   label: 'ইনসুরেন্স ক্লাব' },
-                  { key: 'is_pension_club',     label: 'পেনশন ক্লাব' },
+                  { key: 'is_weekly_club',      label: 'সেলারী ক্লাব' },
                   { key: 'is_shareholder_club', label: 'শেয়ারহোল্ডার ক্লাব' },
                 ].map(f => (
                   <label key={f.key} className="flex items-center gap-2 text-xs cursor-pointer">
