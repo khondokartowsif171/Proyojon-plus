@@ -1965,7 +1965,7 @@ export default function AdminDashboard() {
                             <td className="py-2 px-3 text-xs">{pkg.purchased_at?new Date(pkg.purchased_at).toLocaleDateString('bn-BD'):'—'}</td>
                             <td className="py-2 px-3 text-xs">{pkg.expires_at?new Date(pkg.expires_at).toLocaleDateString('bn-BD'):'—'}</td>
                             <td className="py-2 px-3 text-xs font-bold text-orange-600">{remaining}</td>
-                            <td className="py-2 px-3 text-xs">৳{(pkg.daily_income||0).toFixed(4)}</td>
+                            <td className="py-2 px-3 text-xs font-bold text-emerald-600">৳{(pkg.daily_income||0).toFixed(4)}</td>
                             <td className="py-2 px-3"><span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${pkg.status==='active'?'bg-green-100 text-green-700':'bg-red-100 text-red-500'}`}>{pkg.status||'active'}</span></td>
                             <td className="py-2 px-3">
                               {hasPermission('manage_gold_packages') && (
@@ -1977,18 +1977,40 @@ export default function AdminDashboard() {
                         );
                       })}
                     </tbody>
+                    {adminGoldPkgs.length > 0 && (
+                      <tfoot className="bg-yellow-100/80 font-bold border-t-2 border-yellow-300">
+                        <tr>
+                          <td colSpan={3} className="py-2.5 px-3 text-xs text-gray-800 font-bold">
+                            সর্বমোট ({adminGoldPkgs.length}টি গোল্ড প্যাকেজ)
+                          </td>
+                          <td className="py-2.5 px-3 text-xs font-black text-indigo-900">
+                            ৳{adminGoldPkgs.reduce((s: number, p: any) => s + Number(p.amount || 0), 0).toLocaleString()}
+                          </td>
+                          <td colSpan={3} className="py-2.5 px-3 text-xs text-gray-400 text-center">—</td>
+                          <td className="py-2.5 px-3 text-xs font-black text-emerald-900">
+                            ৳{adminGoldPkgs.reduce((s: number, p: any) => s + Number(p.daily_income || 0), 0).toFixed(4)}
+                          </td>
+                          <td colSpan={2} className="py-2.5 px-3 text-xs text-gray-400 text-center">—</td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                   {adminGoldPkgs.length===0&&<p className="text-center text-gray-400 py-8 text-sm">কোনো গোল্ড প্যাকেজ নেই</p>}
                 </div>
               </div>
             )}
 
-            {activeTab === 'customer_packages' && hasPermission('view_members') && (
+            {activeTab === 'customer_packages' && hasPermission('view_members') && (() => {
+              const custUsers = users.filter(u => u.package_type === 'customer' && u.role !== 'admin');
+              const totalBalance = custUsers.reduce((s, u) => s + Number(u.current_balance || 0), 0);
+              const totalMonthlyPV = custUsers.reduce((s, u) => s + Number(u.monthly_pv_purchased || 0), 0);
+
+              return (
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h2 className="text-lg font-bold text-gray-900">কাস্টমার প্যাকেজ সদস্য তালিকা</h2>
-                    <p className="text-xs text-gray-500">মোট {users.filter(u => u.package_type === 'customer' && u.role !== 'admin').length} জন কাস্টমার সদস্য</p>
+                    <p className="text-xs text-gray-500">মোট {custUsers.length} জন কাস্টমার সদস্য</p>
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -1999,7 +2021,7 @@ export default function AdminDashboard() {
                       ))}
                     </tr></thead>
                     <tbody>
-                      {users.filter(u => u.package_type === 'customer' && u.role !== 'admin').map((u, i) => (
+                      {custUsers.map((u, i) => (
                         <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="py-2 px-3 text-xs text-gray-400">{i+1}</td>
                           <td className="py-2 px-3 font-medium text-xs">
@@ -2025,20 +2047,43 @@ export default function AdminDashboard() {
                         </tr>
                       ))}
                     </tbody>
+                    {custUsers.length > 0 && (
+                      <tfoot className="bg-blue-100/80 font-bold border-t-2 border-blue-300">
+                        <tr>
+                          <td colSpan={4} className="py-2.5 px-3 text-xs text-gray-800 font-bold">
+                            সর্বমোট ({custUsers.length} জন কাস্টমার সদস্য)
+                          </td>
+                          <td className="py-2.5 px-3 text-xs font-black text-indigo-900">
+                            ৳{totalBalance.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 px-3 text-xs font-black text-blue-900">
+                            {totalMonthlyPV.toLocaleString()} PV
+                          </td>
+                          <td colSpan={2} className="py-2.5 px-3 text-xs text-gray-400 text-center">—</td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
-                  {users.filter(u => u.package_type === 'customer' && u.role !== 'admin').length === 0 && (
+                  {custUsers.length === 0 && (
                     <p className="text-center text-gray-400 py-8 text-sm">কোনো কাস্টমার সদস্য নেই</p>
                   )}
                 </div>
               </div>
-            )}
+              );
+            })()}
 
-            {activeTab === 'shareholder_pkgs' && hasPermission('view_members') && (
+            {activeTab === 'shareholder_pkgs' && hasPermission('view_members') && (() => {
+              const shUsers = users.filter(u => u.package_type === 'shareholder' && u.role !== 'admin');
+              const totalShares = shUsers.reduce((s, u) => s + Number(u.shareholder_count || 1), 0);
+              const totalInvestment = shUsers.reduce((s, u) => s + (Number(u.shareholder_count || 1) * 5000), 0);
+              const totalBalance = shUsers.reduce((s, u) => s + Number(u.current_balance || 0), 0);
+
+              return (
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h2 className="text-lg font-bold text-gray-900">শেয়ারহোল্ডার প্যাকেজ সদস্য তালিকা</h2>
-                    <p className="text-xs text-gray-500">মোট {users.filter(u => u.package_type === 'shareholder' && u.role !== 'admin').length} জন শেয়ারহোল্ডার সদস্য</p>
+                    <p className="text-xs text-gray-500">মোট {shUsers.length} জন শেয়ারহোল্ডার সদস্য</p>
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -2049,7 +2094,7 @@ export default function AdminDashboard() {
                       ))}
                     </tr></thead>
                     <tbody>
-                      {users.filter(u => u.package_type === 'shareholder' && u.role !== 'admin').map((u, i) => (
+                      {shUsers.map((u, i) => (
                         <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="py-2 px-3 text-xs text-gray-400">{i+1}</td>
                           <td className="py-2 px-3 font-medium text-xs">{u.name}</td>
@@ -2071,13 +2116,34 @@ export default function AdminDashboard() {
                         </tr>
                       ))}
                     </tbody>
+                    {shUsers.length > 0 && (
+                      <tfoot className="bg-purple-100/80 font-bold border-t-2 border-purple-300">
+                        <tr>
+                          <td colSpan={3} className="py-2.5 px-3 text-xs text-gray-800 font-bold">
+                            সর্বমোট ({shUsers.length} জন শেয়ারহোল্ডার সদস্য)
+                          </td>
+                          <td className="py-2.5 px-3 text-xs font-black text-purple-900">
+                            {totalShares}টি শেয়ার
+                          </td>
+                          <td className="py-2.5 px-3 text-xs font-black text-indigo-900">
+                            ৳{totalInvestment.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 px-3 text-xs text-gray-400 text-center">—</td>
+                          <td className="py-2.5 px-3 text-xs font-black text-emerald-900">
+                            ৳{totalBalance.toLocaleString()}
+                          </td>
+                          <td colSpan={2} className="py-2.5 px-3 text-xs text-gray-400 text-center">—</td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
-                  {users.filter(u => u.package_type === 'shareholder' && u.role !== 'admin').length === 0 && (
+                  {shUsers.length === 0 && (
                     <p className="text-center text-gray-400 py-8 text-sm">কোনো শেয়ারহোল্ডার সদস্য নেই</p>
                   )}
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {activeTab === 'dealer_packages' && hasPermission('view_members') && (
               <div>
