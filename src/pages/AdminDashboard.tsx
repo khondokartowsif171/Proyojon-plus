@@ -848,7 +848,12 @@ export default function AdminDashboard() {
   const handleResetLotteryOmrahHajjPool = async () => {
     if (!window.confirm('লটারি ওমরা হজ্জ ক্লাব ব্যালেন্স শূন্য (০) করতে চান?')) return;
     setLoading(true);
-    await supabase.from('mlm_club_pools').update({ total_amount: 0 }).eq('club_type', 'lottery_omrah_hajj_club');
+    const { data: existing } = await supabase.from('mlm_club_pools').select('id').eq('club_type', 'lottery_omrah_hajj_club');
+    if (existing && existing.length > 0) {
+      await supabase.from('mlm_club_pools').update({ total_amount: 0 }).eq('club_type', 'lottery_omrah_hajj_club');
+    } else {
+      await supabase.from('mlm_club_pools').insert({ club_type: 'lottery_omrah_hajj_club', total_amount: 0 });
+    }
     toast.success('✅ লটারি ওমরা হজ্জ ক্লাব ব্যালেন্স জিরো (০) করা হয়েছে');
     fetchAll(); setLoading(false);
   };
