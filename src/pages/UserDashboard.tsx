@@ -9,7 +9,7 @@ import {
   Wallet, TrendingUp, Gift, Users, Copy, Check, ArrowDownToLine,
   ArrowRightLeft, Crown, Award, Clock, RefreshCw,
   Star, Shield, LogOut, ShoppingBag, Camera, Upload, AlertCircle,
-  BarChart3, ChevronDown, ChevronRight, History, Package,
+  BarChart3, ChevronDown, ChevronRight, History, Package, Bell,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { hashPassword } from '@/lib/crypto';
