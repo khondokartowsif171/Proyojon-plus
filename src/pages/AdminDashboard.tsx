@@ -1393,6 +1393,9 @@ export default function AdminDashboard() {
               const newLast7d   = users.filter(u => u.role !== 'admin' && new Date(u.created_at) >= d7ago).length;
               const dealerCount = users.filter(u => u.is_dealer && u.role !== 'admin').length;
 
+              const totalPvSum = users.reduce((sum: number, u: any) => sum + Number(u.pv_points || 0) + Number(u.monthly_pv_purchased || 0), 0);
+              const companyProfit = Math.round(totalPvSum * 0.25);
+
               const oq = overviewSearch.trim().toLowerCase();
               const overviewResults = oq.length >= 1
                 ? users.filter(u =>
@@ -1405,13 +1408,9 @@ export default function AdminDashboard() {
                   ).slice(0, 20)
                 : [];
 
-              return (() => {
-                const totalPvSum = users.reduce((sum: number, u: any) => sum + Number(u.pv_points || 0) + Number(u.monthly_pv_purchased || 0), 0);
-                const companyProfit = Math.round(totalPvSum * 0.25);
-
-                return (
-                <div>
-                  <h2 className="text-lg font-bold mb-4">{at('systemOverview')}</h2>
+              return (
+              <div>
+                <h2 className="text-lg font-bold mb-4">{at('systemOverview')}</h2>
 
                   {/* ── কোম্পানি প্রফিট ২৫% ── */}
                   <div className="mb-5 p-4 bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl text-white shadow-md flex items-center justify-between">
@@ -1588,7 +1587,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
               );
-            })()();}
+            })()}
 
             {activeTab === 'users' && hasPermission('view_members') && (() => {
               const now = new Date();
