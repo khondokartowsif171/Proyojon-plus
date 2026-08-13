@@ -90,6 +90,7 @@ export default function UserDashboard() {
   const [withdrawals,      setWithdrawals]      = useState<any[]>([]);
   const [clubPools,        setClubPools]        = useState<any[]>([]);
   const [pvLeaders,        setPvLeaders]        = useState<any[]>([]);
+  const [notices,          setNotices]          = useState<any[]>([]);
   const [goldPackages,     setGoldPackages]     = useState<any[]>([]);
   const [goldLockerImages, setGoldLockerImages] = useState<string[]>([]);
   const [pendingPayments,  setPendingPayments]  = useState<any[]>([]);
@@ -212,6 +213,15 @@ export default function UserDashboard() {
       .order('monthly_pv_purchased', { ascending: false })
       .limit(15);
     if (leadersData) setPvLeaders(leadersData);
+
+    // Fetch active website notices for User Dashboard
+    const { data: noticeData } = await supabase
+      .from('proyojon_notices')
+      .select('*')
+      .eq('is_active', true)
+      .order('priority', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (noticeData) setNotices(noticeData);
 
     // Referral purchases feed
     const directIds = (dirRes.data||[]).map((u:any)=>u.id);
@@ -955,6 +965,30 @@ export default function UserDashboard() {
                 )}
               </div>
 
+              {/* ── ওয়েবসাইট নোটিশ বোর্ড ── */}
+              {notices.length > 0 && (
+                <div className="mb-6 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-yellow-500/10 rounded-2xl p-5 border border-amber-200 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3 pb-2 border-b border-amber-200/50">
+                    <Bell size={18} className="text-amber-600 animate-bounce" />
+                    <h3 className="font-bold text-gray-900 text-sm">ওয়েবসাইট নোটিশ বোর্ড (Notice Board)</h3>
+                  </div>
+                  <div className="space-y-3">
+                    {notices.map((n: any) => (
+                      <div key={n.id} className="p-3.5 bg-white rounded-xl border border-amber-100 shadow-2xs">
+                        <h4 className="font-bold text-xs text-amber-900 flex items-center gap-1.5">
+                          📢 {n.title}
+                        </h4>
+                        {n.content && <p className="text-xs text-gray-700 mt-1 leading-relaxed whitespace-pre-line">{n.content}</p>}
+                        <div className="mt-2 flex items-center justify-between text-[10px] text-gray-400">
+                          <span>প্রকাশিত: {n.created_at ? new Date(n.created_at).toLocaleDateString('bn-BD') : '—'}</span>
+                          {n.expires_at && <span className="text-amber-700 font-medium">মেয়াদ শেষ: {new Date(n.expires_at).toLocaleDateString('bn-BD')}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Quick shop CTA */}
               <div className="flex items-center gap-3 mb-5 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100">
                 <div className="flex-1">
@@ -1015,34 +1049,41 @@ export default function UserDashboard() {
                 </div>
               </div>
 
-              {/* ── Top 15 PV Leaders Leaderboard ── */}
+              {/* ── ⭐ এ মাসের PV র‍্যাঙ্কিং ── */}
               <div className="mt-6 bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
+                  <h3 className="font-semibold text-sm text-gray-800 flex items-center gap-1.5">
                     <Star size={16} className="text-yellow-500 fill-yellow-500" />
-                    সর্বোচ্চ PV অর্জনকারী ১৫ জন (Leaderboard)
+                    এ মাসের PV র‍্যাঙ্কিং (Top 15 PV Leaders)
                   </h3>
-                  <span className="text-[11px] text-gray-400 font-medium">মাসিক PV এর ভিত্তিতে</span>
+                  <span className="text-[11px] text-gray-400 font-medium">মাসিক PV কেনাকাটার ক্রমানুসারে</span>
                 </div>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                <div className="space-y-2">
                   {pvLeaders.filter(u => (u.monthly_pv_purchased || 0) > 0).slice(0, 15).map((u, i) => (
-                    <div key={u.id || i} className="flex items-center gap-3 p-2.5 rounded-xl bg-gray-50/80 border border-gray-100">
-                      <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs text-white flex-shrink-0 ${i===0?'bg-amber-500':i===1?'bg-slate-400':i===2?'bg-amber-700':'bg-gray-300'}`}>
-                        {i + 1}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-xs text-gray-800 truncate">{u.name}</p>
-                        <p className="text-[10px] text-gray-400">
-                          {u.phone ? `${u.phone.slice(0, 3)}****${u.phone.slice(-4)}` : '—'}
-                        </p>
+                    <div key={u.id || i} className="flex items-center justify-between py-2 px-3 rounded-xl bg-gray-50 text-xs border border-gray-100/80 hover:bg-gray-100/60 transition-colors">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] text-white flex-shrink-0 ${i===0?'bg-yellow-500':i===1?'bg-gray-400':i===2?'bg-orange-400':'bg-gray-300'}`}>
+                          {i + 1}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-xs text-gray-900 truncate">{u.name}</p>
+                          <p className="text-[10px] text-gray-400">
+                            {u.phone ? `${u.phone.slice(0, 3)}****${u.phone.slice(-4)}` : '—'}
+                          </p>
+                        </div>
                       </div>
-                      <span className="font-bold text-xs text-indigo-600 flex-shrink-0">
-                        {(u.monthly_pv_purchased || 0).toLocaleString()} PV
-                      </span>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="font-bold text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-md border border-green-100">
+                          {(u.monthly_pv_purchased || 0).toLocaleString()} PV
+                        </span>
+                        <span className="px-2 py-0.5 bg-yellow-500 text-white text-[10px] font-bold rounded-lg">
+                          গিফট
+                        </span>
+                      </div>
                     </div>
                   ))}
                   {pvLeaders.filter(u => (u.monthly_pv_purchased || 0) > 0).length === 0 && (
-                    <p className="text-xs text-gray-400 text-center py-4 col-span-full">এখনো কোনো PV ডাটা পাওয়া যায়নি</p>
+                    <p className="text-xs text-gray-400 text-center py-6">এখনো কোনো PV ডাটা পাওয়া যায়নি</p>
                   )}
                 </div>
               </div>
