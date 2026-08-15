@@ -212,10 +212,11 @@ export default function Checkout() {
       description: `পণ্য ক্রয় (কোম্পানি সরাসরি) — ${pvToAdd} PV মূল্যের পণ্য`,
     }).catch(() => {});
 
-    // ── প্রথম activation এ referrer এর Hajj Fund (1% x 5 levels) + count + club promotion ──
+    // ── প্রথম activation এ: referrer count + club promotion ────────────────
+    // NOTE: Hajj Referral Bonus (1% x 5 levels) is sent ONCE below for ALL PV purchases
+    // Do NOT call distributeHajjReferralBonus here — it causes double-bonus on first activation
     const justFirstActivated = wasInactive && isFirstTime && updates.is_active === true;
     if (justFirstActivated && user.referrer_id) {
-      await distributeHajjReferralBonus(user.referrer_id, 1000, user.id, 1);
       const { data: referrer } = await supabase.from('mlm_users')
         .select('id, is_active, direct_referrals_count, is_weekly_club, is_insurance_club')
         .eq('id', user.referrer_id).single();

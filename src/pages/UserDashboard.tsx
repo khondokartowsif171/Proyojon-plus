@@ -187,7 +187,7 @@ export default function UserDashboard() {
     if (!user) return;
     setLoading(true);
     const [txRes, wdRes, poolRes, goldRes, pvRes, dirRes, lockerRes, shRes] = await Promise.all([
-      supabase.from('mlm_transactions').select('*').eq('user_id', user.id).order('created_at',{ascending:false}).limit(50),
+      supabase.from('mlm_transactions').select('*').eq('user_id', user.id).order('created_at',{ascending:false}).limit(500),
       supabase.from('mlm_withdrawals').select('*').eq('user_id', user.id).order('created_at',{ascending:false}).limit(20),
       supabase.from('mlm_club_pools').select('*'),
       supabase.from('mlm_gold_packages').select('*').eq('user_id', user.id).order('purchased_at',{ascending:false}),

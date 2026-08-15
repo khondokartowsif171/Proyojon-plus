@@ -78,17 +78,23 @@ export const distributeHajjReferralBonus = async (
   const bonus = Math.floor(pvPoints * 0.01); // ১% করে ৫টি লেভেলে = মোট ৫%
   if (bonus > 0) {
     const currentHajj = Number(u.omrah_hajj_balance || 0);
-    await supabase.from('mlm_users').update({
+    const { error: updateErr } = await supabase.from('mlm_users').update({
       omrah_hajj_balance: currentHajj + bonus,
-    }).eq('id', userId).catch(() => {});
+    }).eq('id', userId);
+    if (updateErr) {
+      console.error('[distributeHajjReferralBonus] omrah_hajj_balance update error:', updateErr.message, '— userId:', userId);
+    }
 
-    await supabase.from('mlm_transactions').insert({
+    const { error: txErr } = await supabase.from('mlm_transactions').insert({
       user_id:         userId,
       type:            'hajj_referral_bonus',
       amount:          bonus,
       description:     `উমরাহ হজ ফান্ড রেফার ইনকাম (১% × Gen ${gen}, PV: ${pvPoints})`,
       related_user_id: sourceUserId,
     });
+    if (txErr) {
+      console.error('[distributeHajjReferralBonus] transaction insert error:', txErr.message, '— userId:', userId);
+    }
   }
 
   if (u.referrer_id) {
@@ -110,16 +116,23 @@ export const creditSelfOmrahHajjPoints = async (
   if (!u) return;
 
   const currentHajj = Number(u.omrah_hajj_balance || 0);
-  await supabase.from('mlm_users').update({
+  const { error: updateErr } = await supabase.from('mlm_users').update({
     omrah_hajj_balance: currentHajj + hajjBonus,
-  }).eq('id', userId).catch(() => {});
+  }).eq('id', userId);
+  if (updateErr) {
+    console.error('[creditSelfOmrahHajjPoints] omrah_hajj_balance update error:', updateErr.message, '— userId:', userId);
+    return;
+  }
 
-  await supabase.from('mlm_transactions').insert({
+  const { error: txErr } = await supabase.from('mlm_transactions').insert({
     user_id:     userId,
     type:        'omrah_hajj_point',
     amount:      hajjBonus,
     description: `মাই ওমরা হজ পয়েন্ট অর্জিত (১০% × ${pvPoints} PV = ৳${hajjBonus})`,
   });
+  if (txErr) {
+    console.error('[creditSelfOmrahHajjPoints] transaction insert error:', txErr.message, '— userId:', userId);
+  }
 };
 
 
@@ -136,16 +149,23 @@ export const creditRewardPoints = async (
   if (!u) return;
 
   const currentReward = Number(u.reward_points || 0);
-  await supabase.from('mlm_users').update({
+  const { error: updateErr } = await supabase.from('mlm_users').update({
     reward_points: currentReward + rewardBonus,
-  }).eq('id', userId).catch(() => {});
+  }).eq('id', userId);
+  if (updateErr) {
+    console.error('[creditRewardPoints] reward_points update error:', updateErr.message, '— userId:', userId);
+    return;
+  }
 
-  await supabase.from('mlm_transactions').insert({
+  const { error: txErr } = await supabase.from('mlm_transactions').insert({
     user_id:     userId,
     type:        'reward_points_bonus',
     amount:      rewardBonus,
-    description: `রিওয়ার্ড পয়েন্ট অর্জিত (৭% × ${pvPoints} PV = ${rewardBonus} পয়েন্ট)`,
+    description: `রিওয়ার্ড পয়েন্ট অর্জিত (৭% × ${pvPoints} PV = ${rewardBonus} পয়েন্ট)`,
   });
+  if (txErr) {
+    console.error('[creditRewardPoints] transaction insert error:', txErr.message, '— userId:', userId);
+  }
 };
 
 
