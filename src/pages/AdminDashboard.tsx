@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
-import { processDealerCommission, processDealerPurchasePv, addToClubPools, PV_CLUB_PCTS } from '@/lib/mlm-business-logic';
+import { processDealerCommission, processDealerPurchasePv, addToClubPools, PV_CLUB_PCTS, distributeHajjReferralBonus, creditRewardPoints, creditSelfOmrahHajjPoints } from '@/lib/mlm-business-logic';
 import { PERMISSION_GROUPS, PERM_LABELS, ALL_PERMISSIONS } from '@/lib/permissions';
 import { hashPassword } from '@/lib/crypto';
 import Header from '@/components/Header';
@@ -988,9 +988,19 @@ export default function AdminDashboard() {
 
           await supabase.from('mlm_users').update(updates).eq('id', pv.user_id);
 
-          // প্রথম activation এ referrer কমিশন + count + club promotion
+          // ✅ 10% Self Omrah Hajj Point & 7% Reward Points for buyer
+          if (pvToAdd > 0) {
+            await creditSelfOmrahHajjPoints(pv.user_id, pvToAdd);
+            await creditRewardPoints(pv.user_id, pvToAdd);
+          }
+
+          // ✅ 1% x 5 levels Hajj Referral Bonus to uplines for all PV sales
+          if (userData.referrer_id && pvToAdd > 0) {
+            await distributeHajjReferralBonus(userData.referrer_id, pvToAdd, pv.user_id, 1);
+          }
+
+          // প্রথম activation এ count + club promotion
           if (justFirstActivated && userData.referrer_id) {
-            const commission = parseFloat((1000 * 0.05).toFixed(4)); // সবসময় ৳৫০
             const { data: ref } = await supabase.from('mlm_users')
               .select('id, current_balance, total_income, is_active, direct_referrals_count, is_weekly_club, is_insurance_club, name')
               .eq('id', userData.referrer_id).single();
@@ -999,14 +1009,7 @@ export default function AdminDashboard() {
               const newCount   = Number(ref.direct_referrals_count || 0) + 1;
               const refUpdates: any = {
                 direct_referrals_count: newCount,
-                current_balance: Number(ref.current_balance || 0) + commission,
-                total_income:    Number(ref.total_income    || 0) + commission,
               };
-
-              await supabase.from('mlm_transactions').insert({
-                user_id: ref.id, type: 'referral_income', amount: commission,
-                description: `কাস্টমার রেফার কমিশন ৫% (৳৫০)`, related_user_id: pv.user_id,
-              });
 
               // Weekly club: ১৫ সক্রিয় রেফারাল হলে
               if (newCount >= 15 && !ref.is_weekly_club) {
@@ -1157,9 +1160,11 @@ export default function AdminDashboard() {
         }
       }
 
-      // ✅ Customer package activate হলে club pool এ টাকা যাবে
+      // ✅ Customer package activate হলে club pool, 10% self Hajj points, 7% reward points এ টাকা যাবে
       if (isCustomer && pvPoints >= 100) {
         await addToClubPools(pvPoints);
+        await creditSelfOmrahHajjPoints(pv.user_id, pvPoints);
+        await creditRewardPoints(pv.user_id, pvPoints);
       }
 
       // ── Referrer commission ──────────────────────────────────────────────
@@ -1173,8 +1178,8 @@ export default function AdminDashboard() {
           let desc       = '';
 
           if (isCustomer) {
-            commission = parseFloat((1000 * 0.05).toFixed(4)); // ৳50 fixed per customer
-            desc       = 'কাস্টমার রেফার কমিশন (৫%)';
+            // ✅ ৫% রেফারাল — ১% করে ৫টি লেভেলে Omrah Hajj Fund এ জমা হবে
+            await distributeHajjReferralBonus(newUser.referrer_id, pvPoints, pv.user_id, 1);
           } else if (isShareholder) {
             commission = parseFloat((quantity * 5000 * 0.025).toFixed(4)); // ৳125 × quantity
             desc       = `শেয়ারহোল্ডার রেফার কমিশন (২.৫% × ${quantity}টি)`;

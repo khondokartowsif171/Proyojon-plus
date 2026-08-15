@@ -97,6 +97,32 @@ export const distributeHajjReferralBonus = async (
 };
 
 
+// ── Credit Self Omrah Hajj Points (10%) to Buyer ──────────────────────────────
+export const creditSelfOmrahHajjPoints = async (
+  userId: string,
+  pvPoints: number,
+): Promise<void> => {
+  if (pvPoints <= 0 || !userId) return;
+  const hajjBonus = Math.floor(pvPoints * 0.10); // ১০% মাই ওমরা হজ পয়েন্ট
+  if (hajjBonus <= 0) return;
+
+  const { data: u } = await supabase.from('mlm_users').select('omrah_hajj_balance').eq('id', userId).single();
+  if (!u) return;
+
+  const currentHajj = Number(u.omrah_hajj_balance || 0);
+  await supabase.from('mlm_users').update({
+    omrah_hajj_balance: currentHajj + hajjBonus,
+  }).eq('id', userId).catch(() => {});
+
+  await supabase.from('mlm_transactions').insert({
+    user_id:     userId,
+    type:        'omrah_hajj_point',
+    amount:      hajjBonus,
+    description: `মাই ওমরা হজ পয়েন্ট অর্জিত (১০% × ${pvPoints} PV = ৳${hajjBonus})`,
+  });
+};
+
+
 // ── Credit Reward Points (7%) to Buyer ─────────────────────────────────────────
 export const creditRewardPoints = async (
   userId: string,
@@ -311,8 +337,14 @@ export const processDealerPurchasePv = async (
     .insert({ user_id: userId, amount: pvAmount, source: 'direct_purchase' })
     .catch(() => {});
 
-  if (u.referrer_id)
+  // ✅ 10% Self Omrah Hajj Point, 7% Reward Points, 1% x 5 levels Hajj Referral Bonus
+  await creditSelfOmrahHajjPoints(userId, pvAmount);
+  await creditRewardPoints(userId, pvAmount);
+
+  if (u.referrer_id) {
+    await distributeHajjReferralBonus(u.referrer_id, pvAmount, userId, 1);
     await distributeGenerationBonus(u.referrer_id, pvAmount, userId, 1);
+  }
 
   await addToClubPools(pvAmount);
 };
@@ -360,11 +392,9 @@ export const processOrderCommissionsForUser = async (
     description: `পণ্য ক্রয় (ডিলার) — ${pvAmount} PV মূল্যের পণ্য`,
   }).catch(() => {});
 
-  // Referral commission — only on first activation
-  // Referral commission — only on first activation (1% x 5 levels to Hajj Fund)
+  // Referral commission — 1% x 5 levels to Hajj Fund
   const justFirstActivated = wasInactive && isFirstTime && updates.is_active === true;
   if (justFirstActivated && u.referrer_id) {
-    await distributeHajjReferralBonus(u.referrer_id, CUSTOMER_PV_TO_ACTIVATE, userId, 1);
     const { data: ref } = await supabase.from('mlm_users')
       .select('id, is_active, direct_referrals_count, is_weekly_club, is_insurance_club')
       .eq('id', u.referrer_id).single();
@@ -383,12 +413,22 @@ export const processOrderCommissionsForUser = async (
     }
   }
 
+  // ✅ 10% Self Omrah Hajj Point & 7% Reward Points for Buyer
+  await creditSelfOmrahHajjPoints(userId, pvAmount);
+  await creditRewardPoints(userId, pvAmount);
+
+  // ✅ 1% x 5 levels Hajj Referral Bonus to uplines for all PV sales
+  if (u.referrer_id && pvAmount > 0) {
+    await distributeHajjReferralBonus(u.referrer_id, pvAmount, userId, 1);
+  }
+
   const isNowActive = u.is_active || updates.is_active === true;
-  if (isNowActive && u.referrer_id && pvAmount > 0)
+  if (isNowActive && u.referrer_id && pvAmount > 0) {
     await distributeGenerationBonus(u.referrer_id, pvAmount, userId, 1);
+  }
+
   if (pvAmount >= 1) {
     await addToClubPools(pvAmount);
-    await creditRewardPoints(userId, pvAmount);
   }
 };
 

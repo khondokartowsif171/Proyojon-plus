@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '@/lib/supabase';
-import { processDealerCommission, processDealerPurchasePv, addToClubPools, distributeHajjReferralBonus, creditRewardPoints } from '@/lib/mlm-business-logic';
+import { processDealerCommission, processDealerPurchasePv, addToClubPools, distributeHajjReferralBonus, creditRewardPoints, creditSelfOmrahHajjPoints } from '@/lib/mlm-business-logic';
 import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
@@ -248,10 +248,16 @@ export default function Checkout() {
       await processGenerationBonusChain(user.referrer_id, pvToAdd, user.id, 1);
     }
 
-    // ── Club pools & Reward points ──────────────────────────────────────────
+    // ── 10% Self Omrah Hajj Point & 7% Reward points ─────────────────────────
     if (pvToAdd >= 1) {
-      await addToClubPools(pvToAdd);
+      await creditSelfOmrahHajjPoints(user.id, pvToAdd);
       await creditRewardPoints(user.id, pvToAdd);
+      await addToClubPools(pvToAdd);
+    }
+
+    // ── 1% x 5 levels Hajj Referral Bonus to uplines ────────────────────────
+    if (user.referrer_id && pvToAdd > 0) {
+      await distributeHajjReferralBonus(user.referrer_id, pvToAdd, user.id, 1);
     }
 
     await refreshUser();

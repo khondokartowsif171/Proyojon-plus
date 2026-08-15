@@ -844,8 +844,15 @@ export default function UserDashboard() {
 
         {/* Stats */}
         {(() => {
-          const omrahHajjPoints = user.omrah_hajj_balance || transactions.filter(t => t.type === 'hajj_referral_bonus').reduce((sum, t) => sum + (t.amount || 0), 0);
-          const rewardPoints = user.reward_points || transactions.filter(t => t.type === 'reward_points_bonus').reduce((sum, t) => sum + (t.amount || 0), 0);
+          const txHajjSum = transactions
+            .filter(t => t.type === 'hajj_referral_bonus' || t.type === 'omrah_hajj_point')
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+          const omrahHajjPoints = Math.max(Number(user.omrah_hajj_balance || 0), txHajjSum);
+
+          const txRewardSum = transactions
+            .filter(t => t.type === 'reward_points_bonus')
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+          const rewardPoints = Math.max(Number(user.reward_points || 0), txRewardSum);
 
           return (
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
@@ -1028,6 +1035,9 @@ export default function UserDashboard() {
                   <div className="space-y-2 mb-5">
                     {[
                       {label:t('referIncome'), value:sumByType('referral_income')},
+                      {label:'উমরাহ হজ ফান্ড রেফার বোনাস (৫%)', value:sumByType('hajj_referral_bonus')},
+                      {label:'মাই ওমরা হজ পয়েন্ট (১০%)', value:sumByType('omrah_hajj_point')},
+                      {label:'রিওয়ার্ড পয়েন্ট (৭%)', value:sumByType('reward_points_bonus')},
                       {label:t('genBonus'),    value:sumByType('generation_bonus')},
                       {label:t('clubBonus'),   value:sumByTypes(['daily_club','weekly_club','shareholder_club','lottery_omrah_hajj_club'])},
                       ...(user.package_type==='gold'?[{label:t('goldDaily'),value:sumByType('gold_daily')}]:[]),
@@ -1097,6 +1107,9 @@ export default function UserDashboard() {
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {([
                   {label:t('referIncome'),       type:'referral_income',         color:'from-green-500 to-emerald-600', icon:<Users size={20}/>},
+                  {label:'উমরাহ হজ ফান্ড রেফার বোনাস', type:'hajj_referral_bonus', color:'from-teal-600 to-emerald-700',  icon:<Award size={20}/>},
+                  {label:'মাই ওমরা হজ পয়েন্ট (১০%)', type:'omrah_hajj_point',     color:'from-emerald-500 to-teal-600',  icon:<Award size={20}/>},
+                  {label:'রিওয়ার্ড পয়েন্ট (৭%)', type:'reward_points_bonus',    color:'from-amber-500 to-yellow-600',  icon:<Gift size={20}/>},
                   {label:t('genBonus'),           type:'generation_bonus',        color:'from-blue-500 to-indigo-600',   icon:<TrendingUp size={20}/>},
                   {label:'ডেইলি ক্লাব',          type:'daily_club',              color:'from-orange-500 to-red-600',    icon:<Gift size={20}/>},
                   {label:'সেলারী ক্লাব',         type:'weekly_club',             color:'from-purple-500 to-pink-600',   icon:<Crown size={20}/>},
